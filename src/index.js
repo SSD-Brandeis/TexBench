@@ -703,112 +703,14 @@ async function handleChat(request, env) {
 
     if (parsedSchema) {
       const maxClarifications = Math.max(1, Number(env.AI_MAX_QUESTIONS || 20));
-      const selectedOps = parseOperationsAnswer(
-        resolvedClarifications.operations || 'inserts + point_queries'
-      );
-      const requiredClarifications = [
-        {
-          assumptionKey: 'operations',
-          question: 'What operations should be included (inserts, updates, point_queries, range_queries, point_deletes, range_deletes, empty_point_queries, empty_point_deletes, merges)?',
-          assumedValue: 'inserts + point_queries',
-          reason: 'This is the most common baseline workload shape.',
-          extra: 'Default op_count assumptions: inserts=1000000, point_queries=500000'
-        },
-        {
-          assumptionKey: 'operation_timing',
-          question: 'Should operations be sequential (preload then queries) or interleaved (mixed in same phase)?',
-          assumedValue: 'sequential',
-          reason: 'Sequential preload then query is a safe default and easier to reason about.'
-        },
-        {
-          assumptionKey: 'phase_model',
-          question: 'Is this a single-phase workload or a multi-phase shifting workload?',
-          assumedValue: 'single phase',
-          reason: 'Single-phase is the simplest default, but multi-phase supports abruptly/slowly shifting workloads.'
-        },
-        {
-          assumptionKey: 'phase_count',
-          question: 'How many phases/sections should the workload have?',
-          assumedValue: '1',
-          reason: 'One section is the default unless workload behavior should shift over time.'
-        },
-        {
-          assumptionKey: 'keyspace_sharing',
-          question: 'Should operations share the same valid keyspace or use different keyspaces?',
-          assumedValue: 'same keyspace',
-          reason: 'Most benchmark-style workloads query keys produced by inserts.'
-        },
-        {
-          assumptionKey: 'key_pattern',
-          question: 'What key pattern should be used (uniform, segmented, weighted, hot_range)?',
-          assumedValue: 'uniform key with len=20',
-          reason: 'Uniform keys are the simplest valid default and align with common examples.'
-        },
-        {
-          assumptionKey: 'value_pattern',
-          question: 'What value pattern should be used (uniform, weighted, segmented) and what lengths?',
-          assumedValue: 'uniform value with len=256',
-          reason: 'This matches the common baseline specs and keeps payload sizes moderate.'
-        },
-        {
-          assumptionKey: 'character_set',
-          question: 'Which character_set should keys use (alphanumeric, alphabetic, numeric)?',
-          assumedValue: 'alphanumeric',
-          reason: 'This is the documented default for string generation.'
-        },
-        {
-          assumptionKey: 'special_requirements',
-          question: 'Any special requirements (sorted inserts, range_format StartCount/StartEnd, skip_key_contains_check)?',
-          assumedValue: 'none',
-          reason: 'Avoids adding behavior not requested by the user.'
-        }
-      ];
-      const opDistributionSteps = selectedOps.flatMap((op) => {
-        const steps = [
-          {
-            assumptionKey: `op_count_${op}`,
-            question: `How should ${op}.op_count be configured (constant or distribution with params)?`,
-            assumedValue: defaultOpCountForOperation(op),
-            reason: 'Specs commonly vary op_count by operation and phase.'
-          }
-        ];
+      const clarificationSteps = buildSchemaDrivenClarificationSteps(parsedSchema, resolvedClarifications);
 
-        if (requiresSelection(op)) {
-          steps.push({
-            assumptionKey: `selection_${op}`,
-            question: `What selection distribution should ${op} use?`,
-            assumedValue: defaultSelectionForOperation(op),
-            reason: 'Selection behavior is operation-specific and strongly affects access locality.',
-            extra: `Valid distribution types and default params:
-- uniform(min=0, max=1)
-- normal(mean=0.5, std_dev=0.15)
-- beta(alpha=0.1, beta=5)
-- zipf(n=1000000, s=1.5)
-- exponential(lambda=1.0)
-- log_normal(mean=0.5, std_dev=0.2)
-- poisson(lambda=10)
-- weibull(scale=1.0, shape=2.0)
-- pareto(scale=1.0, shape=2.0)
-`
-          });
-        }
-
-        if (requiresSelectivity(op)) {
-          steps.push({
-            assumptionKey: `selectivity_${op}`,
-            question: `What selectivity should ${op} use (constant or distribution)?`,
-            assumedValue: defaultSelectivityForOperation(op),
-            reason: 'Range operation behavior depends heavily on selectivity.'
-          });
-        }
-
-        return steps;
-      });
-      requiredClarifications.splice(5, 0, ...opDistributionSteps);
-
-      for (const step of requiredClarifications) {
+      for (const step of clarificationSteps) {
         const resolvedValue = resolvedClarifications[step.assumptionKey];
         if (typeof resolvedValue !== 'string' || !resolvedValue.trim()) {
+          if (askedClarifications >= maxClarifications) {
+            break;
+          }
           const questionNumber = askedClarifications + 1;
           let responseText = `Clarification ${questionNumber}
 Question: ${step.question}
@@ -821,81 +723,6 @@ Why: ${step.reason}`;
           responseText += '\n\nReply with your value to override, or say "use assumption".';
           return Response.json({ mode: 'question', response: responseText });
         }
-      }
-
-      const clarifyStepSchema = {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          action: { type: 'string', enum: ['ask', 'generate'] },
-          question: { type: 'string' },
-          assumption_key: { type: 'string' },
-          assumed_value: { type: 'string' },
-          reason: { type: 'string' }
-        },
-        required: ['action']
-      };
-
-      const clarifyResult = await ai.run(
-        modelName,
-        {
-          max_tokens: 260,
-          temperature: 0.1,
-          messages: [
-            {
-              role: 'system',
-              content: `You are collecting requirements before generating schema-constrained JSON.
-
-Return JSON only:
-{"action":"ask","question":"...","assumption_key":"...","assumed_value":"...","reason":"..."}
-or
-{"action":"generate"}
-
-Rules:
-1. Ask exactly one concise question at a time.
-2. For "ask", always include one concrete assumption the user can override.
-3. Do NOT ask about workload family/template/category.
-4. Question priority order:
-   a) key/value format and lengths (string expression style, len, character_set, segmented/hot_range if needed)
-   b) operation mix and counts/distributions (inserts, updates, point/range queries/deletes, merges; op_count and selection distribution)
-   c) range-specific settings only when range ops are present or implied (selectivity, range_format)
-5. Use conversation context: if user answered previous question, move to the next missing detail in that priority order.
-6. If details are sufficient, return {"action":"generate"}.
-7. Never ask more than ${maxClarifications} total clarification questions. Already asked: ${askedClarifications}.`
-            },
-            ...conversation
-          ],
-          response_format: {
-            type: 'json_schema',
-            json_schema: clarifyStepSchema
-          }
-        }
-      );
-
-      try {
-        const clarifyStep = JSON.parse(extractResponseText(clarifyResult));
-        if (clarifyStep.action === 'ask' && askedClarifications < maxClarifications) {
-          const questionNumber = askedClarifications + 1;
-          const responseText = `Clarification ${questionNumber}
-Question: ${clarifyStep.question || 'Could you clarify this detail?'}
-
-Assumption (if you skip): ${clarifyStep.assumption_key || 'value'} = ${clarifyStep.assumed_value || 'default'}
-Why: ${clarifyStep.reason || 'Needed to produce valid JSON.'}
-
-Reply with your value to override, or say "use assumption".`;
-          return Response.json({ mode: 'question', response: responseText });
-        }
-      } catch {
-        return Response.json({
-          mode: 'question',
-          response: `Clarification ${askedClarifications + 1}
-Question: What key detail should I use next?
-
-Assumption (if you skip): missing detail = reasonable default
-Why: Needed to produce valid schema-conforming JSON.
-
-Reply with your value to override, or say "use assumption".`
-        });
       }
     }
 
@@ -1020,6 +847,276 @@ function extractClarificationAnswers(conversation) {
   return resolved;
 }
 
+function buildSchemaDrivenClarificationSteps(schema, resolvedClarifications) {
+  const meta = extractSchemaMeta(schema);
+  const selectedOps = parseOperationsAnswer(
+    resolvedClarifications.operations || (meta.operations.slice(0, 2).join(' + ') || 'inserts + point_queries')
+  );
+
+  const steps = [];
+  steps.push({
+    assumptionKey: 'operations',
+    question: `What operations should be included (${meta.operations.join(', ')})?`,
+    assumedValue: meta.operations.includes('inserts') && meta.operations.includes('point_queries')
+      ? 'inserts + point_queries'
+      : (meta.operations.join(' + ') || 'inserts + point_queries'),
+    reason: 'Operation set determines which operation schemas are active.',
+    extra: 'You can list multiple operations separated by "+" or commas.'
+  });
+
+  if (meta.characterSets.length) {
+    steps.push({
+      assumptionKey: 'character_set',
+      question: `Which character_set should keys use (${meta.characterSets.join(', ')})?`,
+      assumedValue: meta.characterSets.includes('alphanumeric') ? 'alphanumeric' : meta.characterSets[0],
+      reason: 'This enum comes directly from schema character set choices.'
+    });
+  }
+
+  steps.push({
+    assumptionKey: 'sections_count',
+    question: 'How many sections/phases should the workload have?',
+    assumedValue: '1',
+    reason: 'Sections are the top-level array in the schema and define phase shifts.'
+  });
+
+  for (const op of selectedOps) {
+    const opInfo = getOperationFieldInfo(schema, op, meta);
+    for (const field of opInfo) {
+      steps.push({
+        assumptionKey: `${field.name}_${op}`,
+        question: `How should ${op}.${field.name} be set?`,
+        assumedValue: field.defaultValue,
+        reason: field.reason,
+        extra: field.extra
+      });
+    }
+  }
+
+  if (meta.rangeFormats.length) {
+    steps.push({
+      assumptionKey: 'range_format_global',
+      question: `If range operations are used, what range_format should apply (${meta.rangeFormats.join(', ')})?`,
+      assumedValue: meta.rangeFormats[0],
+      reason: 'Range format options are defined in schema enum.'
+    });
+  }
+
+  if (meta.hasSorted) {
+    steps.push({
+      assumptionKey: 'sorted_settings',
+      question: 'Do you want sorted insert behavior (sorted.k and sorted.l)?',
+      assumedValue: 'none',
+      reason: 'Schema includes an optional sorted tuning block.'
+    });
+  }
+
+  steps.push({
+    assumptionKey: 'special_requirements',
+    question: 'Any additional schema-relevant constraints I should apply?',
+    assumedValue: 'none',
+    reason: 'Captures any remaining user constraints before generation.'
+  });
+
+  return steps;
+}
+
+function extractSchemaMeta(schema) {
+  const defs = schema?.$defs || {};
+  const groupProps = defs?.WorkloadSpecGroup?.properties || {};
+  const operations = Object.keys(groupProps).filter((k) => k !== 'character_set' && k !== 'sorted');
+  const hasSorted = Boolean(groupProps.sorted);
+
+  const characterSets = Array.isArray(defs?.CharacterSet?.enum)
+    ? defs.CharacterSet.enum.map((v) => String(v))
+    : ['alphanumeric', 'alphabetic', 'numeric'];
+
+  const stringExprTypes = Array.isArray(defs?.StringExprInner?.oneOf)
+    ? defs.StringExprInner.oneOf
+        .map((variant) => Object.keys(variant?.properties || {})[0])
+        .filter(Boolean)
+    : ['uniform', 'weighted', 'segmented', 'hot_range'];
+
+  const distributionTypes = Array.isArray(defs?.Distribution?.oneOf)
+    ? defs.Distribution.oneOf
+        .map((variant) => {
+          const name = Object.keys(variant?.properties || {})[0];
+          const params = variant?.properties?.[name]?.properties
+            ? Object.keys(variant.properties[name].properties)
+            : [];
+          return name ? { name, params } : null;
+        })
+        .filter(Boolean)
+    : [];
+
+  const rangeFormats = Array.isArray(defs?.RangeFormat?.oneOf)
+    ? defs.RangeFormat.oneOf
+        .map((v) => v?.const)
+        .filter((v) => typeof v === 'string')
+    : [];
+
+  return { operations, characterSets, stringExprTypes, distributionTypes, rangeFormats, hasSorted };
+}
+
+function buildDistributionHelp(meta) {
+  if (!meta.distributionTypes.length) {
+    return '';
+  }
+  const lines = meta.distributionTypes.map((d) => {
+    const defaults = distributionDefaults(d.name);
+    const orderedParams = orderDistributionParams(d.params);
+    const rendered = orderedParams.map((p) => {
+      const v = defaults[p];
+      return v !== undefined ? `${p}=${v}` : p;
+    });
+    return `- ${d.name}(${rendered.join(', ')})`;
+  });
+  return `Valid distribution types from schema:\n${lines.join('\n')}`;
+}
+
+function orderDistributionParams(params) {
+  const priority = ['min', 'max', 'mean', 'std_dev', 'alpha', 'beta', 'n', 's', 'lambda', 'scale', 'shape'];
+  return [...params].sort((a, b) => {
+    const ai = priority.indexOf(a);
+    const bi = priority.indexOf(b);
+    if (ai === -1 && bi === -1) return a.localeCompare(b);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+}
+
+function distributionDefaults(name) {
+  const byName = {
+    uniform: { min: 0, max: 1 },
+    normal: { mean: 0.5, std_dev: 0.15 },
+    beta: { alpha: 0.1, beta: 5 },
+    zipf: { n: 1000000, s: 1.5 },
+    exponential: { lambda: 1.0 },
+    log_normal: { mean: 0.5, std_dev: 0.2 },
+    poisson: { lambda: 10 },
+    weibull: { scale: 1.0, shape: 2.0 },
+    pareto: { scale: 1.0, shape: 2.0 }
+  };
+  return byName[name] || {};
+}
+
+function getOperationFieldInfo(schema, op, meta) {
+  const defs = schema?.$defs || {};
+  const groupProps = defs?.WorkloadSpecGroup?.properties || {};
+  const opProp = groupProps?.[op];
+  const opSchema = resolveOperationSchema(opProp, defs);
+  if (!opSchema || typeof opSchema !== 'object') {
+    return [];
+  }
+
+  const fields = [];
+  const required = Array.isArray(opSchema.required) ? opSchema.required : [];
+  const props = opSchema.properties || {};
+  const candidateNames = [...new Set([...required, ...Object.keys(props)])];
+
+  for (const name of candidateNames) {
+    if (name === 'character_set') {
+      continue;
+    }
+    const fieldSchema = props[name];
+    fields.push({
+      name,
+      defaultValue: inferDefaultFromField(name, fieldSchema, meta),
+      reason: inferReasonForField(name),
+      extra: inferExtraForField(name, meta)
+    });
+  }
+
+  return fields;
+}
+
+function resolveOperationSchema(opProp, defs) {
+  if (!opProp) {
+    return null;
+  }
+  const variants = [];
+  if (opProp.$ref) {
+    variants.push(resolveRef(opProp.$ref, defs));
+  }
+  if (Array.isArray(opProp.anyOf)) {
+    for (const item of opProp.anyOf) {
+      if (item.$ref) {
+        variants.push(resolveRef(item.$ref, defs));
+      } else if (item.type !== 'null') {
+        variants.push(item);
+      }
+    }
+  }
+  return variants.find((v) => v && typeof v === 'object' && v.type === 'object') || null;
+}
+
+function resolveRef(ref, defs) {
+  const prefix = '#/$defs/';
+  if (typeof ref !== 'string' || !ref.startsWith(prefix)) {
+    return null;
+  }
+  const key = ref.slice(prefix.length);
+  return defs?.[key] || null;
+}
+
+function inferDefaultFromField(name, fieldSchema, meta) {
+  if (name === 'op_count') {
+    return 'constant(500000)';
+  }
+  if (name === 'selection') {
+    return 'uniform(min=0, max=1)';
+  }
+  if (name === 'selectivity') {
+    return 'uniform(min=0.001, max=0.1)';
+  }
+  if (name === 'range_format' && meta.rangeFormats.length) {
+    return meta.rangeFormats[0];
+  }
+  if (name === 'key') {
+    return 'uniform(len=20)';
+  }
+  if (name === 'val') {
+    return 'uniform(len=256)';
+  }
+  if (name === 'sorted') {
+    return 'none';
+  }
+  if (fieldSchema?.default !== undefined) {
+    return String(fieldSchema.default);
+  }
+  return 'use schema-compatible default';
+}
+
+function inferReasonForField(name) {
+  if (name === 'op_count') {
+    return 'Operation counts are required workload sizing inputs.';
+  }
+  if (name === 'selection') {
+    return 'Selection strategy controls which keys get targeted.';
+  }
+  if (name === 'selectivity') {
+    return 'Selectivity controls range width and scan impact.';
+  }
+  if (name === 'range_format') {
+    return 'Range format changes how ranges are interpreted.';
+  }
+  if (name === 'key' || name === 'val') {
+    return 'StringExpr fields define generated key/value shape.';
+  }
+  return 'This field is needed for schema-conformant generation.';
+}
+
+function inferExtraForField(name, meta) {
+  if (name === 'selection' || name === 'selectivity' || name === 'op_count') {
+    return buildDistributionHelp(meta);
+  }
+  if (name === 'key' || name === 'val') {
+    return `Valid StringExpr variants from schema: ${meta.stringExprTypes.join(', ')}`;
+  }
+  return '';
+}
+
 function parseOperationsAnswer(value) {
   const knownOps = [
     'inserts',
@@ -1044,51 +1141,6 @@ function parseOperationsAnswer(value) {
     return ['inserts', 'point_queries', 'point_deletes'];
   }
   return ['inserts', 'point_queries'];
-}
-
-function defaultOpCountForOperation(op) {
-  if (op === 'inserts') {
-    return 'constant(1000000)';
-  }
-  if (op === 'range_queries') {
-    return 'constant(500000)';
-  }
-  if (op === 'range_deletes') {
-    return 'constant(100000)';
-  }
-  return 'constant(500000)';
-}
-
-function defaultSelectionForOperation(op) {
-  if (op === 'point_queries' || op === 'updates' || op === 'merges') {
-    return 'beta(alpha=0.1, beta=5)';
-  }
-  return 'uniform(min=0, max=1)';
-}
-
-function defaultSelectivityForOperation(op) {
-  if (op === 'range_queries') {
-    return 'uniform(min=0.001, max=0.1)';
-  }
-  if (op === 'range_deletes') {
-    return 'uniform(min=0.005, max=0.1)';
-  }
-  return 'uniform(min=0, max=1)';
-}
-
-function requiresSelection(op) {
-  return [
-    'point_queries',
-    'point_deletes',
-    'updates',
-    'merges',
-    'range_queries',
-    'range_deletes'
-  ].includes(op);
-}
-
-function requiresSelectivity(op) {
-  return op === 'range_queries' || op === 'range_deletes';
 }
 
 function extractResponseText(result) {
