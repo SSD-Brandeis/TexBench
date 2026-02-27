@@ -913,32 +913,31 @@ async function handleChat(request, env) {
     }
 
     if (parsedSchema) {
-      const maxClarifications = Math.max(1, Number(env.AI_MAX_QUESTIONS || 20));
       const clarificationSteps = buildSchemaDrivenClarificationSteps(parsedSchema, resolvedClarifications);
-
-      for (const step of clarificationSteps) {
+      const unresolvedStep = clarificationSteps.find((step) => {
         const resolvedValue = resolvedClarifications[step.assumptionKey];
-        if (typeof resolvedValue !== 'string' || !resolvedValue.trim()) {
-          if (askedClarifications >= maxClarifications) {
-            break;
-          }
-          const questionNumber = askedClarifications + 1;
-          let responseText = `Clarification ${questionNumber}
+        return !(typeof resolvedValue === 'string' && resolvedValue.trim());
+      });
+
+      // Phase 1: exhaust all schema-derived clarification steps before any JSON generation.
+      if (unresolvedStep) {
+        const step = unresolvedStep;
+        const questionNumber = askedClarifications + 1;
+        let responseText = `Clarification ${questionNumber}
 Question: ${step.question}
 
 Assumption (if you skip): ${step.assumptionKey} = ${step.assumedValue}
 Why: ${step.reason}`;
-          if (step.extra) {
-            responseText += `\n\n${step.extra}`;
-          }
-          responseText += '\n\nReply with your value to override, or say "use assumption".';
-          return Response.json({
-            mode: 'question',
-            response: responseText,
-            questionKey: step.assumptionKey,
-            options: step.options || null
-          });
+        if (step.extra) {
+          responseText += `\n\n${step.extra}`;
         }
+        responseText += '\n\nReply with your value to override, or say "use assumption".';
+        return Response.json({
+          mode: 'question',
+          response: responseText,
+          questionKey: step.assumptionKey,
+          options: step.options || null
+        });
       }
     }
 
@@ -948,11 +947,12 @@ Why: ${step.reason}`;
 Rules:
 1. ALWAYS respond with valid JSON only - no explanations, no markdown, no text outside the JSON
 2. The JSON must conform to the provided response schema
-3. You MUST use the resolved clarifications exactly as provided in the "Resolved clarifications" message.
-4. Treat user replies after clarifying questions as overrides to assumptions.
-5. If the user says "use assumption" (or "use assumptions"), apply the assumption from the prior assistant clarification message.
-6. If the user asks for something that cannot be represented by the schema, return empty JSON object {} or the closest valid representation
-7. Never wrap the JSON in code blocks or markdown`
+3. This is Phase 2. Phase 1 has already collected all schema-derived clarifications.
+4. You MUST use the resolved clarifications exactly as provided in the "Resolved clarifications" message.
+5. Treat user replies after clarifying questions as overrides to assumptions.
+6. If the user says "use assumption" (or "use assumptions"), apply the assumption from the prior assistant clarification message.
+7. If the user asks for something that cannot be represented by the schema, return empty JSON object {} or the closest valid representation
+8. Never wrap the JSON in code blocks or markdown`
       : `You are a JSON generator. Given user requests, respond with valid JSON.
 
 Rules:
