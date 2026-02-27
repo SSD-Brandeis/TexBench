@@ -488,6 +488,8 @@ const HTML = `<!DOCTYPE html>
     let schema = null;
     let chatHistory = [];
     let currentQuestionKey = null;
+    let currentQuestionNumber = null;
+    let currentQuestionTotal = null;
     let selectedOperations = new Set();
 
     const s = "https://json-schema.org/draft/2020-12/schema";
@@ -612,14 +614,6 @@ const HTML = `<!DOCTYPE html>
     schemaInput.value = JSON.stringify(defaultSchema, null, 2);
     validateSchema();
 
-    function debounce(fn, ms) {
-      let timeout;
-      return function(...args) {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => fn.apply(this, args), ms);
-      };
-    }
-
     function validateSchema() {
       const value = schemaInput.value.trim();
       if (!value) {
@@ -657,10 +651,28 @@ const HTML = `<!DOCTYPE html>
       const message = getCurrentAnswer();
       if (!message) return;
 
+      const previousQuestionKey = currentQuestionKey;
+      const previousQuestionNumber = currentQuestionNumber;
+      const previousQuestionTotal = currentQuestionTotal;
+      const generationTransitionNotice = 'Phase 2 complete. Moving to Phase 3: final JSON generation.';
+      const answeredLastClarification = Boolean(previousQuestionKey) && (
+        previousQuestionKey === 'special_requirements' ||
+        (
+          Number.isInteger(previousQuestionNumber) &&
+          Number.isInteger(previousQuestionTotal) &&
+          previousQuestionNumber >= previousQuestionTotal
+        )
+      );
+
       chatInput.value = '';
       addMessage(message, 'user');
       chatHistory.push({ role: 'user', content: message });
       clearAnswerOptions();
+
+      if (answeredLastClarification) {
+        addMessage(generationTransitionNotice, 'assistant');
+        chatHistory.push({ role: 'assistant', content: generationTransitionNotice });
+      }
 
       const loading = addMessage('Thinking...', 'assistant', true);
 
@@ -686,10 +698,21 @@ const HTML = `<!DOCTYPE html>
         if (data.error) {
           addMessage(data.error, 'error');
         } else {
+          const isDuplicateGenerationTransition = answeredLastClarification &&
+            data.phaseNotice === generationTransitionNotice;
+          if (data.phaseNotice && !isDuplicateGenerationTransition) {
+            addMessage(data.phaseNotice, 'assistant');
+            chatHistory.push({ role: 'assistant', content: data.phaseNotice });
+          }
           if (data.mode === 'question') {
             addMessage(data.response, 'assistant');
             chatHistory.push({ role: 'assistant', content: data.response });
-            setAnswerOptions(data.options || null, data.questionKey || null);
+            setAnswerOptions(
+              data.options || null,
+              data.questionKey || null,
+              data.questionNumber ?? null,
+              data.totalQuestions ?? null
+            );
             return;
           }
 
@@ -704,7 +727,7 @@ const HTML = `<!DOCTYPE html>
 
           try {
             const json = JSON.parse(data.response);
-            renderGeneratedJson(json);
+            renderGeneratedJson(removeSectionsWrapper(json));
             validationResult.className = 'validation-result';
           } catch (e) {
             sectionViewer.classList.remove('show');
@@ -734,76 +757,23 @@ const HTML = `<!DOCTYPE html>
       return div;
     }
 
+    function removeSectionsWrapper(json) {
+      if (!json || typeof json !== 'object' || Array.isArray(json)) {
+        return json;
+      }
+      if (Array.isArray(json.sections)) {
+        return json.sections;
+      }
+      return json;
+    }
+
     function renderGeneratedJson(json) {
       const pretty = JSON.stringify(json, null, 2);
       jsonOutput.value = pretty;
-
-      if (!json || typeof json !== 'object') {
-        sectionViewer.classList.remove('show');
-        sectionViewer.innerHTML = '';
-        sectionHint.style.display = 'none';
-        jsonOutput.style.display = 'block';
-        return;
-      }
-
+      sectionViewer.classList.remove('show');
       sectionViewer.innerHTML = '';
-      if (Array.isArray(json.sections)) {
-        json.sections.forEach((section, index) => {
-          const item = document.createElement('div');
-          item.className = 'section-item' + (index === 0 ? ' open' : '');
-
-          const header = document.createElement('button');
-          header.type = 'button';
-          header.className = 'section-header';
-          const groups = Array.isArray(section?.groups) ? section.groups.length : 0;
-          header.textContent = 'Section ' + (index + 1) + ' (' + groups + ' group' + (groups === 1 ? '' : 's') + ')';
-
-          const body = document.createElement('div');
-          body.className = 'section-body';
-          const pre = document.createElement('pre');
-          pre.textContent = JSON.stringify(section, null, 2);
-
-          header.addEventListener('click', () => {
-            item.classList.toggle('open');
-          });
-
-          body.appendChild(pre);
-          item.appendChild(header);
-          item.appendChild(body);
-          sectionViewer.appendChild(item);
-        });
-        sectionHint.textContent = 'Click a section header to expand/collapse.';
-      } else {
-        const keys = Object.keys(json);
-        keys.forEach((key, index) => {
-          const item = document.createElement('div');
-          item.className = 'section-item' + (index === 0 ? ' open' : '');
-
-          const header = document.createElement('button');
-          header.type = 'button';
-          header.className = 'section-header';
-          header.textContent = key;
-
-          const body = document.createElement('div');
-          body.className = 'section-body';
-          const pre = document.createElement('pre');
-          pre.textContent = JSON.stringify(json[key], null, 2);
-
-          header.addEventListener('click', () => {
-            item.classList.toggle('open');
-          });
-
-          body.appendChild(pre);
-          item.appendChild(header);
-          item.appendChild(body);
-          sectionViewer.appendChild(item);
-        });
-        sectionHint.textContent = 'Click a key header to expand/collapse.';
-      }
-
-      sectionViewer.classList.add('show');
-      sectionHint.style.display = 'block';
-      jsonOutput.style.display = 'none';
+      sectionHint.style.display = 'none';
+      jsonOutput.style.display = 'block';
     }
 
     function getCurrentAnswer() {
@@ -832,10 +802,12 @@ const HTML = `<!DOCTYPE html>
       return selected.trim();
     }
 
-    function setAnswerOptions(options, questionKey) {
+    function setAnswerOptions(options, questionKey, questionNumber, totalQuestions) {
       currentQuestionKey = questionKey || null;
+      currentQuestionNumber = Number.isInteger(questionNumber) ? questionNumber : null;
+      currentQuestionTotal = Number.isInteger(totalQuestions) ? totalQuestions : null;
       if (!Array.isArray(options) || options.length === 0) {
-        clearAnswerOptions();
+        hideAnswerOptionControls();
         return;
       }
       if (currentQuestionKey === 'operations') {
@@ -917,6 +889,15 @@ const HTML = `<!DOCTYPE html>
 
     function clearAnswerOptions() {
       currentQuestionKey = null;
+      currentQuestionNumber = null;
+      currentQuestionTotal = null;
+      hideAnswerOptionControls();
+      if (!chatInput.value) {
+        chatInput.placeholder = 'e.g., Create a user profile with name, email, and age...';
+      }
+    }
+
+    function hideAnswerOptionControls() {
       answerControls.classList.remove('show');
       answerSelect.innerHTML = '';
       operationControls.classList.remove('show');
@@ -924,9 +905,6 @@ const HTML = `<!DOCTYPE html>
       selectedOperations = new Set();
       if (chatInput.disabled) {
         chatInput.disabled = false;
-      }
-      if (!chatInput.value) {
-        chatInput.placeholder = 'e.g., Create a user profile with name, email, and age...';
       }
     }
 
@@ -954,6 +932,18 @@ const HTML = `<!DOCTYPE html>
         (key.startsWith('op_count_') || key.startsWith('selection_') || key.startsWith('selectivity_'));
     }
 
+    function toSchemaValidationShape(json, schemaDoc) {
+      if (!Array.isArray(json)) {
+        return json;
+      }
+      const properties = schemaDoc && typeof schemaDoc === 'object' ? schemaDoc.properties : null;
+      const required = Array.isArray(schemaDoc?.required) ? schemaDoc.required : [];
+      if (properties && properties.sections && required.includes('sections')) {
+        return { sections: json };
+      }
+      return json;
+    }
+
     copyBtn.addEventListener('click', () => {
       const text = jsonOutput.value;
       if (!text) return;
@@ -975,7 +965,7 @@ const HTML = `<!DOCTYPE html>
         const { default: Ajv2020 } = await import('https://esm.sh/ajv@8.17.1/dist/2020?bundle');
         const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false });
         const validate = ajv.compile(schema);
-        const valid = validate(json);
+        const valid = validate(toSchemaValidationShape(json, schema));
         if (valid) {
           validationResult.textContent = 'Valid! JSON conforms to schema.';
           validationResult.className = 'validation-result show valid';
@@ -1028,13 +1018,10 @@ async function handleChat(request, env) {
     const fullConversation = (last && last.role === 'user' && last.content === message)
       ? safeHistory
       : [...safeHistory, { role: 'user', content: message }];
-    const resolvedClarifications = extractClarificationAnswers(fullConversation);
-    const conversation = fullConversation.slice(-20);
-    const askedClarifications = fullConversation.filter(
-      (m) => m.role === 'assistant' &&
-        typeof m.content === 'string' &&
-        m.content.startsWith('Clarification ')
-    ).length;
+    let activeConversation = fullConversation;
+    let cycleRequest = extractInitialUserRequest(fullConversation);
+    let resolvedClarifications = {};
+    let askedClarifications = 0;
 
     const ai = env.AI;
     const modelName = env.AI_NAME || '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
@@ -1047,8 +1034,8 @@ async function handleChat(request, env) {
     }
 
     const aiInputBase = {
-      max_tokens: 1600,
-      temperature: 0.3
+      max_tokens: 1200,
+      temperature: 0.1
     };
 
     let parsedSchema = null;
@@ -1065,13 +1052,38 @@ async function handleChat(request, env) {
     }
 
     if (parsedSchema) {
-      const clarificationSteps = buildSchemaDrivenClarificationSteps(parsedSchema, resolvedClarifications);
-      const unresolvedStep = clarificationSteps.find((step) => {
+      const planIndex = findLastAssistantIndex(fullConversation, (content) => content.startsWith('Plan Phase'));
+      const generatedIndex = findLastAssistantIndex(fullConversation, (content) => content === '[JSON generated]');
+      const hasActivePlan = planIndex !== -1 && planIndex > generatedIndex;
+
+      const clarificationSteps = buildSchemaDrivenClarificationSteps(parsedSchema, {});
+
+      // Phase 1a: plan pass. List all schema-derived questions first.
+      if (!hasActivePlan) {
+        return Response.json({
+          mode: 'question',
+          phaseNotice: 'Phase 1 started: planning all schema-derived questions.',
+          response: formatPlanPhaseMessage(clarificationSteps)
+        });
+      }
+
+      // Active question cycle starts after the latest plan message.
+      activeConversation = fullConversation.slice(planIndex + 1);
+      cycleRequest = extractRequestForPlan(fullConversation, planIndex);
+      resolvedClarifications = extractClarificationAnswers(activeConversation);
+      askedClarifications = activeConversation.filter(
+        (m) => m.role === 'assistant' &&
+          typeof m.content === 'string' &&
+          m.content.startsWith('Clarification ')
+      ).length;
+
+      const runtimeClarificationSteps = buildSchemaDrivenClarificationSteps(parsedSchema, resolvedClarifications);
+      const unresolvedStep = runtimeClarificationSteps.find((step) => {
         const resolvedValue = resolvedClarifications[step.assumptionKey];
         return !(typeof resolvedValue === 'string' && resolvedValue.trim());
       });
 
-      // Phase 1: exhaust all schema-derived clarification steps before any JSON generation.
+      // Phase 1b: ask each planned question one at a time.
       if (unresolvedStep) {
         const step = unresolvedStep;
         const questionNumber = askedClarifications + 1;
@@ -1086,8 +1098,13 @@ Why: ${step.reason}`;
         responseText += '\n\nReply with your value to override, or say "use assumption".';
         return Response.json({
           mode: 'question',
+          phaseNotice: askedClarifications === 0
+            ? 'Phase 1 complete. Moving to Phase 2: clarification Q&A.'
+            : null,
           response: responseText,
           questionKey: step.assumptionKey,
+          questionNumber,
+          totalQuestions: runtimeClarificationSteps.length,
           options: step.options || null
         });
       }
@@ -1099,7 +1116,7 @@ Why: ${step.reason}`;
 Rules:
 1. ALWAYS respond with valid JSON only - no explanations, no markdown, no text outside the JSON
 2. The JSON must conform to the provided response schema
-3. This is Phase 2. Phase 1 has already collected all schema-derived clarifications.
+3. This is Phase 3. Phase 1 planned clarifications and Phase 2 collected all answers.
 4. You MUST use the resolved clarifications exactly as provided in the "Resolved clarifications" message.
 5. Treat user replies after clarifying questions as overrides to assumptions.
 6. If the user says "use assumption" (or "use assumptions"), apply the assumption from the prior assistant clarification message.
@@ -1121,7 +1138,10 @@ Rules:
             content: `Resolved clarifications (apply these values when building JSON): ${JSON.stringify(resolvedClarifications)}`
           }]
         : []),
-      ...conversation
+      {
+        role: 'user',
+        content: `Original request: ${cycleRequest}`
+      }
     ];
 
     let attemptMessages = baseGenerationMessages;
@@ -1141,8 +1161,15 @@ Rules:
       try {
         const parsedJson = JSON.parse(responseText);
 
-        const normalizedJson = applyResolvedConstantsToOpCounts(parsedJson, resolvedClarifications);
-        return Response.json({ mode: 'json', response: JSON.stringify(normalizedJson, null, 2) });
+        const withNormalizedOpCounts = applyResolvedConstantsToOpCounts(parsedJson, resolvedClarifications);
+        const normalizedJson = applyResolvedSectionCount(withNormalizedOpCounts, resolvedClarifications);
+        return Response.json({
+          mode: 'json',
+          phaseNotice: parsedSchema
+            ? 'Phase 2 complete. Moving to Phase 3: final JSON generation.'
+            : null,
+          response: JSON.stringify(normalizedJson, null, 2)
+        });
       } catch {
         lastError = 'Model returned invalid JSON. Regenerating once more.';
         if (attempt < maxAttempts) {
@@ -1156,6 +1183,16 @@ Rules:
           continue;
         }
       }
+    }
+
+    if (parsedSchema) {
+      const fallback = buildFallbackJsonFromClarifications(parsedSchema, resolvedClarifications);
+      const normalizedFallback = applyResolvedSectionCount(fallback, resolvedClarifications);
+      return Response.json({
+        mode: 'json',
+        phaseNotice: 'Phase 2 complete. Moving to Phase 3: final JSON generation (fallback path).',
+        response: JSON.stringify(normalizedFallback, null, 2)
+      });
     }
 
     return Response.json(
@@ -1203,6 +1240,30 @@ function extractClarificationAnswers(conversation) {
   return resolved;
 }
 
+function findLastAssistantIndex(conversation, predicate) {
+  for (let i = (conversation || []).length - 1; i >= 0; i -= 1) {
+    const msg = conversation[i];
+    if (!msg || msg.role !== 'assistant' || typeof msg.content !== 'string') {
+      continue;
+    }
+    if (predicate(msg.content)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function formatPlanPhaseMessage(steps) {
+  const lines = (steps || []).map((step, idx) => `${idx + 1}. ${step.question}`);
+  return `Plan Phase
+I read the schema and prepared the full question plan before generation.
+
+Questions I will ask next:
+${lines.join('\n')}
+
+Next: I will ask these one by one, collect your answers/overrides, then generate final JSON using the schema + all collected answers.`;
+}
+
 function applyResolvedConstantsToOpCounts(jsonDoc, resolvedClarifications) {
   const constantsByOp = {};
   for (const [key, value] of Object.entries(resolvedClarifications || {})) {
@@ -1238,6 +1299,128 @@ function applyResolvedConstantsToOpCounts(jsonDoc, resolvedClarifications) {
   }
 
   return jsonDoc;
+}
+
+function applyResolvedSectionCount(jsonDoc, resolvedClarifications) {
+  const targetCount = parseResolvedSectionCount(resolvedClarifications?.sections_count);
+  if (!targetCount || !jsonDoc || typeof jsonDoc !== 'object' || Array.isArray(jsonDoc)) {
+    return jsonDoc;
+  }
+
+  if (!Array.isArray(jsonDoc.sections)) {
+    return jsonDoc;
+  }
+
+  if (jsonDoc.sections.length === targetCount) {
+    return jsonDoc;
+  }
+
+  if (jsonDoc.sections.length > targetCount) {
+    jsonDoc.sections = jsonDoc.sections.slice(0, targetCount);
+    return jsonDoc;
+  }
+
+  if (jsonDoc.sections.length === 0) {
+    jsonDoc.sections = Array.from({ length: targetCount }, () => ({ groups: [{}] }));
+    return jsonDoc;
+  }
+
+  const template = clonePlainJson(jsonDoc.sections[jsonDoc.sections.length - 1]) || { groups: [{}] };
+  while (jsonDoc.sections.length < targetCount) {
+    jsonDoc.sections.push(clonePlainJson(template));
+  }
+  return jsonDoc;
+}
+
+function parseResolvedSectionCount(rawValue) {
+  const parsed = parseInt(String(rawValue || '').trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return null;
+  }
+  return Math.min(parsed, 50);
+}
+
+function clonePlainJson(value) {
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+}
+
+function extractInitialUserRequest(conversation) {
+  const firstUser = (conversation || []).find((m) => m && m.role === 'user' && typeof m.content === 'string' && m.content.trim());
+  return firstUser ? firstUser.content.trim() : 'Generate a valid JSON document.';
+}
+
+function extractRequestForPlan(conversation, planIndex) {
+  if (!Array.isArray(conversation) || typeof planIndex !== 'number') {
+    return extractInitialUserRequest(conversation);
+  }
+
+  for (let i = Math.min(planIndex - 1, conversation.length - 1); i >= 0; i -= 1) {
+    const msg = conversation[i];
+    if (msg && msg.role === 'user' && typeof msg.content === 'string' && msg.content.trim()) {
+      return msg.content.trim();
+    }
+  }
+
+  return extractInitialUserRequest(conversation);
+}
+
+function buildFallbackJsonFromClarifications(schema, resolvedClarifications) {
+  const meta = extractSchemaMeta(schema);
+  const ops = parseOperationsAnswer(resolvedClarifications.operations || 'inserts + point_queries');
+  const sectionsCount = Math.max(1, Math.min(10, parseInt(String(resolvedClarifications.sections_count || '1'), 10) || 1));
+  const rangeFormat = meta.rangeFormats[0] || 'StartCount';
+  const characterSet = resolvedClarifications.character_set || (meta.characterSets[0] || 'alphanumeric');
+
+  const sections = [];
+  for (let i = 0; i < sectionsCount; i += 1) {
+    const group = {};
+    for (const op of ops) {
+      const opSchema = resolveOperationSchema((schema?.$defs?.WorkloadSpecGroup?.properties || {})[op], schema?.$defs || {});
+      if (!opSchema) continue;
+      const required = Array.isArray(opSchema.required) ? opSchema.required : [];
+      const opObj = {};
+      for (const field of required) {
+        if (field === 'op_count') {
+          opObj.op_count = inferFallbackOpCount(resolvedClarifications[`op_count_${op}`]);
+        } else if (field === 'key') {
+          opObj.key = 'key';
+        } else if (field === 'val') {
+          opObj.val = 'value';
+        } else if (field === 'selectivity') {
+          opObj.selectivity = 0.1;
+        } else if (field === 'selection') {
+          opObj.selection = { uniform: { min: 0, max: 1 } };
+        } else if (field === 'range_format') {
+          opObj.range_format = rangeFormat;
+        }
+      }
+      group[op] = opObj;
+    }
+    sections.push({ groups: [group] });
+  }
+
+  return {
+    $schema: schema?.$schema || 'https://json-schema.org/draft/2020-12/schema',
+    character_set: characterSet,
+    sections
+  };
+}
+
+function inferFallbackOpCount(answer) {
+  if (typeof answer === 'string') {
+    const constant = answer.trim().match(/^constant\(\s*([-+]?\d*\.?\d+(?:e[-+]?\d+)?)\s*\)$/i);
+    if (constant) {
+      const parsed = Number(constant[1]);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    const numeric = Number(answer.trim());
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return 500000;
 }
 
 function buildSchemaDrivenClarificationSteps(schema, resolvedClarifications) {
@@ -1581,8 +1764,24 @@ function parseOperationsAnswer(value) {
   if (!value || typeof value !== 'string') {
     return ['inserts', 'point_queries'];
   }
-  const normalized = value.toLowerCase();
+  const normalized = value.toLowerCase().replace(/[-\s]+/g, '_');
+  const aliasPatterns = [
+    { op: 'inserts', re: /\binsert(s)?\b/ },
+    { op: 'updates', re: /\bupdate(s)?\b/ },
+    { op: 'point_queries', re: /\bpoint_?quer(y|ies)\b/ },
+    { op: 'range_queries', re: /\brange_?quer(y|ies)\b/ },
+    { op: 'point_deletes', re: /\bpoint_?delete(s)?\b/ },
+    { op: 'range_deletes', re: /\brange_?delete(s)?\b/ },
+    { op: 'empty_point_queries', re: /\bempty_?point_?quer(y|ies)\b/ },
+    { op: 'empty_point_deletes', re: /\bempty_?point_?delete(s)?\b/ },
+    { op: 'merges', re: /\bmerge(s)?\b/ }
+  ];
   const picked = knownOps.filter((op) => normalized.includes(op));
+  for (const alias of aliasPatterns) {
+    if (alias.re.test(normalized) && !picked.includes(alias.op)) {
+      picked.push(alias.op);
+    }
+  }
   if (picked.length) {
     return picked;
   }
