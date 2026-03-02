@@ -1724,7 +1724,7 @@ function buildSchemaDrivenClarificationSteps(schema, resolvedClarifications) {
   if (meta.characterSets.length) {
     steps.push({
       assumptionKey: 'character_set',
-      question: `Which character_set should keys use (${meta.characterSets.join(', ')})?`,
+      question: `What character set should generated keys use (${meta.characterSets.join(', ')})?`,
       assumedValue: meta.characterSets.includes('alphanumeric') ? 'alphanumeric' : meta.characterSets[0],
       reason: 'This enum comes directly from schema character set choices.',
       options: meta.characterSets,
@@ -1751,7 +1751,7 @@ function buildSchemaDrivenClarificationSteps(schema, resolvedClarifications) {
   // Optional gate: if user says "no", runtime skips all optional questions.
   steps.push({
     assumptionKey: 'configure_optional_fields',
-    question: 'Do you want to configure optional fields and variants?',
+    question: 'Do you want to tune advanced behavior, or keep defaults for everything optional?',
     assumedValue: 'no',
     reason: 'Skipping optional configuration moves directly to generation using defaults.',
     options: ['no', 'yes'],
@@ -1769,7 +1769,7 @@ function buildSchemaDrivenClarificationSteps(schema, resolvedClarifications) {
     if (meta.hasSorted) {
       steps.push({
         assumptionKey: 'sorted_settings',
-        question: 'Do you want sorted insert behavior (sorted.k and sorted.l)?',
+        question: 'Do you want to configure near-sorted insert behavior, or keep default insert ordering?',
         assumedValue: 'none',
         reason: 'Schema includes an optional sorted tuning block.',
         questionType: 'optional'
@@ -1778,7 +1778,7 @@ function buildSchemaDrivenClarificationSteps(schema, resolvedClarifications) {
 
     steps.push({
       assumptionKey: 'special_requirements',
-      question: 'Any additional schema-relevant constraints I should apply?',
+      question: 'Any additional workload goals I should apply (for example: hot ranges, phase shifts, or stricter limits)?',
       assumedValue: 'none',
       reason: 'Captures remaining optional constraints before generation.',
       questionType: 'optional'
@@ -1907,9 +1907,9 @@ function getOperationFieldInfo(schema, op, meta, resolvedClarifications, isPlann
       const includeByDefault = optionalIncludeDefaultForField(name);
       steps.push({
         assumptionKey: includeKey,
-        question: `Should optional field ${op}.${name} be included?`,
+        question: buildOptionalIncludeQuestion(op, name),
         assumedValue: includeByDefault ? 'yes' : 'no',
-        reason: 'This field is optional in the schema and can be omitted.',
+        reason: inferOptionalIncludeReason(name),
         options: ['yes', 'no'],
         questionType: 'optional'
       });
@@ -1929,9 +1929,9 @@ function getOperationFieldInfo(schema, op, meta, resolvedClarifications, isPlann
       const defaultVariant = inferDefaultVariantForField(name, variants);
       steps.push({
         assumptionKey: variantKey,
-        question: `Which variant should ${op}.${name} use (${variants.join(', ')})?`,
+        question: buildVariantQuestion(op, name, variants),
         assumedValue: defaultVariant,
-        reason: 'This field supports multiple schema variants and needs an explicit choice.',
+        reason: inferVariantReason(name),
         options: variants,
         questionType
       });
@@ -1946,7 +1946,7 @@ function getOperationFieldInfo(schema, op, meta, resolvedClarifications, isPlann
 
     steps.push({
       assumptionKey: suffix,
-      question: `How should ${op}.${name} be set?`,
+      question: buildValueQuestion(op, name),
       assumedValue: inferDefaultFromField(
         name,
         fieldSchema,
@@ -2020,6 +2020,104 @@ function resolveBooleanChoice(value, fallback) {
     return false;
   }
   return Boolean(fallback);
+}
+
+function operationDisplayName(op) {
+  const labels = {
+    inserts: 'inserts',
+    updates: 'updates',
+    merges: 'read-modify-writes',
+    point_queries: 'point queries',
+    range_queries: 'range queries',
+    point_deletes: 'point deletes',
+    range_deletes: 'range deletes',
+    empty_point_queries: 'empty point queries',
+    empty_point_deletes: 'empty point deletes'
+  };
+  return labels[op] || op.replace(/_/g, ' ');
+}
+
+function buildOptionalIncludeQuestion(op, fieldName) {
+  const opLabel = operationDisplayName(op);
+  if (fieldName === 'selection') {
+    return `For ${opLabel}, do you want to control which keys are targeted, or keep default targeting?`;
+  }
+  if (fieldName === 'range_format') {
+    return `For ${opLabel}, do you want to pick a specific range format, or use the default format?`;
+  }
+  if (fieldName === 'character_set') {
+    return `For ${opLabel}, do you want to override character set at operation level, or inherit the global character set?`;
+  }
+  return `For ${opLabel}, do you want to configure ${fieldName.replace(/_/g, ' ')} explicitly, or keep defaults?`;
+}
+
+function inferOptionalIncludeReason(fieldName) {
+  if (fieldName === 'selection') {
+    return 'This controls how keys are targeted during read/delete operations.';
+  }
+  if (fieldName === 'range_format') {
+    return 'This controls whether ranges are represented as StartCount or StartEnd.';
+  }
+  return 'This setting is optional and can be left at defaults.';
+}
+
+function buildVariantQuestion(op, fieldName, variants) {
+  const opLabel = operationDisplayName(op);
+  if (fieldName === 'op_count') {
+    return `For ${opLabel}, should the operation count be fixed or distribution-based (${variants.join(', ')})?`;
+  }
+  if (fieldName === 'key') {
+    return `What key pattern should ${opLabel} use (${variants.join(', ')})?`;
+  }
+  if (fieldName === 'val') {
+    return `What value pattern should ${opLabel} use (${variants.join(', ')})?`;
+  }
+  if (fieldName === 'selection') {
+    return `How should ${opLabel} choose keys (${variants.join(', ')})?`;
+  }
+  if (fieldName === 'selectivity') {
+    return `For ${opLabel}, should range width be fixed or distribution-based (${variants.join(', ')})?`;
+  }
+  return `For ${opLabel}, which style should ${fieldName.replace(/_/g, ' ')} use (${variants.join(', ')})?`;
+}
+
+function inferVariantReason(fieldName) {
+  if (fieldName === 'op_count') {
+    return 'Fixed counts are simpler; distributions model variability.';
+  }
+  if (fieldName === 'key' || fieldName === 'val') {
+    return 'Pattern choice changes key/value structure and skew behavior.';
+  }
+  if (fieldName === 'selection') {
+    return 'Selection choice controls hotspot and access-skew behavior.';
+  }
+  if (fieldName === 'selectivity') {
+    return 'This controls whether range width stays constant or varies.';
+  }
+  return 'This setting has multiple supported styles and needs one choice.';
+}
+
+function buildValueQuestion(op, fieldName) {
+  const opLabel = operationDisplayName(op);
+  if (fieldName === 'op_count') {
+    return `How many ${opLabel} should be generated?`;
+  }
+  if (fieldName === 'key') {
+    return `What should ${opLabel} keys look like?`;
+  }
+  if (fieldName === 'val') {
+    return `What should ${opLabel} values look like?`;
+  }
+  if (fieldName === 'selection') {
+    return `How should ${opLabel} target keys during execution?`;
+  }
+  if (fieldName === 'selectivity') {
+    return `What selectivity should ${opLabel} use?`;
+  }
+  if (fieldName === 'range_format') {
+    return `How should ${opLabel} ranges be represented (StartCount or StartEnd)?`;
+  }
+  return `How should ${opLabel} ${fieldName.replace(/_/g, ' ')} be configured?`;
 }
 
 function inferFieldVariants(name, fieldSchema, meta) {
