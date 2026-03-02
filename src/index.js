@@ -62,10 +62,6 @@ const HTML = `<!DOCTYPE html>
       font-size: 16px;
     }
     
-    header .btn {
-      margin-left: auto;
-    }
-    
     main {
       flex: 1;
       display: flex;
@@ -423,6 +419,11 @@ const HTML = `<!DOCTYPE html>
     const newWorkloadBtn = document.getElementById('newWorkloadBtn');
     const downloadLogBtn = document.getElementById('downloadLogBtn');
 
+    const DEFAULT_CHAT_PLACEHOLDER = 'e.g., Create a user profile with name, email, and age...';
+    const JSON_GENERATED_MARKER = '[JSON generated]';
+    const JSON_GENERATION_DONE_MESSAGE = 'JSON generation is done.';
+    const EMPTY_STATE_HTML = '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg><p>Describe what JSON you want to generate</p></div>';
+
     let schema = null;
     let chatHistory = [];
     let currentQuestionKey = null;
@@ -579,17 +580,21 @@ const HTML = `<!DOCTYPE html>
     downloadLogBtn.addEventListener('click', downloadChatLog);
     
     newWorkloadBtn.addEventListener('click', () => {
+      resetChatInterface();
+    });
+
+    function resetChatInterface() {
       chatHistory = [];
       currentQuestionKey = null;
       selectedOperations = new Set();
-      chatMessages.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg><p>Describe what JSON you want to generate</p></div>';
+      chatMessages.innerHTML = EMPTY_STATE_HTML;
       jsonOutput.value = '';
       validationResult.className = 'validation-result';
       hideAnswerOptionControls();
       chatInput.value = '';
-      chatInput.placeholder = 'e.g., Create a user profile with name, email, and age...';
+      chatInput.placeholder = DEFAULT_CHAT_PLACEHOLDER;
       chatInput.disabled = false;
-    });
+    }
 
     function downloadChatLog() {
       const payload = {
@@ -633,7 +638,7 @@ const HTML = `<!DOCTYPE html>
 
       chatInput.value = '';
       addMessage(message, 'user');
-      chatHistory.push({ role: 'user', content: message });
+      appendToHistory('user', message);
       clearAnswerOptions();
 
       const loading = addMessage('Thinking...', 'assistant', true);
@@ -661,22 +666,19 @@ const HTML = `<!DOCTYPE html>
           addMessage(data.error, 'error');
         } else {
           if (data.phaseNotice) {
-            addMessage(data.phaseNotice, 'assistant');
-            chatHistory.push({ role: 'assistant', content: data.phaseNotice });
+            addAssistantMessage(data.phaseNotice);
           }
           if (data.mode === 'question') {
-            addMessage(data.response, 'assistant');
-            chatHistory.push({ role: 'assistant', content: data.response });
+            addAssistantMessage(data.response);
             setAnswerOptions(data.options || null, data.questionKey || null);
             return;
           }
 
           if (data.mode === 'json') {
-            chatHistory.push({ role: 'assistant', content: '[JSON generated]' });
+            appendToHistory('assistant', JSON_GENERATED_MARKER);
             clearAnswerOptions();
           } else {
-            addMessage(data.response, 'assistant');
-            chatHistory.push({ role: 'assistant', content: data.response });
+            addAssistantMessage(data.response);
             clearAnswerOptions();
           }
 
@@ -685,9 +687,7 @@ const HTML = `<!DOCTYPE html>
             renderGeneratedJson(removeSectionsWrapper(json));
             validationResult.className = 'validation-result';
             if (data.mode === 'json') {
-              const completionMessage = 'JSON generation is done.';
-              addMessage(completionMessage, 'assistant');
-              chatHistory.push({ role: 'assistant', content: completionMessage });
+              addAssistantMessage(JSON_GENERATION_DONE_MESSAGE);
             }
           } catch (e) {
             jsonOutput.style.display = 'block';
@@ -714,6 +714,15 @@ const HTML = `<!DOCTYPE html>
       chatMessages.appendChild(div);
       chatMessages.scrollTop = chatMessages.scrollHeight;
       return div;
+    }
+
+    function appendToHistory(role, content) {
+      chatHistory.push({ role, content });
+    }
+
+    function addAssistantMessage(content) {
+      addMessage(content, 'assistant');
+      appendToHistory('assistant', content);
     }
 
     function removeSectionsWrapper(json) {
@@ -848,7 +857,7 @@ const HTML = `<!DOCTYPE html>
       currentQuestionKey = null;
       hideAnswerOptionControls();
       if (!chatInput.value) {
-        chatInput.placeholder = 'e.g., Create a user profile with name, email, and age...';
+        chatInput.placeholder = DEFAULT_CHAT_PLACEHOLDER;
       }
     }
 
@@ -905,6 +914,11 @@ const HTML = `<!DOCTYPE html>
       return json;
     }
 
+    function setValidationStatus(message, status) {
+      validationResult.textContent = message;
+      validationResult.className = 'validation-result show ' + status;
+    }
+
     copyBtn.addEventListener('click', () => {
       const text = jsonOutput.value;
       if (!text) return;
@@ -917,8 +931,7 @@ const HTML = `<!DOCTYPE html>
     validateBtn.addEventListener('click', async () => {
       const jsonText = jsonOutput.value.trim();
       if (!jsonText || !schema) {
-        validationResult.textContent = 'No JSON or schema to validate';
-        validationResult.className = 'validation-result show invalid';
+        setValidationStatus('No JSON or schema to validate', 'invalid');
         return;
       }
       try {
@@ -928,24 +941,26 @@ const HTML = `<!DOCTYPE html>
         const validate = ajv.compile(schema);
         const valid = validate(toSchemaValidationShape(json, schema));
         if (valid) {
-          validationResult.textContent = 'Valid! JSON conforms to schema.';
-          validationResult.className = 'validation-result show valid';
+          setValidationStatus('Valid! JSON conforms to schema.', 'valid');
         } else {
           const errors = (validate.errors || []).map((e) => {
             const path = e.instancePath || '/';
             return (path + ' ' + e.message).trim();
           }).join(', ');
-          validationResult.textContent = 'Invalid: ' + errors;
-          validationResult.className = 'validation-result show invalid';
+          setValidationStatus('Invalid: ' + errors, 'invalid');
         }
       } catch (e) {
-        validationResult.textContent = 'Parse error: ' + e.message;
-        validationResult.className = 'validation-result show invalid';
+        setValidationStatus('Parse error: ' + e.message, 'invalid');
       }
     });
   </script>
 </body>
 </html>`;
+
+const PLAN_PHASE_PREFIX = 'Plan Phase';
+const GENERATED_JSON_HISTORY_MARKER = '[JSON generated]';
+const PHASE1_START_NOTICE = 'Phase 1 started: planning all schema-derived questions.';
+const PHASE1_TO_PHASE2_NOTICE = 'Phase 1 complete. Moving to Phase 2: clarification Q&A.';
 
 export default {
   async fetch(request, env) {
@@ -965,6 +980,30 @@ export default {
   }
 };
 
+function buildConversationWithLatestMessage(history, message) {
+  const safeHistory = Array.isArray(history)
+    ? history.filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
+    : [];
+  const last = safeHistory[safeHistory.length - 1];
+  if (last && last.role === 'user' && last.content === message) {
+    return safeHistory;
+  }
+  return [...safeHistory, { role: 'user', content: message }];
+}
+
+function buildPhase3Notice(askedClarifications, isFallbackPath) {
+  const phase2Complete = askedClarifications > 0
+    ? 'Phase 2 complete. Moving to Phase 3: final JSON generation.'
+    : 'Phase 2 skipped (no missing clarifications). Moving to Phase 3: final JSON generation.';
+  if (!isFallbackPath) {
+    return phase2Complete;
+  }
+  if (askedClarifications > 0) {
+    return 'Phase 2 complete. Moving to Phase 3: final JSON generation (fallback path).';
+  }
+  return 'Phase 2 skipped (no missing clarifications). Moving to Phase 3: final JSON generation (fallback path).';
+}
+
 async function handleChat(request, env) {
   try {
     const { schema, message, history = [] } = await request.json();
@@ -973,17 +1012,7 @@ async function handleChat(request, env) {
       return Response.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    const safeHistory = history.filter(
-      (m) => m && (m.role === 'user' || m.role === 'assistant')
-    );
-    const last = safeHistory[safeHistory.length - 1];
-    const fullConversation = (
-      last &&
-      last.role === 'user' &&
-      last.content === message
-    )
-      ? safeHistory
-      : [...safeHistory, { role: 'user', content: message }];
+    const fullConversation = buildConversationWithLatestMessage(history, message);
     let activeConversation = fullConversation;
     let cycleRequest = extractInitialUserRequest(fullConversation);
     let resolvedClarifications = {};
@@ -1031,8 +1060,11 @@ async function handleChat(request, env) {
 
     if (parsedSchema) {
       let inferredClarifications = inferClarificationsFromRequest(cycleRequest, parsedSchema);
-      const planIndex = findLastAssistantIndex(fullConversation, (content) => content.startsWith('Plan Phase'));
-      const generatedIndex = findLastAssistantIndex(fullConversation, (content) => content === '[JSON generated]');
+      const planIndex = findLastAssistantIndex(fullConversation, (content) => content.startsWith(PLAN_PHASE_PREFIX));
+      const generatedIndex = findLastAssistantIndex(
+        fullConversation,
+        (content) => content === GENERATED_JSON_HISTORY_MARKER
+      );
       const hasActivePlan = planIndex !== -1 && planIndex > generatedIndex;
 
       const clarificationSteps = buildSchemaDrivenClarificationSteps(parsedSchema, inferredClarifications);
@@ -1045,7 +1077,7 @@ async function handleChat(request, env) {
       if (!hasActivePlan) {
         return Response.json({
           mode: 'question',
-          phaseNotice: 'Phase 1 started: planning all schema-derived questions.',
+          phaseNotice: PHASE1_START_NOTICE,
           response: formatPlanPhaseMessage(pendingPlanSteps)
         });
       }
@@ -1088,7 +1120,7 @@ Why: ${step.reason}`;
         return Response.json({
           mode: 'question',
           phaseNotice: askedClarifications === 0
-            ? 'Phase 1 complete. Moving to Phase 2: clarification Q&A.'
+            ? PHASE1_TO_PHASE2_NOTICE
             : null,
           response: responseText,
           questionKey: step.assumptionKey,
@@ -1166,11 +1198,7 @@ Rules:
         const normalizedJson = applyResolvedSectionCount(withNormalizedOpCounts, resolvedClarifications);
         return Response.json({
           mode: 'json',
-          phaseNotice: parsedSchema
-            ? (askedClarifications > 0
-                ? 'Phase 2 complete. Moving to Phase 3: final JSON generation.'
-                : 'Phase 2 skipped (no missing clarifications). Moving to Phase 3: final JSON generation.')
-            : null,
+          phaseNotice: parsedSchema ? buildPhase3Notice(askedClarifications, false) : null,
           response: JSON.stringify(normalizedJson, null, 2)
         });
       } catch {
@@ -1193,9 +1221,7 @@ Rules:
       const normalizedFallback = applyResolvedSectionCount(fallback, resolvedClarifications);
       return Response.json({
         mode: 'json',
-        phaseNotice: askedClarifications > 0
-          ? 'Phase 2 complete. Moving to Phase 3: final JSON generation (fallback path).'
-          : 'Phase 2 skipped (no missing clarifications). Moving to Phase 3: final JSON generation (fallback path).',
+        phaseNotice: buildPhase3Notice(askedClarifications, true),
         response: JSON.stringify(normalizedFallback, null, 2)
       });
     }
