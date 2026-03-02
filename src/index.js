@@ -1428,12 +1428,10 @@ function inferClarificationsFromRequest(requestText, schema) {
   if (hintedOps.length) {
     for (const op of hintedOps) {
       if (sizeHints.keyLen !== null && OPS_WITH_KEY_FIELDS.has(op)) {
-        inferred[`variant_key_${op}`] = 'uniform';
-        inferred[`key_${op}`] = `uniform(len=${sizeHints.keyLen})`;
+        inferred[`hint_key_len_${op}`] = String(sizeHints.keyLen);
       }
       if (sizeHints.valueLen !== null && OPS_WITH_VALUE_FIELDS.has(op)) {
-        inferred[`variant_val_${op}`] = 'uniform';
-        inferred[`val_${op}`] = `uniform(len=${sizeHints.valueLen})`;
+        inferred[`hint_val_len_${op}`] = String(sizeHints.valueLen);
       }
     }
   }
@@ -1949,10 +1947,24 @@ function getOperationFieldInfo(schema, op, meta, resolvedClarifications, isPlann
     steps.push({
       assumptionKey: suffix,
       question: `How should ${op}.${name} be set?`,
-      assumedValue: inferDefaultFromField(name, fieldSchema, meta, selectedVariant),
+      assumedValue: inferDefaultFromField(
+        name,
+        fieldSchema,
+        meta,
+        selectedVariant,
+        resolvedClarifications,
+        op
+      ),
       reason: inferReasonForField(name),
       extra: inferExtraForField(name, meta, selectedVariant),
-      options: inferOptionsForField(name, fieldSchema, meta, selectedVariant),
+      options: inferOptionsForField(
+        name,
+        fieldSchema,
+        meta,
+        selectedVariant,
+        resolvedClarifications,
+        op
+      ),
       questionType
     });
   }
@@ -2061,7 +2073,7 @@ function inferDefaultVariantForField(name, variants) {
   return variants[0];
 }
 
-function inferDefaultFromField(name, fieldSchema, meta, selectedVariant) {
+function inferDefaultFromField(name, fieldSchema, meta, selectedVariant, resolvedClarifications, op) {
   if (name === 'op_count') {
     if (selectedVariant === 'distribution') {
       return 'uniform(min=1, max=1000000)';
@@ -2084,12 +2096,20 @@ function inferDefaultFromField(name, fieldSchema, meta, selectedVariant) {
     return meta.rangeFormats[0];
   }
   if (name === 'key') {
+    const hintedLen = getHintedStringLength(resolvedClarifications, 'key', op);
+    if ((selectedVariant === null || selectedVariant === 'uniform') && hintedLen !== null) {
+      return `uniform(len=${hintedLen})`;
+    }
     if (selectedVariant) {
       return stringExprTemplate(selectedVariant, 'key');
     }
     return stringExprTemplate('uniform', 'key');
   }
   if (name === 'val') {
+    const hintedLen = getHintedStringLength(resolvedClarifications, 'val', op);
+    if ((selectedVariant === null || selectedVariant === 'uniform') && hintedLen !== null) {
+      return `uniform(len=${hintedLen})`;
+    }
     if (selectedVariant) {
       return stringExprTemplate(selectedVariant, 'val');
     }
@@ -2123,6 +2143,15 @@ function inferReasonForField(name) {
   return 'This field is needed for schema-conformant generation.';
 }
 
+function getHintedStringLength(resolvedClarifications, fieldName, op) {
+  const rawValue = resolvedClarifications?.[`hint_${fieldName}_len_${op}`];
+  const parsed = parseInt(String(rawValue || '').trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return null;
+  }
+  return Math.min(parsed, 10 * 1024 * 1024);
+}
+
 function inferExtraForField(name, meta, selectedVariant) {
   if (name === 'selection' || name === 'selectivity' || name === 'op_count') {
     if (selectedVariant === 'constant') {
@@ -2153,7 +2182,7 @@ ${meta.rangeFormats.slice(1).map((v) => `- ${v}`).join('\n')}`;
   return '';
 }
 
-function inferOptionsForField(name, fieldSchema, meta, selectedVariant) {
+function inferOptionsForField(name, fieldSchema, meta, selectedVariant, resolvedClarifications, op) {
   if (name === 'range_format' && meta.rangeFormats.length) {
     return meta.rangeFormats;
   }
@@ -2185,11 +2214,18 @@ function inferOptionsForField(name, fieldSchema, meta, selectedVariant) {
     return distributionTemplateOptions(meta, name, { includeConstant: false });
   }
   if (name === 'key' || name === 'val') {
+    const hintedLen = getHintedStringLength(resolvedClarifications, name, op);
     if (selectedVariant === 'literal') {
       return [name === 'key' ? 'key' : 'value'];
     }
     if (selectedVariant) {
+      if (selectedVariant === 'uniform' && hintedLen !== null) {
+        return [`uniform(len=${hintedLen})`];
+      }
       return [stringExprTemplate(selectedVariant, name)];
+    }
+    if (hintedLen !== null) {
+      return [`uniform(len=${hintedLen})`];
     }
     return [stringExprTemplate('uniform', name)];
   }
