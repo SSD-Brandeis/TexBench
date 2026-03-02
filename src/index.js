@@ -39,6 +39,12 @@ const HTML = `<!DOCTYPE html>
       border-bottom: 1px solid var(--border);
       background: var(--surface);
     }
+
+    .header-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+    }
     
     header h1 {
       font-size: 18px;
@@ -337,7 +343,10 @@ const HTML = `<!DOCTYPE html>
 <body>
   <header>
     <h1>Tectonic Workload Generator</h1>
-    <button class="btn btn-ghost" id="newWorkloadBtn">Clear Chat</button>
+    <div class="header-actions">
+      <button class="btn btn-ghost" id="downloadLogBtn">Download Log</button>
+      <button class="btn btn-ghost" id="newWorkloadBtn">Clear Chat</button>
+    </div>
   </header>
   <main>
     <div class="panel left-panel">
@@ -412,6 +421,7 @@ const HTML = `<!DOCTYPE html>
     const copyBtn = document.getElementById('copyBtn');
     const validationResult = document.getElementById('validationResult');
     const newWorkloadBtn = document.getElementById('newWorkloadBtn');
+    const downloadLogBtn = document.getElementById('downloadLogBtn');
 
     let schema = null;
     let chatHistory = [];
@@ -566,6 +576,7 @@ const HTML = `<!DOCTYPE html>
     }
 
     sendBtn.addEventListener('click', sendMessage);
+    downloadLogBtn.addEventListener('click', downloadChatLog);
     
     newWorkloadBtn.addEventListener('click', () => {
       chatHistory = [];
@@ -573,13 +584,41 @@ const HTML = `<!DOCTYPE html>
       selectedOperations = new Set();
       chatMessages.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg><p>Describe what JSON you want to generate</p></div>';
       jsonOutput.value = '';
-      jsonViewer.innerHTML = '';
       validationResult.className = 'validation-result';
       hideAnswerOptionControls();
       chatInput.value = '';
       chatInput.placeholder = 'e.g., Create a user profile with name, email, and age...';
       chatInput.disabled = false;
     });
+
+    function downloadChatLog() {
+      const payload = {
+        exported_at: new Date().toISOString(),
+        app: 'tectonic-json',
+        schema_status: schemaStatusText.textContent || '',
+        schema_text: schemaInput.value || '',
+        generated_json: jsonOutput.value || '',
+        validation_text: validationResult.textContent || '',
+        validation_class: validationResult.className || '',
+        current_question_key: currentQuestionKey || '',
+        selected_operations: [...selectedOperations],
+        chat_history: chatHistory
+      };
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json'
+      });
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = 'tectonic-chat-log-' + timestamp + '.json';
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
 
     chatInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -1392,9 +1431,7 @@ function extractRequestForPlan(conversation, planIndex) {
 }
 
 function inferClarificationsFromRequest(requestText, schema) {
-  const inferred = {
-    configure_optional_fields: 'no'
-  };
+  const inferred = {};
   if (typeof requestText !== 'string' || !requestText.trim()) {
     return inferred;
   }
@@ -1700,6 +1737,8 @@ function buildSchemaDrivenClarificationSteps(schema, resolvedClarifications) {
   const meta = extractSchemaMeta(schema);
   const isPlanning = Object.keys(resolved).length === 0;
   const configureOptional = resolveBooleanChoice(resolved.configure_optional_fields, false);
+  const optionalDecisionKnown = hasResolvedClarificationValue(resolved.configure_optional_fields);
+  const includeOptionalQuestions = !optionalDecisionKnown || configureOptional;
   const defaultOperationsAnswer = (
     meta.operations.includes('inserts') &&
     meta.operations.includes('point_queries')
@@ -1758,7 +1797,7 @@ function buildSchemaDrivenClarificationSteps(schema, resolvedClarifications) {
     questionType: 'mandatory'
   });
 
-  if (isPlanning || configureOptional) {
+  if (includeOptionalQuestions) {
     for (const op of selectedOps) {
       const opSteps = getOperationFieldInfo(schema, op, meta, resolved, isPlanning, 'optional');
       for (const step of opSteps) {
