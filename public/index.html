@@ -180,11 +180,10 @@
       gap: 4px;
       min-height: 62px;
       justify-content: center;
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      transition: box-shadow 0.2s ease;
     }
 
     .hud-card:hover {
-      transform: translateY(-1px);
       box-shadow: 0 8px 20px rgba(11, 30, 45, 0.08);
     }
 
@@ -237,6 +236,7 @@
       gap: 6px;
       font-size: 12px;
       color: var(--text-dim);
+      position: relative;
     }
 
     .field-row {
@@ -256,25 +256,35 @@
       font-family: inherit;
       font-size: 13px;
       outline: none;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
 
     .field input:focus,
     .field select:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
-      transform: translateY(-1px);
     }
 
     .field-description {
       font-size: 11px;
       line-height: 1.35;
-      color: #94a3b8;
+      color: #5f7284;
       white-space: pre-line;
-      max-height: 0;
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 4px);
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 8px 20px rgba(11, 30, 45, 0.08);
+      z-index: 30;
       opacity: 0;
-      overflow: hidden;
-      transition: max-height 0.2s ease, opacity 0.2s ease;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(-2px);
+      transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s ease;
     }
 
     .field-description:empty { display: none; }
@@ -284,11 +294,10 @@
     .fieldset:hover > .field-description,
     .fieldset:focus-within > .field-description,
     .checkbox-item:hover .field-description,
-    .checkbox-item:focus-within .field-description,
-    .op-config:hover .field-description,
-    .op-config:focus-within .field-description {
-      max-height: 160px;
+    .checkbox-item:focus-within .field-description {
       opacity: 0.95;
+      visibility: visible;
+      transform: translateY(0);
     }
 
     .fieldset {
@@ -296,6 +305,7 @@
       border-radius: 10px;
       padding: 12px;
       background: var(--surface-soft);
+      position: relative;
     }
 
     .fieldset-title {
@@ -326,7 +336,6 @@
       border-color: var(--accent);
       color: #fff;
       background: var(--accent);
-      transform: translateY(-1px);
     }
 
     .checkbox-grid {
@@ -347,6 +356,7 @@
       background: #ffffff;
       transition: border-color 0.2s ease, background 0.2s ease;
       cursor: pointer;
+      position: relative;
     }
 
     .checkbox-item:hover {
@@ -363,6 +373,18 @@
       display: flex;
       flex-direction: column;
       gap: 3px;
+    }
+
+    .op-config > .field-description {
+      position: static;
+      opacity: 1;
+      visibility: visible;
+      transform: none;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      padding: 0;
+      pointer-events: auto;
     }
 
     .operation-config-container {

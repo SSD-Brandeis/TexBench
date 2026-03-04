@@ -79,124 +79,24 @@
     let schema = null;
     let formChangeLog = [];
 
-    const schemaDraftUrl = 'https://json-schema.org/draft/2020-12/schema';
-    const defaultSchema = {
-      "$schema": schemaDraftUrl,
-      "title": "WorkloadSpec",
-      "type": "object",
-      "properties": {
-        "character_set": {
-          "description": "The domain from which the keys will be created from.",
-          "anyOf": [{ "$ref": "#/$defs/CharacterSet" }, { "type": "null" }]
-        },
-        "sections": {
-          "description": "Sections of a workload where a key from one will (probably) not appear in another.",
-          "type": "array",
-          "items": { "$ref": "#/$defs/WorkloadSpecSection" }
+    const SCHEMA_ASSET_PATH = '/workload-schema.json';
+
+    async function loadInitialSchema() {
+      try {
+        const response = await fetch(SCHEMA_ASSET_PATH, { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error('HTTP ' + response.status);
         }
-      },
-      "required": ["sections"],
-      "$defs": {
-        "CharacterSet": { "type": "string", "enum": ["alphanumeric", "alphabetic", "numeric"] },
-        "Distribution": {
-          "oneOf": [
-            {
-              "type": "object",
-              "properties": { "uniform": { "type": "object", "properties": { "max": { "type": "number", "format": "double" }, "min": { "type": "number", "format": "double" } }, "required": ["min", "max"] } },
-              "additionalProperties": false,
-              "required": ["uniform"]
-            },
-            {
-              "type": "object",
-              "properties": { "normal": { "type": "object", "properties": { "mean": { "type": "number", "format": "double" }, "std_dev": { "type": "number", "format": "double" } }, "required": ["mean", "std_dev"] } },
-              "additionalProperties": false,
-              "required": ["normal"]
-            },
-            {
-              "type": "object",
-              "properties": { "beta": { "type": "object", "properties": { "alpha": { "type": "number", "format": "double" }, "beta": { "type": "number", "format": "double" } }, "required": ["alpha", "beta"] } },
-              "additionalProperties": false,
-              "required": ["beta"]
-            },
-            {
-              "type": "object",
-              "properties": { "zipf": { "type": "object", "properties": { "n": { "type": "integer", "format": "uint", "minimum": 0 }, "s": { "type": "number", "format": "double" } }, "required": ["n", "s"] } },
-              "additionalProperties": false,
-              "required": ["zipf"]
-            },
-            {
-              "type": "object",
-              "properties": { "exponential": { "type": "object", "properties": { "lambda": { "type": "number", "format": "double" } }, "required": ["lambda"] } },
-              "additionalProperties": false,
-              "required": ["exponential"]
-            },
-            {
-              "type": "object",
-              "properties": { "log_normal": { "type": "object", "properties": { "mean": { "type": "number", "format": "double" }, "std_dev": { "type": "number", "format": "double" } }, "required": ["mean", "std_dev"] } },
-              "additionalProperties": false,
-              "required": ["log_normal"]
-            },
-            {
-              "type": "object",
-              "properties": { "poisson": { "type": "object", "properties": { "lambda": { "type": "number", "format": "double" } }, "required": ["lambda"] } },
-              "additionalProperties": false,
-              "required": ["poisson"]
-            },
-            {
-              "type": "object",
-              "properties": { "weibull": { "type": "object", "properties": { "scale": { "type": "number", "format": "double" }, "shape": { "type": "number", "format": "double" } }, "required": ["scale", "shape"] } },
-              "additionalProperties": false,
-              "required": ["weibull"]
-            },
-            {
-              "type": "object",
-              "properties": { "pareto": { "type": "object", "properties": { "scale": { "type": "number", "format": "double" }, "shape": { "type": "number", "format": "double" } }, "required": ["scale", "shape"] } },
-              "additionalProperties": false,
-              "required": ["pareto"]
-            }
-          ]
-        },
-        "EmptyPointDeletes": { "description": "Empty point deletes specification.", "type": "object", "properties": { "character_set": { "anyOf": [{ "$ref": "#/$defs/CharacterSet" }, { "type": "null" }] }, "key": { "description": "Key", "$ref": "#/$defs/StringExpr" }, "op_count": { "description": "Number of empty point deletes", "$ref": "#/$defs/NumberExpr" } }, "required": ["op_count", "key"] },
-        "EmptyPointQueries": { "description": "Empty point queries specification.", "type": "object", "properties": { "character_set": { "anyOf": [{ "$ref": "#/$defs/CharacterSet" }, { "type": "null" }] }, "key": { "description": "Key", "$ref": "#/$defs/StringExpr" }, "op_count": { "description": "Number of point queries", "$ref": "#/$defs/NumberExpr" } }, "required": ["op_count", "key"] },
-        "Inserts": { "description": "Inserts specification.", "type": "object", "properties": { "character_set": { "anyOf": [{ "$ref": "#/$defs/CharacterSet" }, { "type": "null" }] }, "key": { "description": "Key", "$ref": "#/$defs/StringExpr" }, "op_count": { "description": "Number of inserts", "$ref": "#/$defs/NumberExpr" }, "val": { "description": "Value", "$ref": "#/$defs/StringExpr" } }, "required": ["op_count", "key", "val"] },
-        "Merges": { "description": "Merges (read-modify-write) specification.", "type": "object", "properties": { "character_set": { "anyOf": [{ "$ref": "#/$defs/CharacterSet" }, { "type": "null" }] }, "op_count": { "description": "Number of merges", "$ref": "#/$defs/NumberExpr" }, "selection": { "description": "Key selection strategy", "$ref": "#/$defs/Distribution" }, "val": { "description": "Value", "$ref": "#/$defs/StringExpr" } }, "required": ["op_count", "val"] },
-        "NumberExpr": { "anyOf": [{ "type": "number", "format": "double" }, { "$ref": "#/$defs/Distribution" }] },
-        "PointDeletes": { "description": "Non-empty point deletes specification.", "type": "object", "properties": { "op_count": { "description": "Number of non-empty point deletes", "$ref": "#/$defs/NumberExpr" }, "selection": { "description": "Key selection strategy", "$ref": "#/$defs/Distribution" } }, "required": ["op_count"] },
-        "PointQueries": { "description": "Non-empty point queries specification.", "type": "object", "properties": { "op_count": { "description": "Number of point queries", "$ref": "#/$defs/NumberExpr" }, "selection": { "description": "Key selection strategy of the start key", "$ref": "#/$defs/Distribution" } }, "required": ["op_count"] },
-        "RangeDeletes": { "description": "Range deletes specification.", "type": "object", "properties": { "character_set": { "anyOf": [{ "$ref": "#/$defs/CharacterSet" }, { "type": "null" }] }, "op_count": { "description": "Number of range deletes", "$ref": "#/$defs/NumberExpr" }, "range_format": { "description": "The format for the range", "$ref": "#/$defs/RangeFormat" }, "selection": { "description": "Key selection strategy of the start key", "$ref": "#/$defs/Distribution" }, "selectivity": { "description": "Selectivity of range deletes. Based off of the range of valid keys, not the full key space.", "$ref": "#/$defs/NumberExpr" } }, "required": ["op_count", "selectivity"] },
-        "RangeFormat": { "oneOf": [{ "description": "The start key and the number of keys to scan", "type": "string", "const": "StartCount" }, { "description": "The start key and end key", "type": "string", "const": "StartEnd" }] },
-        "RangeQueries": { "description": "Range queries specification.", "type": "object", "properties": { "character_set": { "anyOf": [{ "$ref": "#/$defs/CharacterSet" }, { "type": "null" }] }, "op_count": { "description": "Number of range queries", "$ref": "#/$defs/NumberExpr" }, "range_format": { "description": "The format for the range", "$ref": "#/$defs/RangeFormat" }, "selection": { "description": "Key selection strategy of the start key", "$ref": "#/$defs/Distribution" }, "selectivity": { "description": "Selectivity of range queries. Based off of the range of valid keys, not the full key-space.", "$ref": "#/$defs/NumberExpr" } }, "required": ["op_count", "selectivity"] },
-        "Sorted": { "type": "object", "properties": { "k": { "description": "The number of displaced operations.", "$ref": "#/$defs/NumberExpr" }, "l": { "description": "The distance between swapped elements.", "$ref": "#/$defs/NumberExpr" } }, "required": ["k", "l"] },
-        "StringExpr": { "anyOf": [{ "type": "string" }, { "$ref": "#/$defs/StringExprInner" }] },
-        "StringExprInner": {
-          "oneOf": [
-            { "type": "object", "properties": { "uniform": { "type": "object", "properties": { "character_set": { "anyOf": [{ "$ref": "#/$defs/CharacterSet" }, { "type": "null" }] }, "len": { "description": "The length of the string to sample.", "$ref": "#/$defs/NumberExpr" } }, "required": ["len"] } }, "additionalProperties": false, "required": ["uniform"] },
-            { "type": "object", "properties": { "weighted": { "type": "array", "items": { "$ref": "#/$defs/Weight" } } }, "additionalProperties": false, "required": ["weighted"] },
-            { "type": "object", "properties": { "segmented": { "type": "object", "properties": { "segments": { "description": "The segments to use for the string.", "type": "array", "items": { "$ref": "#/$defs/StringExpr" } }, "separator": { "type": "string" } }, "required": ["separator", "segments"] } }, "additionalProperties": false, "required": ["segmented"] },
-            { "type": "object", "properties": { "hot_range": { "type": "object", "properties": { "amount": { "type": "integer", "format": "uint", "minimum": 0 }, "len": { "type": "integer", "format": "uint", "minimum": 0 }, "probability": { "type": "number", "format": "double" } }, "required": ["len", "amount", "probability"] } }, "additionalProperties": false, "required": ["hot_range"] }
-          ]
-        },
-        "Updates": { "description": "Updates specification.", "type": "object", "properties": { "character_set": { "anyOf": [{ "$ref": "#/$defs/CharacterSet" }, { "type": "null" }] }, "op_count": { "description": "Number of updates", "$ref": "#/$defs/NumberExpr" }, "selection": { "description": "Key selection strategy", "$ref": "#/$defs/Distribution" }, "val": { "description": "Value", "$ref": "#/$defs/StringExpr" } }, "required": ["op_count", "val"] },
-        "Weight": { "type": "object", "properties": { "value": { "description": "The value of the item.", "$ref": "#/$defs/StringExpr" }, "weight": { "description": "The weight of the item.", "type": "number", "format": "double" } }, "required": ["weight", "value"] },
-        "WorkloadSpecGroup": {
-          "type": "object",
-          "properties": {
-            "character_set": { "anyOf": [{ "$ref": "#/$defs/CharacterSet" }, { "type": "null" }] },
-            "empty_point_deletes": { "anyOf": [{ "$ref": "#/$defs/EmptyPointDeletes" }, { "type": "null" }] },
-            "empty_point_queries": { "anyOf": [{ "$ref": "#/$defs/EmptyPointQueries" }, { "type": "null" }] },
-            "inserts": { "anyOf": [{ "$ref": "#/$defs/Inserts" }, { "type": "null" }] },
-            "merges": { "anyOf": [{ "$ref": "#/$defs/Merges" }, { "type": "null" }] },
-            "point_deletes": { "anyOf": [{ "$ref": "#/$defs/PointDeletes" }, { "type": "null" }] },
-            "point_queries": { "anyOf": [{ "$ref": "#/$defs/PointQueries" }, { "type": "null" }] },
-            "range_deletes": { "anyOf": [{ "$ref": "#/$defs/RangeDeletes" }, { "type": "null" }] },
-            "range_queries": { "anyOf": [{ "$ref": "#/$defs/RangeQueries" }, { "type": "null" }] },
-            "sorted": { "anyOf": [{ "$ref": "#/$defs/Sorted" }, { "type": "null" }] },
-            "updates": { "anyOf": [{ "$ref": "#/$defs/Updates" }, { "type": "null" }] }
-          }
-        },
-        "WorkloadSpecSection": { "type": "object", "properties": { "character_set": { "description": "The domain from which the keys will be created from.", "anyOf": [{ "$ref": "#/$defs/CharacterSet" }, { "type": "null" }] }, "groups": { "description": "A list of groups. Groups share valid keys between operations.\\n\\nE.g., non-empty point queries will use a key from an insert in this group.", "type": "array", "items": { "$ref": "#/$defs/WorkloadSpecGroup" } }, "skip_key_contains_check": { "description": "Whether to skip the check that a generated key is in the valid key set for inserts and empty point queries/deletes.", "type": "boolean", "default": false } }, "required": ["groups"] }
+        const loadedSchema = await response.json();
+        if (!loadedSchema || typeof loadedSchema !== 'object') {
+          throw new Error('Schema asset did not return an object');
+        }
+        return loadedSchema;
+      } catch (e) {
+        reportUiIssue('Failed to load schema asset', e);
+        return null;
       }
-    };
+    }
 
     function reportUiIssue(prefix, errorLike) {
       const message = prefix + ': ' + (errorLike && errorLike.message ? errorLike.message : String(errorLike || 'Unknown error'));
@@ -204,8 +104,8 @@
       setValidationStatus(message, 'invalid');
     }
 
-    function initApp() {
-      schema = defaultSchema;
+    async function initApp() {
+      schema = await loadInitialSchema();
 
       try {
         applySchemaDescriptions();
@@ -314,14 +214,12 @@
       reportUiIssue('Unhandled promise rejection', reason);
     });
 
-    try {
-      initApp();
-    } catch (initError) {
+    initApp().catch((initError) => {
       reportUiIssue('UI init failed', initError);
       if (jsonOutput && !jsonOutput.value) {
         jsonOutput.value = '{}';
       }
-    }
+    });
 
     function onFormChange(event) {
       const eventTarget = event && event.target ? event.target : null;
@@ -412,7 +310,13 @@
       if (typeof text !== 'string') {
         return '';
       }
-      return text.replace(/\s+/g, ' ').trim();
+      return text
+        .replace(/\r\n?/g, '\n')
+        .replace(/\\r\\n|\\n|\\r/g, '\n')
+        .replace(/[ \t\f\v]+/g, ' ')
+        .replace(/ *\n+ */g, '\n')
+        .replace(/\n{2,}/g, '\n')
+        .trim();
     }
 
     function resolveSchemaRef(ref) {
@@ -1191,7 +1095,7 @@
       const payload = {
         exported_at: new Date().toISOString(),
         app: 'tectonic-json',
-        schema_status: schema ? 'Fixed internal schema' : 'Schema unavailable',
+        schema_status: schema ? 'Schema loaded from /workload-schema.json' : 'Schema unavailable',
         schema_text: schema ? JSON.stringify(schema, null, 2) : '',
         generated_json: jsonOutput.value || '',
         validation_text: validationResult.textContent || '',
@@ -1247,4 +1151,3 @@
       validationResult.textContent = message;
       validationResult.className = 'validation-result show ' + status;
     }
-
