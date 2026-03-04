@@ -164,6 +164,180 @@
       margin-bottom: 10px;
     }
 
+    .assistant-panel {
+      border: 1px solid var(--border);
+      background: linear-gradient(160deg, #ffffff 0%, #f2faf9 100%);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .assistant-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .assistant-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .assistant-status {
+      font-size: 11px;
+      border-radius: 999px;
+      padding: 3px 8px;
+      border: 1px solid #d3e7f7;
+      background: #ecf6fd;
+      color: #245272;
+      white-space: nowrap;
+    }
+
+    .assistant-status.loading {
+      border-color: #c6dfd8;
+      background: #edf9f6;
+      color: #0f6a5f;
+    }
+
+    .assistant-status.error {
+      border-color: #f5c2c2;
+      background: #fff2f2;
+      color: #b92a2a;
+    }
+
+    .assistant-status.warn {
+      border-color: #f1ddb2;
+      background: #fff8e8;
+      color: #8a5d0a;
+    }
+
+    .assistant-input {
+      width: 100%;
+      min-height: 72px;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fff;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      line-height: 1.4;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .assistant-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    }
+
+    .assistant-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .assistant-summary {
+      font-size: 12px;
+      color: #3e596d;
+      line-height: 1.4;
+    }
+
+    .assistant-list {
+      margin: 0;
+      padding-left: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      color: #3e596d;
+      font-size: 12px;
+    }
+
+    .assistant-list:empty {
+      display: none;
+    }
+
+    .assistant-question-inputs {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .assistant-question-inputs:empty {
+      display: none;
+    }
+
+    .assistant-question-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    .assistant-question-label {
+      font-size: 12px;
+      color: #3e596d;
+      line-height: 1.35;
+    }
+
+    .assistant-question-input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .assistant-question-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    }
+
+    .assistant-raw {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f8fcfb;
+      padding: 8px 10px;
+      display: none;
+    }
+
+    .assistant-raw.show {
+      display: block;
+    }
+
+    .assistant-raw summary {
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      color: #3e596d;
+    }
+
+    .assistant-raw pre {
+      margin-top: 8px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #3e596d;
+      font-family: 'JetBrains Mono', monospace;
+      max-height: 180px;
+      overflow: auto;
+    }
+
     .hud {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -542,6 +716,28 @@
             <span class="panel-title">Workload Form</span>
           </div>
           <div class="panel-body">
+            <div class="assistant-panel">
+              <div class="assistant-head">
+                <span class="assistant-title">Describe Workload</span>
+                <span class="assistant-status" id="assistantStatus">Ready</span>
+              </div>
+              <textarea
+                id="assistantInput"
+                class="assistant-input"
+                placeholder="Example: Generate an insert-only workload with 1 KB key value size. The number of inserts is 100K."
+              ></textarea>
+              <div class="assistant-actions">
+                <button type="button" class="btn btn-ghost" id="assistantApplyBtn">Apply to Form</button>
+                <button type="button" class="btn btn-ghost" id="assistantClearBtn">Clear Text</button>
+              </div>
+              <p class="assistant-summary" id="assistantSummary"></p>
+              <ul class="assistant-list" id="assistantQuestions"></ul>
+              <div class="assistant-question-inputs" id="assistantQuestionInputs"></div>
+              <details class="assistant-raw" id="assistantRawWrap">
+                <summary>Workers AI Output</summary>
+                <pre id="assistantRawOutput"></pre>
+              </details>
+            </div>
             <p class="builder-hint">Start with a preset or configure fields manually. The JSON preview updates live as you edit.</p>
             <div class="hud">
               <div class="hud-card">
@@ -627,6 +823,7 @@
     </main>
   </div>
 
+  <script src="/assistant-followups.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
