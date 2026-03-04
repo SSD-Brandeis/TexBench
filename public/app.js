@@ -20,7 +20,6 @@
     const characterSetDescription = document.getElementById('characterSetDescription');
     const sectionsDescription = document.getElementById('sectionsDescription');
     const groupsDescription = document.getElementById('groupsDescription');
-    const operationsDescription = document.getElementById('operationsDescription');
     const validateBtn = document.getElementById('validateBtn');
     const downloadJsonBtn = document.getElementById('downloadJsonBtn');
     const copyBtn = document.getElementById('copyBtn');
@@ -512,13 +511,6 @@
       setDescriptionText(characterSetDescription, characterSetHelp);
       setDescriptionText(sectionsDescription, sectionsHelp);
       setDescriptionText(groupsDescription, groupsHelp);
-      setDescriptionText(
-        operationsDescription,
-        combineDescriptions([
-          groupsHelp,
-          'Select one or more operation blocks to include in each group.'
-        ])
-      );
     }
 
     function buildOperationControls() {
