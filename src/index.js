@@ -3,7 +3,7 @@ const HTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JSON Schema Chat</title>
+  <title>Tectonic Workload Generator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -11,72 +11,78 @@ const HTML = `<!DOCTYPE html>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     
     :root {
-      --bg: #0d1117;
-      --surface: #161b22;
-      --border: #30363d;
-      --accent: #58a6ff;
-      --accent-hover: #79b8ff;
-      --success: #3fb950;
-      --error: #f85149;
-      --text: #e6edf3;
-      --text-dim: #8b949e;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --border: #e2e8f0;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #16a34a;
+      --error: #dc2626;
+      --text: #0f172a;
+      --text-dim: #64748b;
     }
     
     body {
       font-family: 'DM Sans', system-ui, sans-serif;
-      background: var(--bg);
+      background: linear-gradient(135deg, #eff6ff 0%, #ffffff 50%, #f5f3ff 100%);
       color: var(--text);
       min-height: 100vh;
+    }
+
+    .app-shell {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 28px 16px;
       display: flex;
       flex-direction: column;
+      gap: 18px;
     }
     
     header {
-      height: 60px;
-      padding: 0 20px;
-      display: flex;
-      align-items: center;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
+      position: relative;
+      text-align: center;
+      padding-top: 6px;
     }
 
     .header-actions {
-      margin-left: auto;
+      position: absolute;
+      right: 0;
+      top: 0;
       display: flex;
       gap: 8px;
     }
     
     header h1 {
-      font-size: 18px;
-      font-weight: 600;
+      font-size: 36px;
+      font-weight: 700;
       color: var(--text);
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      margin-bottom: 8px;
     }
-    
-    header h1::before {
-      content: '{ }';
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--accent);
-      font-size: 16px;
+
+    .header-subtitle {
+      color: var(--text-dim);
+      font-size: 15px;
     }
     
     main {
-      flex: 1;
-      display: flex;
+      min-height: 0;
+    }
+
+    .workspace {
+      display: grid;
       gap: 16px;
-      padding: 20px;
-      overflow: hidden;
+      min-width: 0;
     }
     
     .panel {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: 16px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
     }
     
     .panel-header {
@@ -99,8 +105,6 @@ const HTML = `<!DOCTYPE html>
       overflow: auto;
       padding: 16px;
     }
-    
-    .right-panel { flex: 1; min-width: 0; }
     
     textarea {
       width: 100%;
@@ -137,12 +141,12 @@ const HTML = `<!DOCTYPE html>
     .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
     
     .btn-ghost {
-      background: transparent;
+      background: #fff;
       color: var(--text-dim);
       border: 1px solid var(--border);
     }
     
-    .btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
+    .btn-ghost:hover { color: #fff; background: var(--accent-hover); border-color: var(--accent-hover); }
     
     .status {
       font-size: 12px;
@@ -188,7 +192,7 @@ const HTML = `<!DOCTYPE html>
     
     .message-assistant {
       align-self: flex-start;
-      background: var(--border);
+      background: #f1f5f9;
       color: var(--text);
       border-bottom-left-radius: 4px;
     }
@@ -222,7 +226,7 @@ const HTML = `<!DOCTYPE html>
     .answer-select {
       flex: 1;
       padding: 10px 12px;
-      background: var(--bg);
+      background: #fff;
       border: 1px solid var(--border);
       border-radius: 8px;
       color: var(--text);
@@ -256,7 +260,7 @@ const HTML = `<!DOCTYPE html>
     .chat-input {
       flex: 1;
       padding: 12px 16px;
-      background: var(--bg);
+      background: #fff;
       border: 1px solid var(--border);
       border-radius: 8px;
       color: var(--text);
@@ -277,7 +281,7 @@ const HTML = `<!DOCTYPE html>
     
     .json-output textarea {
       flex: 1;
-      background: var(--bg);
+      background: var(--surface-soft);
       border-radius: 8px;
       padding: 16px;
       border: 1px solid var(--border);
@@ -330,21 +334,36 @@ const HTML = `<!DOCTYPE html>
     }
     
     @media (max-width: 768px) {
-      main { flex-direction: column; }
+      .app-shell {
+        padding: 20px 12px;
+      }
+      header {
+        text-align: left;
+        padding-top: 44px;
+      }
+      header h1 {
+        font-size: 28px;
+      }
+      .header-actions {
+        left: 0;
+        right: auto;
+      }
     }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Tectonic Workload Generator</h1>
-    <div class="header-actions">
-      <button class="btn btn-ghost" id="downloadLogBtn">Download Log</button>
-      <button class="btn btn-ghost" id="newWorkloadBtn">Clear Chat</button>
-    </div>
-  </header>
-  <main>
-    <div class="right-panel" style="display: flex; flex-direction: column; gap: 16px;">
-      <div class="panel" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+  <div class="app-shell">
+    <header>
+      <div class="header-actions">
+        <button class="btn btn-ghost" id="downloadLogBtn">Download Log</button>
+        <button class="btn btn-ghost" id="newWorkloadBtn">Clear Chat</button>
+      </div>
+      <h1>Workload Spec Generator</h1>
+      <p class="header-subtitle">Generate JSON configurations for your workload specifications</p>
+    </header>
+    <main>
+      <div class="workspace">
+        <div class="panel" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
         <div class="panel-header">
           <span class="panel-title">Chat</span>
         </div>
@@ -368,25 +387,26 @@ const HTML = `<!DOCTYPE html>
             <button class="btn btn-primary" id="sendBtn">Send</button>
           </div>
         </div>
-      </div>
-      <div class="panel" style="height: 280px; flex-shrink: 0;">
-        <div class="panel-header">
-          <span class="panel-title">Generated JSON</span>
-          <div class="json-actions">
-            <div class="validation-result" id="validationResult"></div>
-            <button class="btn btn-ghost" id="validateBtn">Validate</button>
-            <button class="btn btn-ghost" id="downloadJsonBtn">Download JSON</button>
-            <button class="btn btn-ghost" id="copyBtn">Copy</button>
+        </div>
+        <div class="panel" style="height: 320px; flex-shrink: 0;">
+          <div class="panel-header">
+            <span class="panel-title">Generated JSON</span>
+            <div class="json-actions">
+              <div class="validation-result" id="validationResult"></div>
+              <button class="btn btn-ghost" id="validateBtn">Validate</button>
+              <button class="btn btn-ghost" id="downloadJsonBtn">Download JSON</button>
+              <button class="btn btn-ghost" id="copyBtn">Copy</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="json-output">
+              <textarea id="jsonOutput" readonly placeholder="Generated JSON will appear here..."></textarea>
+            </div>
           </div>
         </div>
-        <div class="panel-body">
-          <div class="json-output">
-            <textarea id="jsonOutput" readonly placeholder="Generated JSON will appear here..."></textarea>
-          </div>
-        </div>
       </div>
-    </div>
-  </main>
+    </main>
+  </div>
 
   <script>
     const chatInput = document.getElementById('chatInput');
