@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tectonic Workload Generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f6faf8;
+      --surface: #ffffff;
+      --surface-soft: #f7fafc;
+      --border: #dde7ef;
+      --accent: #0f766e;
+      --accent-hover: #0b5f59;
+      --success: #16a34a;
+      --error: #dc2626;
+      --text: #0b1e2d;
+      --text-dim: #5f7284;
+    }
+
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: radial-gradient(circle at 10% 10%, #d8f4f0 0%, transparent 35%),
+        radial-gradient(circle at 90% 0%, #e6f0fb 0%, transparent 30%),
+        linear-gradient(160deg, #f6faf8 0%, #ffffff 45%, #eef7f9 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .app-shell {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 28px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    header {
+      position: relative;
+      text-align: center;
+      padding-top: 6px;
+    }
+
+    .header-actions {
+      position: absolute;
+      right: 0;
+      top: 0;
+      display: flex;
+      gap: 8px;
+    }
+
+    header h1 {
+      font-size: 36px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .header-subtitle {
+      color: var(--text-dim);
+      font-size: 15px;
+    }
+
+    main { min-height: 0; }
+
+    .workspace {
+      display: grid;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 12px 28px rgba(11, 30, 45, 0.08);
+      transition: box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .panel:hover {
+      box-shadow: 0 16px 32px rgba(11, 30, 45, 0.12);
+    }
+
+    .json-panel { min-height: 380px; }
+
+    .panel-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .panel-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .panel-body {
+      flex: 1;
+      overflow: auto;
+      padding: 16px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      resize: none;
+      outline: none;
+    }
+
+    textarea::placeholder { color: var(--text-dim); }
+
+    .btn {
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: none;
+      font-family: inherit;
+    }
+
+    .btn-ghost {
+      background: #fff;
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
+
+    .btn-ghost:hover {
+      color: #fff;
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    .workload-form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .builder-hint {
+      font-size: 13px;
+      color: #567082;
+      margin-bottom: 10px;
+    }
+
+    .hud {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .hud-card {
+      border: 1px solid var(--border);
+      background: linear-gradient(165deg, #ffffff 0%, #f5fbfa 100%);
+      border-radius: 12px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-height: 62px;
+      justify-content: center;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .hud-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(11, 30, 45, 0.08);
+    }
+
+    .hud-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .hud-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .progress-wrap { margin: 10px 0 14px; }
+
+    .progress-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+
+    .progress-bar {
+      height: 8px;
+      border-radius: 999px;
+      background: #e6edf2;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, #0f766e, #22c55e);
+      transition: width 0.2s ease;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .field-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .field input,
+    .field select {
+      width: 100%;
+      padding: 10px 12px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    }
+
+    .field input:focus,
+    .field select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+      transform: translateY(-1px);
+    }
+
+    .field-description {
+      font-size: 11px;
+      line-height: 1.35;
+      color: #94a3b8;
+      white-space: pre-line;
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transition: max-height 0.2s ease, opacity 0.2s ease;
+    }
+
+    .field-description:empty { display: none; }
+
+    .field:hover .field-description,
+    .field:focus-within .field-description,
+    .fieldset:hover > .field-description,
+    .fieldset:focus-within > .field-description,
+    .checkbox-item:hover .field-description,
+    .checkbox-item:focus-within .field-description,
+    .op-config:hover .field-description,
+    .op-config:focus-within .field-description {
+      max-height: 160px;
+      opacity: 0.95;
+    }
+
+    .fieldset {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      background: var(--surface-soft);
+    }
+
+    .fieldset-title {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .preset-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .preset-btn {
+      border: 1px solid #cae3df;
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 12px;
+      color: #0f4f4a;
+      background: #f4fbfa;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .preset-btn:hover {
+      border-color: var(--accent);
+      color: #fff;
+      background: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .checkbox-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 8px;
+    }
+
+    .checkbox-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text);
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 8px;
+      background: #ffffff;
+      transition: border-color 0.2s ease, background 0.2s ease;
+      cursor: pointer;
+    }
+
+    .checkbox-item:hover {
+      border-color: #d2e5e2;
+      background: #f8fdfc;
+    }
+
+    .checkbox-item input[type="checkbox"] {
+      accent-color: var(--accent);
+      margin-top: 3px;
+    }
+
+    .checkbox-label-text {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .operation-config-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .op-config {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      animation: fadeSlide 0.2s ease;
+    }
+
+    .op-config-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .op-config-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .op-default-btn {
+      border: 1px solid #cae3df;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 11px;
+      color: #0f4f4a;
+      background: #f4fbfa;
+      cursor: pointer;
+    }
+
+    .op-default-btn:hover {
+      border-color: var(--accent);
+      color: #fff;
+      background: var(--accent);
+    }
+
+    .hidden { display: none !important; }
+
+    .json-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .validation-result {
+      min-height: 18px;
+      font-size: 12px;
+      color: var(--text-dim);
+      transition: color 0.15s ease;
+    }
+
+    .validation-result.show.valid { color: var(--success); }
+    .validation-result.show.invalid { color: var(--error); }
+
+    .json-output {
+      height: 100%;
+      min-height: 300px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fbfdff;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .json-stats {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .json-pill {
+      font-size: 11px;
+      color: #245272;
+      background: #ecf6fd;
+      border: 1px solid #d3e7f7;
+      border-radius: 999px;
+      padding: 3px 8px;
+    }
+
+    .shortcut-hint {
+      font-size: 11px;
+      color: #7a8b9a;
+    }
+
+    .help-dot {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      font-size: 10px;
+      font-weight: 700;
+      color: #3b7f90;
+      border: 1px solid #bfd8df;
+      background: #eef8fb;
+      cursor: help;
+      user-select: none;
+    }
+
+    @keyframes fadeSlide {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (min-width: 980px) {
+      .workspace {
+        grid-template-columns: 1.2fr 1fr;
+        align-items: start;
+      }
+      .json-panel {
+        position: sticky;
+        top: 18px;
+        height: min(82vh, 860px);
+      }
+    }
+
+    @media (max-width: 768px) {
+      .app-shell {
+        padding: 20px 12px;
+      }
+      header {
+        text-align: left;
+        padding-top: 44px;
+      }
+      header h1 {
+        font-size: 28px;
+      }
+      .header-actions {
+        left: 0;
+        right: auto;
+      }
+      .hud {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header>
+      <div class="header-actions">
+        <button class="btn btn-ghost" id="downloadLogBtn">Download Log</button>
+        <button class="btn btn-ghost" id="newWorkloadBtn">Clear Form</button>
+      </div>
+      <h1>Workload Spec Generator</h1>
+      <p class="header-subtitle">Generate JSON configurations for your workload specifications</p>
+    </header>
+    <main>
+      <div class="workspace">
+        <div class="panel" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+          <div class="panel-header">
+            <span class="panel-title">Workload Form</span>
+          </div>
+          <div class="panel-body">
+            <p class="builder-hint">Start with a preset or configure fields manually. The JSON preview updates live as you edit.</p>
+            <div class="hud">
+              <div class="hud-card">
+                <span class="hud-label">Sections</span>
+                <span class="hud-value" id="hudSections">0</span>
+              </div>
+              <div class="hud-card">
+                <span class="hud-label">Groups/Section</span>
+                <span class="hud-value" id="hudGroups">0</span>
+              </div>
+              <div class="hud-card">
+                <span class="hud-label">Operations</span>
+                <span class="hud-value" id="hudOps">0</span>
+              </div>
+              <div class="hud-card">
+                <span class="hud-label">JSON Lines</span>
+                <span class="hud-value" id="hudLines">1</span>
+              </div>
+            </div>
+            <div class="progress-wrap">
+              <div class="progress-head">
+                <span>Form Completion</span>
+                <span id="progressText">0%</span>
+              </div>
+              <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+              </div>
+            </div>
+            <form id="workloadForm" class="workload-form">
+              <div class="form-grid">
+                <label class="field">
+                  <span id="formCharacterSetLabel">Character Set</span>
+                  <select id="formCharacterSet">
+                    <option value="">(unset)</option>
+                    <option value="alphanumeric">alphanumeric</option>
+                    <option value="alphabetic">alphabetic</option>
+                    <option value="numeric">numeric</option>
+                  </select>
+                  <small class="field-description" id="characterSetDescription"></small>
+                </label>
+                <label class="field">
+                  <span id="formSectionsLabel">Sections</span>
+                  <input type="number" id="formSections" min="1" step="1" placeholder="1">
+                  <small class="field-description" id="sectionsDescription"></small>
+                </label>
+                <label class="field">
+                  <span id="formGroupsLabel">Groups / Section</span>
+                  <input type="number" id="formGroups" min="1" step="1" placeholder="1">
+                  <small class="field-description" id="groupsDescription"></small>
+                </label>
+              </div>
+
+              <div class="preset-row">
+                <button type="button" class="preset-btn" data-preset="insert_only">Insert Only</button>
+                <button type="button" class="preset-btn" data-preset="read_heavy">Read Heavy</button>
+                <button type="button" class="preset-btn" data-preset="mixed_crud">Mixed CRUD</button>
+                <button type="button" class="preset-btn" data-preset="baseline">Baseline</button>
+              </div>
+
+              <div class="fieldset">
+                <p class="fieldset-title" id="operationsTitle">Operations</p>
+                <p class="field-description" id="operationsDescription"></p>
+                <div class="checkbox-grid" id="operationToggles"></div>
+              </div>
+
+              <div id="operationConfigContainer" class="operation-config-container"></div>
+            </form>
+          </div>
+        </div>
+        <div class="panel json-panel" style="flex-shrink: 0;">
+          <div class="panel-header">
+            <span class="panel-title">Generated JSON</span>
+            <div class="json-actions">
+              <div class="validation-result" id="validationResult"></div>
+              <button class="btn btn-ghost" id="validateBtn">Validate</button>
+              <button class="btn btn-ghost" id="downloadJsonBtn">Download JSON</button>
+              <button class="btn btn-ghost" id="copyBtn">Copy</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="json-output">
+              <div class="json-stats">
+                <span class="json-pill" id="jsonSectionsPill">sections: 0</span>
+                <span class="json-pill" id="jsonOpsPill">ops: 0</span>
+                <span class="json-pill" id="jsonBytesPill">bytes: 2</span>
+              </div>
+              <p class="shortcut-hint">Shortcuts: Ctrl/Cmd + Enter to validate, Ctrl/Cmd + Shift + C to copy.</p>
+              <textarea id="jsonOutput" readonly placeholder="Generated JSON will appear here...">{}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

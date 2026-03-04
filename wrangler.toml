@@ -16,3 +16,7 @@ AI_MAX_TOKENS = "1200"
 
 [ai]
 binding = "AI"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
