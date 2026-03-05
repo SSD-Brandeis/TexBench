@@ -103,12 +103,21 @@ if (isDirectExecution()) {
     console.log('Runs directory:', RUNS_DIR);
   });
 
-  process.on('SIGINT', async () => {
-    await shutdownStandalone('SIGINT', standalone);
+  let shutdownPromise = null;
+  const requestShutdown = (signal) => {
+    if (!shutdownPromise) {
+      shutdownPromise = shutdownStandalone(signal, standalone);
+      return;
+    }
+    console.log('Received ' + signal + ', shutdown already in progress...');
+  };
+
+  process.once('SIGINT', () => {
+    requestShutdown('SIGINT');
   });
 
-  process.on('SIGTERM', async () => {
-    await shutdownStandalone('SIGTERM', standalone);
+  process.once('SIGTERM', () => {
+    requestShutdown('SIGTERM');
   });
 }
 

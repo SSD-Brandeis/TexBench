@@ -128,6 +128,16 @@ function extractCloudflareText(result) {
   if (typeof result.response === 'string' && result.response.trim()) {
     return result.response.trim();
   }
+  if (result.response && typeof result.response === 'object') {
+    try {
+      return JSON.stringify(result.response);
+    } catch {
+      return String(result.response);
+    }
+  }
+  if (typeof result.output_text === 'string' && result.output_text.trim()) {
+    return result.output_text.trim();
+  }
   if (Array.isArray(result.result) && result.result.length > 0) {
     const joined = result.result
       .map((entry) => (typeof entry === 'string' ? entry : ''))

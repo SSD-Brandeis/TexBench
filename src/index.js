@@ -1,5 +1,4 @@
-const DEFAULT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
-const DEFAULT_FALLBACK_MODELS = ['@cf/meta/llama-3.1-8b-instruct'];
+const DEFAULT_MODEL = '@cf/meta/llama-3.1-8b-instruct';
 const DEFAULT_MAX_TOKENS = 420;
 const DEFAULT_RETRY_ATTEMPTS = 2;
 const DEFAULT_AI_TIMEOUT_MS = 15000;
@@ -248,6 +247,10 @@ async function handleAssistRequest(request, env) {
   if (aiOutput) {
     normalized.ai_output = aiOutput;
   }
+  const aiTiming = buildAiTimingFromOutcome(outcome);
+  if (aiTiming) {
+    normalized.ai_timing = aiTiming;
+  }
   return jsonResponse(normalized, 200);
 }
 
@@ -355,7 +358,17 @@ async function runAssistantWithRetries(env, prompt, schemaHints, formState, curr
           modelName,
           attemptMaxTokens
         );
+        const attemptTiming = normalizeAssistAttemptTiming(outcome && outcome.timing ? outcome.timing : null);
         if (outcome && outcome.payload && typeof outcome.payload === 'object') {
+          const attemptEntry = {
+            attempt: attemptNumber,
+            model: modelName,
+            max_tokens: attemptMaxTokens,
+            status: 'succeeded',
+            ...attemptTiming
+          };
+          attempts.push(attemptEntry);
+          logAssistAttemptTiming(modelName, attemptNumber, attemptEntry);
           return {
             payload: outcome.payload,
             ai_output: normalizeAiOutput(outcome.ai_output),
@@ -366,12 +379,16 @@ async function runAssistantWithRetries(env, prompt, schemaHints, formState, curr
             last_ai_output: normalizeAiOutput(outcome.ai_output)
           };
         }
-        attempts.push({
+        const attemptEntry = {
           attempt: attemptNumber,
           model: modelName,
           max_tokens: attemptMaxTokens,
-          message: 'Assistant returned an empty payload.'
-        });
+          status: 'empty_payload',
+          message: 'Assistant returned an empty payload.',
+          ...attemptTiming
+        };
+        attempts.push(attemptEntry);
+        logAssistAttemptTiming(modelName, attemptNumber, attemptEntry);
         const emptyPayloadOutput = normalizeAiOutput(outcome && outcome.ai_output ? outcome.ai_output : null);
         if (emptyPayloadOutput) {
           logFullAiOutputToStdout(
@@ -384,12 +401,15 @@ async function runAssistantWithRetries(env, prompt, schemaHints, formState, curr
         }
       } catch (error) {
         const sanitized = sanitizeErrorForClient(error);
+        const attemptTiming = normalizeAssistAttemptTiming(sanitized);
         const attemptEntry = {
           attempt: attemptNumber,
           model: modelName,
           max_tokens: attemptMaxTokens,
+          status: 'failed',
           message: sanitized.message || 'Unknown error',
-          name: sanitized.name || 'Error'
+          name: sanitized.name || 'Error',
+          ...attemptTiming
         };
         if (sanitized.ai_output) {
           attemptEntry.ai_output = sanitized.ai_output;
@@ -402,6 +422,7 @@ async function runAssistantWithRetries(env, prompt, schemaHints, formState, curr
           console.log('[assist-ai:attempt-failed:' + modelName + ':attempt=' + attemptNumber + '] no_ai_output_available');
         }
         attempts.push(attemptEntry);
+        logAssistAttemptTiming(modelName, attemptNumber, attemptEntry);
       }
     }
   }
@@ -426,38 +447,86 @@ async function runAssistantOnce(
   modelName,
   maxTokensOverride
 ) {
+  const attemptStartedAt = Date.now();
   const messages = buildAssistantMessages(prompt, schemaHints, formState, currentJson, conversation, answers);
   const selectedModel = typeof modelName === 'string' && modelName.trim() ? modelName.trim() : aiConfig.modelName;
   const selectedMaxTokens = Number.isFinite(maxTokensOverride) && maxTokensOverride > 0
     ? Math.floor(maxTokensOverride)
     : aiConfig.maxTokens;
   const responseFormat = buildAssistResponseFormat(aiConfig);
+  const timing = {
+    duration_ms: null,
+    primary_response_ms: null,
+    repair_response_ms: null,
+    ai_response_count: 0
+  };
   const aiPromise = env.AI.run(selectedModel, {
     messages,
     max_tokens: selectedMaxTokens,
     temperature: aiConfig.temperature,
     response_format: responseFormat
   });
-  const rawResult = await withTimeout(aiPromise, aiConfig.timeoutMs, 'Workers AI timed out.');
+  let rawResult;
+  const primaryStartedAt = Date.now();
+  try {
+    rawResult = await withTimeout(aiPromise, aiConfig.timeoutMs, 'Workers AI timed out.');
+    timing.primary_response_ms = Date.now() - primaryStartedAt;
+    timing.ai_response_count = 1;
+  } catch (error) {
+    timing.primary_response_ms = Date.now() - primaryStartedAt;
+    timing.duration_ms = Date.now() - attemptStartedAt;
+    if (error && typeof error === 'object') {
+      error.primary_response_ms = timing.primary_response_ms;
+      error.duration_ms = timing.duration_ms;
+      if (!Number.isFinite(error.ai_response_count)) {
+        error.ai_response_count = 0;
+      }
+    }
+    throw error;
+  }
 
   const text = extractAiText(rawResult);
   if (!text) {
     const error = new Error('Workers AI returned no text.');
     error.ai_output = serializeForAiLog(rawResult);
     error.model_name = selectedModel;
+    error.primary_response_ms = timing.primary_response_ms;
+    error.ai_response_count = timing.ai_response_count;
+    error.duration_ms = Date.now() - attemptStartedAt;
     throw error;
   }
   logFullAiOutputToStdout('primary:' + selectedModel + ':max_tokens=' + selectedMaxTokens, text);
 
   const parsed = parseJsonFromText(text);
   if (isAssistPayloadShape(parsed)) {
+    timing.duration_ms = Date.now() - attemptStartedAt;
     return {
       payload: parsed,
-      ai_output: text
+      ai_output: text,
+      timing
     };
   }
 
-  const repaired = await attemptJsonRepair(env, aiConfig, text, selectedModel, selectedMaxTokens);
+  let repaired = null;
+  const repairStartedAt = Date.now();
+  try {
+    repaired = await attemptJsonRepair(env, aiConfig, text, selectedModel, selectedMaxTokens);
+    timing.repair_response_ms = Date.now() - repairStartedAt;
+    timing.ai_response_count = 2;
+  } catch (error) {
+    timing.repair_response_ms = Date.now() - repairStartedAt;
+    timing.duration_ms = Date.now() - attemptStartedAt;
+    if (error && typeof error === 'object') {
+      error.primary_response_ms = timing.primary_response_ms;
+      error.repair_response_ms = timing.repair_response_ms;
+      error.ai_response_count = timing.ai_response_count;
+      error.duration_ms = timing.duration_ms;
+      if (typeof error.model_name !== 'string' || !error.model_name.trim()) {
+        error.model_name = selectedModel;
+      }
+    }
+    throw error;
+  }
   if (repaired && repaired.payload && typeof repaired.payload === 'object') {
     const stitched = [
       '[original-output]',
@@ -465,15 +534,21 @@ async function runAssistantOnce(
       '[repair-output]',
       repaired.ai_output || ''
     ].join('\n');
+    timing.duration_ms = Date.now() - attemptStartedAt;
     return {
       payload: repaired.payload,
-      ai_output: stitched
+      ai_output: stitched,
+      timing
     };
   }
 
   const error = new Error('Workers AI did not return valid JSON.');
   error.ai_output = text;
   error.model_name = selectedModel;
+  error.primary_response_ms = timing.primary_response_ms;
+  error.repair_response_ms = timing.repair_response_ms;
+  error.ai_response_count = timing.ai_response_count;
+  error.duration_ms = Date.now() - attemptStartedAt;
   throw error;
 }
 
@@ -2221,7 +2296,12 @@ function getAiRequestConfig(env) {
   const timeoutMs = parseIntegerWithDefault(env.AI_TIMEOUT_MS, DEFAULT_AI_TIMEOUT_MS);
   const retryAttempts = parseIntegerWithDefault(env.AI_RETRY_ATTEMPTS, DEFAULT_RETRY_ATTEMPTS);
   const provider = typeof env.AI_PROVIDER === 'string' ? env.AI_PROVIDER.trim().toLowerCase() : '';
-  const responseFormatMode = provider === 'openai' ? 'json_schema' : 'json_object';
+  const responseFormatOverride = typeof env.AI_RESPONSE_FORMAT_MODE === 'string'
+    ? env.AI_RESPONSE_FORMAT_MODE.trim().toLowerCase()
+    : '';
+  const responseFormatMode = responseFormatOverride === 'json_object'
+    ? 'json_object'
+    : 'json_schema';
 
   return {
     modelName,
@@ -2230,12 +2310,20 @@ function getAiRequestConfig(env) {
     temperature,
     timeoutMs,
     retryAttempts,
-    responseFormatMode
+    responseFormatMode,
+    provider
   };
 }
 
 function buildAssistResponseFormat(aiConfig) {
   if (aiConfig && aiConfig.responseFormatMode === 'json_schema') {
+    const provider = typeof aiConfig.provider === 'string' ? aiConfig.provider.toLowerCase() : '';
+    if (provider === 'cloudflare') {
+      return {
+        type: 'json_schema',
+        json_schema: ASSIST_RESPONSE_JSON_SCHEMA
+      };
+    }
     return {
       type: 'json_schema',
       json_schema: {
@@ -2265,7 +2353,7 @@ function parseModelNames(env) {
   const configured = typeof env.AI_NAME === 'string' && env.AI_NAME.trim()
     ? env.AI_NAME.trim()
     : DEFAULT_MODEL;
-  return uniqueStrings([DEFAULT_MODEL, configured, ...DEFAULT_FALLBACK_MODELS]);
+  return uniqueStrings([configured]);
 }
 
 function buildAiDebugFromOutcome(aiConfig, outcome) {
@@ -2274,6 +2362,10 @@ function buildAiDebugFromOutcome(aiConfig, outcome) {
     ? outcome.retry_attempts
     : aiConfig.retryAttempts;
   const lastAiOutput = outcome && outcome.last_ai_output ? normalizeAiOutput(outcome.last_ai_output) : null;
+  const totalDurationMs = attempts.reduce((sum, attempt) => {
+    const value = attempt && Number.isFinite(attempt.duration_ms) ? attempt.duration_ms : 0;
+    return sum + value;
+  }, 0);
   return {
     reason: 'Workers AI did not return a usable patch response.',
     binding_present: true,
@@ -2282,9 +2374,41 @@ function buildAiDebugFromOutcome(aiConfig, outcome) {
     max_tokens: aiConfig.maxTokens,
     temperature: aiConfig.temperature,
     timeout_ms: aiConfig.timeoutMs,
+    response_format_mode: aiConfig.responseFormatMode,
     retry_attempts: retryAttempts,
     attempts,
+    total_duration_ms: totalDurationMs,
     last_ai_output: lastAiOutput
+  };
+}
+
+function buildAiTimingFromOutcome(outcome) {
+  if (!outcome || typeof outcome !== 'object') {
+    return null;
+  }
+  const attempts = Array.isArray(outcome.attempts)
+    ? outcome.attempts
+      .map((entry) => {
+        const base = entry && typeof entry === 'object' ? entry : {};
+        return {
+          attempt: Number.isFinite(base.attempt) ? base.attempt : null,
+          model: typeof base.model === 'string' ? base.model : null,
+          status: typeof base.status === 'string' ? base.status : null,
+          ...normalizeAssistAttemptTiming(base)
+        };
+      })
+      .filter((entry) => Number.isFinite(entry.attempt))
+    : [];
+  if (attempts.length === 0) {
+    return null;
+  }
+  const totalDurationMs = attempts.reduce((sum, entry) => {
+    const value = Number.isFinite(entry.duration_ms) ? entry.duration_ms : 0;
+    return sum + value;
+  }, 0);
+  return {
+    attempts,
+    total_duration_ms: totalDurationMs
   };
 }
 
@@ -2307,7 +2431,68 @@ function sanitizeErrorForClient(errorLike) {
   if (typeof error.model_name === 'string' && error.model_name.trim()) {
     sanitized.model = error.model_name.trim();
   }
+  if (Number.isFinite(error.duration_ms)) {
+    sanitized.duration_ms = Math.max(0, Math.round(error.duration_ms));
+  }
+  if (Number.isFinite(error.primary_response_ms)) {
+    sanitized.primary_response_ms = Math.max(0, Math.round(error.primary_response_ms));
+  }
+  if (Number.isFinite(error.repair_response_ms)) {
+    sanitized.repair_response_ms = Math.max(0, Math.round(error.repair_response_ms));
+  }
+  if (Number.isFinite(error.ai_response_count)) {
+    sanitized.ai_response_count = Math.max(0, Math.round(error.ai_response_count));
+  }
   return sanitized;
+}
+
+function normalizeAssistAttemptTiming(source) {
+  if (!source || typeof source !== 'object') {
+    return {};
+  }
+  const normalized = {};
+
+  const durationMs = Number.isFinite(source.duration_ms)
+    ? source.duration_ms
+    : (Number.isFinite(source.total_duration_ms) ? source.total_duration_ms : null);
+  if (Number.isFinite(durationMs)) {
+    normalized.duration_ms = Math.max(0, Math.round(durationMs));
+  }
+
+  const primaryMs = Number.isFinite(source.primary_response_ms)
+    ? source.primary_response_ms
+    : null;
+  if (Number.isFinite(primaryMs)) {
+    normalized.primary_response_ms = Math.max(0, Math.round(primaryMs));
+  }
+
+  const repairMs = Number.isFinite(source.repair_response_ms)
+    ? source.repair_response_ms
+    : null;
+  if (Number.isFinite(repairMs)) {
+    normalized.repair_response_ms = Math.max(0, Math.round(repairMs));
+  }
+
+  const responseCount = Number.isFinite(source.ai_response_count)
+    ? source.ai_response_count
+    : null;
+  if (Number.isFinite(responseCount)) {
+    normalized.ai_response_count = Math.max(0, Math.round(responseCount));
+  }
+
+  return normalized;
+}
+
+function logAssistAttemptTiming(modelName, attemptNumber, attemptEntry) {
+  const timing = normalizeAssistAttemptTiming(attemptEntry);
+  console.log(
+    '[assist-ai:attempt-timing:' + modelName + ':attempt=' + attemptNumber + ']'
+    + ' status=' + (attemptEntry && attemptEntry.status ? attemptEntry.status : 'unknown')
+    + ' total_ms=' + (Number.isFinite(timing.duration_ms) ? timing.duration_ms : 'n/a')
+    + ' primary_ms=' + (Number.isFinite(timing.primary_response_ms) ? timing.primary_response_ms : 'n/a')
+    + ' repair_ms=' + (Number.isFinite(timing.repair_response_ms) ? timing.repair_response_ms : 'n/a')
+    + ' responses=' + (Number.isFinite(timing.ai_response_count) ? timing.ai_response_count : 'n/a')
+  );
 }
 
 function normalizeAiOutput(text) {

@@ -47,14 +47,15 @@ Known artifact location on host:
 
 `/api/assist` is AI-only. Configure one provider:
 
-Cloudflare AI (same model ids you were using in Workers, for example `@cf/meta/llama-3.3-70b-instruct-fp8-fast`):
+Cloudflare AI:
 
 ```bash
 export AI_PROVIDER=cloudflare
 export CLOUDFLARE_ACCOUNT_ID=...
 export CLOUDFLARE_API_TOKEN=...
-export AI_NAME=@cf/meta/llama-3.3-70b-instruct-fp8-fast
-export AI_MODELS=@cf/meta/llama-3.3-70b-instruct-fp8-fast,@cf/meta/llama-3.1-8b-instruct
+export AI_NAME=@cf/meta/llama-3.1-8b-instruct
+# Optional multi-model retry chain:
+# export AI_MODELS=@cf/meta/llama-3.1-8b-instruct,@cf/meta/llama-3.3-70b-instruct-fp8-fast
 ```
 
 OpenAI-compatible API:

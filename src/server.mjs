@@ -12,13 +12,14 @@ const HOST = readString(process.env.APP_HOST || process.env.LOCAL_APP_HOST) || '
 const PORT = readInteger(process.env.APP_PORT || process.env.PORT, 8787);
 const PUBLIC_DIR = path.resolve(process.env.PUBLIC_DIR || path.join(process.cwd(), 'public'));
 const MAX_REQUEST_BYTES = readInteger(process.env.MAX_REQUEST_BYTES, 2 * 1024 * 1024);
+const SHUTDOWN_FORCE_EXIT_MS = readInteger(process.env.SHUTDOWN_FORCE_EXIT_MS, 5000);
 
 const aiProviderPreference = readString(process.env.AI_PROVIDER).toLowerCase() || 'auto';
 const cloudflareAiBinding = createCloudflareAiBindingFromEnv(process.env);
 const openAiBinding = createOpenAiCompatibleBindingFromEnv(process.env);
 const aiSelection = selectAiProvider(aiProviderPreference, cloudflareAiBinding, openAiBinding, process.env);
 const localAiBinding = aiSelection.binding;
-const workerEnv = buildWorkerEnv(process.env, localAiBinding, aiSelection.error_code);
+const workerEnv = buildWorkerEnv(process.env, localAiBinding, aiSelection.error_code, aiSelection.provider);
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -50,18 +51,51 @@ server.listen(PORT, HOST, () => {
   }
 });
 
-process.on('SIGINT', async () => {
-  await shutdown('SIGINT');
+let shutdownPromise = null;
+
+process.once('SIGINT', () => {
+  void requestShutdown('SIGINT');
 });
 
-process.on('SIGTERM', async () => {
-  await shutdown('SIGTERM');
+process.once('SIGTERM', () => {
+  void requestShutdown('SIGTERM');
 });
+
+function requestShutdown(signal) {
+  if (!shutdownPromise) {
+    shutdownPromise = shutdown(signal);
+    return shutdownPromise;
+  }
+  console.log('Received ' + signal + ', shutdown already in progress...');
+  return shutdownPromise;
+}
 
 async function shutdown(signal) {
   console.log('Received ' + signal + ', stopping local app server...');
-  await stopActiveRuns();
-  await new Promise((resolve) => server.close(resolve));
+  const forceExitMs = Math.max(500, SHUTDOWN_FORCE_EXIT_MS);
+  const forceExitTimer = setTimeout(() => {
+    console.error('Shutdown exceeded ' + forceExitMs + 'ms, forcing exit.');
+    process.exit(1);
+  }, forceExitMs);
+  if (typeof forceExitTimer.unref === 'function') {
+    forceExitTimer.unref();
+  }
+
+  try {
+    await stopActiveRuns();
+    await new Promise((resolve) => {
+      server.close(() => resolve());
+      if (typeof server.closeIdleConnections === 'function') {
+        server.closeIdleConnections();
+      }
+      if (typeof server.closeAllConnections === 'function') {
+        server.closeAllConnections();
+      }
+    });
+  } finally {
+    clearTimeout(forceExitTimer);
+  }
+
   process.exit(0);
 }
 
@@ -232,10 +266,12 @@ function normalizePathname(pathname) {
   return raw.replace(/\/+$/, '') || '/';
 }
 
-function buildWorkerEnv(envLike, aiBinding, aiConfigError) {
+function buildWorkerEnv(envLike, aiBinding, aiConfigError, resolvedAiProvider) {
   const env = envLike && typeof envLike === 'object' ? envLike : {};
+  const providerFromSelection = readString(resolvedAiProvider);
+  const providerFromEnv = readString(env.AI_PROVIDER);
   const out = {
-    AI_PROVIDER: readString(env.AI_PROVIDER),
+    AI_PROVIDER: providerFromSelection || providerFromEnv,
     AI_NAME: readString(env.AI_NAME) || readString(env.OPENAI_MODEL) || '',
     AI_MODELS: readString(env.AI_MODELS) || readString(env.OPENAI_MODEL) || '',
     AI_TEMPERATURE: readString(env.AI_TEMPERATURE) || '0',
