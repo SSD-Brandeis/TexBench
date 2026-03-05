@@ -14,7 +14,7 @@ A chat + form interface for designing Tectonic workload specs, then generating r
 
 - Node.js 18+
 - `tectonic-cli` installed on host machine and available on PATH
-- Optional for LLM assist: OpenAI-compatible API key (`OPENAI_API_KEY`)
+- OpenAI-compatible API key for assistant prompts (`OPENAI_API_KEY`)
 
 ## Setup
 
@@ -43,16 +43,51 @@ Known artifact location on host:
 - Latest spec file: `generated-workloads/latest-spec.json`
 - Per-run artifacts: `generated-workloads/runs/<run_id>/`
 
-## Optional LLM env vars
+## LLM env vars
 
-If not set, assistant uses deterministic fallback parsing.
+`/api/assist` is AI-only. Configure one provider:
+
+Cloudflare AI (same model ids you were using in Workers, for example `@cf/meta/llama-3.3-70b-instruct-fp8-fast`):
 
 ```bash
+export AI_PROVIDER=cloudflare
+export CLOUDFLARE_ACCOUNT_ID=...
+export CLOUDFLARE_API_TOKEN=...
+export AI_NAME=@cf/meta/llama-3.3-70b-instruct-fp8-fast
+export AI_MODELS=@cf/meta/llama-3.3-70b-instruct-fp8-fast,@cf/meta/llama-3.1-8b-instruct
+```
+
+OpenAI-compatible API:
+
+```bash
+export AI_PROVIDER=openai
 export OPENAI_API_KEY=...
 export OPENAI_MODEL=gpt-4.1-mini
 # Optional overrides:
 # export OPENAI_BASE_URL=https://api.openai.com/v1
 # export OPENAI_CHAT_ENDPOINT=/chat/completions
+```
+
+When `AI_PROVIDER=openai`, `/api/assist` uses Structured Outputs (`response_format: json_schema`, strict mode).
+
+If you set `CLOUDFLARE_AI_BASE_URL`, include the Cloudflare API version path (`/client/v4`), for example:
+`https://api.cloudflare.com/client/v4`
+
+If no provider credentials are set, `/api/assist` returns a runtime config error (`ai_credentials_missing`, `openai_token_missing`, or `cloudflare_ai_credentials_missing`).
+
+## If `tectonic-cli` is not found
+
+If `Run Workload` fails with `tectonic_cli_not_found` (or `which tectonic-cli` is empty), build from your local Tectonic repo and add it to `PATH`:
+
+```bash
+cd ~/src/Tectonic
+cargo build --release --bin tectonic-cli
+mkdir -p ~/.cargo/bin
+ln -sf ~/src/Tectonic/target/release/tectonic-cli ~/.cargo/bin/tectonic-cli
+echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc
+exec zsh -l
+which tectonic-cli
+tectonic-cli --help
 ```
 
 ## Notes

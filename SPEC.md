@@ -26,9 +26,12 @@
 ### Assistant Execution
 - Existing assistant logic remains in `src/index.js`.
 - Server invokes the assistant route directly in-process.
-- LLM mode:
-- optional OpenAI-compatible API via env (`OPENAI_API_KEY`, `OPENAI_MODEL`, etc.)
-- deterministic fallback parser when no API key is configured
+- Supports provider selection in local mode:
+- Cloudflare AI via `AI_PROVIDER=cloudflare`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`.
+- OpenAI-compatible API via `AI_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL`.
+- OpenAI provider uses Structured Outputs (`response_format: json_schema`, strict mode) for assist responses.
+- No deterministic fallback path for prompts.
+- `/api/assist` returns runtime config errors when credentials are missing (`ai_credentials_missing`, `openai_token_missing`, `cloudflare_ai_credentials_missing`).
 
 ### Workload Execution
 - File: `src/local-tectonic-runner.mjs` (shared module logic)
@@ -130,12 +133,14 @@ type RunStatusResponse = {
 ## Failure Modes
 - Invalid JSON body: `400 invalid_json`
 - Invalid `spec_json`: `400 invalid_spec` (with details)
-- Missing `tectonic-cli` or command failure: run status `failed`
+- Missing AI credentials for `/api/assist`: `503` with explicit configuration code.
+- Missing `tectonic-cli` in PATH: run status `failed` with code `tectonic_cli_not_found` and local build instructions.
+- Other command failures: run status `failed`
 - Workload artifact not ready: `409 artifact_not_ready`
 
 ## Acceptance Criteria
 1. One command (`npm run dev`) starts complete local app.
-2. `/api/assist` works in local mode with LLM optional/fallback available.
+2. `/api/assist` works in local mode with AI-only prompt handling.
 3. Starting valid run returns `202` and transitions to terminal status.
 4. Download endpoints return spec/workload artifacts as expected.
 5. No Worker, D1, R2, or container dependency is required.

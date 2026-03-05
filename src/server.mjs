@@ -5,6 +5,7 @@ import { createReadStream, promises as fs } from 'node:fs';
 
 import workerEntrypoint from './index.js';
 import { createOpenAiCompatibleBindingFromEnv } from './openai-ai-binding.mjs';
+import { createCloudflareAiBindingFromEnv } from './cloudflare-ai-binding.mjs';
 import { getLocalRunnerConfig, handleWorkloadRequest, stopActiveRuns } from './local-tectonic-runner.mjs';
 
 const HOST = readString(process.env.APP_HOST || process.env.LOCAL_APP_HOST) || '127.0.0.1';
@@ -12,8 +13,12 @@ const PORT = readInteger(process.env.APP_PORT || process.env.PORT, 8787);
 const PUBLIC_DIR = path.resolve(process.env.PUBLIC_DIR || path.join(process.cwd(), 'public'));
 const MAX_REQUEST_BYTES = readInteger(process.env.MAX_REQUEST_BYTES, 2 * 1024 * 1024);
 
-const localAiBinding = createOpenAiCompatibleBindingFromEnv(process.env);
-const workerEnv = buildWorkerEnv(process.env, localAiBinding);
+const aiProviderPreference = readString(process.env.AI_PROVIDER).toLowerCase() || 'auto';
+const cloudflareAiBinding = createCloudflareAiBindingFromEnv(process.env);
+const openAiBinding = createOpenAiCompatibleBindingFromEnv(process.env);
+const aiSelection = selectAiProvider(aiProviderPreference, cloudflareAiBinding, openAiBinding, process.env);
+const localAiBinding = aiSelection.binding;
+const workerEnv = buildWorkerEnv(process.env, localAiBinding, aiSelection.error_code);
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -39,9 +44,9 @@ server.listen(PORT, HOST, () => {
   console.log('Workload output directory:', workload.known_output_dir);
   console.log('tectonic-cli binary:', workload.tectonic_bin);
   if (localAiBinding) {
-    console.log('AI mode: OpenAI-compatible API enabled.');
+    console.log('AI mode:', aiSelection.provider + ' enabled.');
   } else {
-    console.log('AI mode: deterministic fallback (OPENAI_API_KEY not set).');
+    console.log('AI mode: disabled (' + aiSelection.error_code + '). /api/assist will return a runtime error.');
   }
 });
 
@@ -87,7 +92,8 @@ async function routeRequest(req, res) {
       mode: 'local_macos',
       ai: {
         enabled: !!localAiBinding,
-        provider: localAiBinding ? 'openai_compatible' : 'fallback_only'
+        provider: localAiBinding ? aiSelection.provider : 'unavailable',
+        error_code: localAiBinding ? null : aiSelection.error_code
       },
       workload
     });
@@ -226,9 +232,10 @@ function normalizePathname(pathname) {
   return raw.replace(/\/+$/, '') || '/';
 }
 
-function buildWorkerEnv(envLike, aiBinding) {
+function buildWorkerEnv(envLike, aiBinding, aiConfigError) {
   const env = envLike && typeof envLike === 'object' ? envLike : {};
   const out = {
+    AI_PROVIDER: readString(env.AI_PROVIDER),
     AI_NAME: readString(env.AI_NAME) || readString(env.OPENAI_MODEL) || '',
     AI_MODELS: readString(env.AI_MODELS) || readString(env.OPENAI_MODEL) || '',
     AI_TEMPERATURE: readString(env.AI_TEMPERATURE) || '0',
@@ -241,8 +248,66 @@ function buildWorkerEnv(envLike, aiBinding) {
   };
   if (aiBinding) {
     out.AI = aiBinding;
+  } else if (typeof aiConfigError === 'string' && aiConfigError.trim()) {
+    out.AI_CONFIG_ERROR = aiConfigError.trim();
   }
   return out;
+}
+
+function selectAiProvider(preference, cloudflareBinding, openAiBinding, envLike) {
+  const env = envLike && typeof envLike === 'object' ? envLike : {};
+  const pref = preference === 'cloudflare' || preference === 'openai' ? preference : 'auto';
+
+  if (pref === 'cloudflare') {
+    if (cloudflareBinding) {
+      return { binding: cloudflareBinding, provider: 'cloudflare', error_code: null };
+    }
+    return {
+      binding: null,
+      provider: 'unavailable',
+      error_code: 'cloudflare_ai_credentials_missing'
+    };
+  }
+
+  if (pref === 'openai') {
+    if (openAiBinding) {
+      return { binding: openAiBinding, provider: 'openai_compatible', error_code: null };
+    }
+    return {
+      binding: null,
+      provider: 'unavailable',
+      error_code: 'openai_token_missing'
+    };
+  }
+
+  if (cloudflareBinding) {
+    return { binding: cloudflareBinding, provider: 'cloudflare', error_code: null };
+  }
+  if (openAiBinding) {
+    return { binding: openAiBinding, provider: 'openai_compatible', error_code: null };
+  }
+
+  const hasCloudflareCreds = readString(env.CLOUDFLARE_ACCOUNT_ID || env.CF_ACCOUNT_ID)
+    || readString(env.CLOUDFLARE_API_TOKEN || env.CF_API_TOKEN);
+  if (hasCloudflareCreds) {
+    return {
+      binding: null,
+      provider: 'unavailable',
+      error_code: 'cloudflare_ai_credentials_missing'
+    };
+  }
+  if (readString(env.OPENAI_API_KEY)) {
+    return {
+      binding: null,
+      provider: 'unavailable',
+      error_code: 'openai_token_missing'
+    };
+  }
+  return {
+    binding: null,
+    provider: 'unavailable',
+    error_code: 'ai_credentials_missing'
+  };
 }
 
 function sendJson(res, status, payload) {

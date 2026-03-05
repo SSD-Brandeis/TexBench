@@ -31,6 +31,10 @@ export function createOpenAiCompatibleBindingFromEnv(envLike = process.env) {
       if (!Number.isFinite(requestPayload.max_tokens)) {
         delete requestPayload.max_tokens;
       }
+      const responseFormat = normalizeResponseFormat(body.response_format);
+      if (responseFormat) {
+        requestPayload.response_format = responseFormat;
+      }
 
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(new Error('openai_timeout')), timeoutMs);
@@ -166,6 +170,23 @@ function normalizePositiveInteger(value) {
 function normalizeFiniteNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeResponseFormat(rawFormat) {
+  if (!rawFormat || typeof rawFormat !== 'object') {
+    return null;
+  }
+  const type = readString(rawFormat.type).toLowerCase();
+  if (type === 'json_object') {
+    return { type: 'json_object' };
+  }
+  if (type === 'json_schema' && rawFormat.json_schema && typeof rawFormat.json_schema === 'object') {
+    return {
+      type: 'json_schema',
+      json_schema: rawFormat.json_schema
+    };
+  }
+  return null;
 }
 
 function clampInteger(value, min, max) {

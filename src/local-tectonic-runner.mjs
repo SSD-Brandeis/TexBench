@@ -484,6 +484,16 @@ async function startTectonicRun(run) {
     return;
   }
 
+  if (exit.error && typeof exit.error === 'object' && exit.error.code === 'ENOENT') {
+    run.status = 'failed';
+    run.progress_text = 'tectonic-cli binary not found.';
+    run.error = {
+      code: 'tectonic_cli_not_found',
+      message: buildMissingTectonicCliMessage(TECTONIC_BIN)
+    };
+    return;
+  }
+
   if (exit.code !== 0) {
     const detail = trimLine(stderrTail || stdoutTail);
     run.status = 'failed';
@@ -733,6 +743,18 @@ function buildListenErrorMessage(error) {
   }
   const detail = error && error.message ? error.message : 'unknown error';
   return base + ' ' + detail;
+}
+
+function buildMissingTectonicCliMessage(binaryName) {
+  const bin = String(binaryName || 'tectonic-cli');
+  return [
+    '"' + bin + '" was not found in PATH.',
+    'Build it from ~/src/Tectonic:',
+    '`cd ~/src/Tectonic && cargo build --release --bin tectonic-cli`.',
+    'Then add it to PATH, for example:',
+    '`mkdir -p ~/.cargo/bin && ln -sf ~/src/Tectonic/target/release/tectonic-cli ~/.cargo/bin/tectonic-cli`.',
+    'Ensure ~/.cargo/bin is in PATH and retry.'
+  ].join(' ');
 }
 
 function appendTail(current, chunk) {

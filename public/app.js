@@ -1967,7 +1967,7 @@
       if (clarifications.length === 0 && Array.isArray(result.questions)) {
         clarifications = result.questions
           .map((questionText, index) => normalizeAssistantClarification({
-            id: 'fallback-question-' + index,
+            id: 'question-' + index,
             text: String(questionText || '').trim(),
             required: false,
             binding: { type: 'operations_set' },
@@ -3123,7 +3123,7 @@
         const unresolvedAfterApply = validateAndRenderClarificationState();
         if (unresolvedAfterApply.length > 0) {
           setAssistantStatus('Resolve required', 'warn');
-        } else if (normalizedResult.warnings.length > 0 || normalizedResult.source === 'fallback') {
+        } else if (normalizedResult.warnings.length > 0) {
           setAssistantStatus('Applied with notes', 'warn');
         } else {
           setAssistantStatus('Applied', 'default');
