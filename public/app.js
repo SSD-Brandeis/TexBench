@@ -29,11 +29,8 @@
     const assistantApplyBtn = document.getElementById('assistantApplyBtn');
     const assistantClearBtn = document.getElementById('assistantClearBtn');
     const assistantStatus = document.getElementById('assistantStatus');
-    const assistantSummary = document.getElementById('assistantSummary');
-    const assistantQuestions = document.getElementById('assistantQuestions');
-    const assistantQuestionInputs = document.getElementById('assistantQuestionInputs');
-    const assistantRawWrap = document.getElementById('assistantRawWrap');
-    const assistantRawOutput = document.getElementById('assistantRawOutput');
+    const assistantTimeline = document.getElementById('assistantTimeline');
+    const assistantComposerHint = document.getElementById('assistantComposerHint');
 
     const INITIAL_JSON_TEXT = '{}';
     // Fallback ordering used only if schema-derived operation metadata is unavailable.
@@ -96,18 +93,49 @@
       selection_scale: 1,
       selection_shape: 2
     };
+    const DEFAULT_STRING_PATTERNS = ['uniform', 'weighted', 'segmented', 'hot_range'];
+    const STRING_PATTERN_DEFAULTS = {
+      key_pattern: 'uniform',
+      val_pattern: 'uniform',
+      key_hot_len: 20,
+      key_hot_amount: 100,
+      key_hot_probability: 0.8,
+      val_hot_len: 256,
+      val_hot_amount: 100,
+      val_hot_probability: 0.8
+    };
     // UI defaults stay product-defined (not schema-defined) so presets remain predictable.
     const OPERATION_DEFAULTS = {
-      inserts: { op_count: 500000, key_len: 20, val_len: 1024 },
+      inserts: {
+        op_count: 500000,
+        key_len: 20,
+        val_len: 1024,
+        key_pattern: STRING_PATTERN_DEFAULTS.key_pattern,
+        val_pattern: STRING_PATTERN_DEFAULTS.val_pattern,
+        key_hot_len: STRING_PATTERN_DEFAULTS.key_hot_len,
+        key_hot_amount: STRING_PATTERN_DEFAULTS.key_hot_amount,
+        key_hot_probability: STRING_PATTERN_DEFAULTS.key_hot_probability,
+        val_hot_len: STRING_PATTERN_DEFAULTS.val_hot_len,
+        val_hot_amount: STRING_PATTERN_DEFAULTS.val_hot_amount,
+        val_hot_probability: STRING_PATTERN_DEFAULTS.val_hot_probability
+      },
       updates: {
         op_count: 500000,
         val_len: 1024,
+        val_pattern: STRING_PATTERN_DEFAULTS.val_pattern,
+        val_hot_len: STRING_PATTERN_DEFAULTS.val_hot_len,
+        val_hot_amount: STRING_PATTERN_DEFAULTS.val_hot_amount,
+        val_hot_probability: STRING_PATTERN_DEFAULTS.val_hot_probability,
         selection_distribution: 'uniform',
         ...SELECTION_PARAM_DEFAULTS
       },
       merges: {
         op_count: 500000,
         val_len: 256,
+        val_pattern: STRING_PATTERN_DEFAULTS.val_pattern,
+        val_hot_len: STRING_PATTERN_DEFAULTS.val_hot_len,
+        val_hot_amount: STRING_PATTERN_DEFAULTS.val_hot_amount,
+        val_hot_probability: STRING_PATTERN_DEFAULTS.val_hot_probability,
         selection_distribution: 'uniform',
         ...SELECTION_PARAM_DEFAULTS
       },
@@ -135,8 +163,22 @@
         selection_distribution: 'uniform',
         ...SELECTION_PARAM_DEFAULTS
       },
-      empty_point_queries: { op_count: 500000, key_len: 20 },
-      empty_point_deletes: { op_count: 500000, key_len: 20 }
+      empty_point_queries: {
+        op_count: 500000,
+        key_len: 20,
+        key_pattern: STRING_PATTERN_DEFAULTS.key_pattern,
+        key_hot_len: STRING_PATTERN_DEFAULTS.key_hot_len,
+        key_hot_amount: STRING_PATTERN_DEFAULTS.key_hot_amount,
+        key_hot_probability: STRING_PATTERN_DEFAULTS.key_hot_probability
+      },
+      empty_point_deletes: {
+        op_count: 500000,
+        key_len: 20,
+        key_pattern: STRING_PATTERN_DEFAULTS.key_pattern,
+        key_hot_len: STRING_PATTERN_DEFAULTS.key_hot_len,
+        key_hot_amount: STRING_PATTERN_DEFAULTS.key_hot_amount,
+        key_hot_probability: STRING_PATTERN_DEFAULTS.key_hot_probability
+      }
     };
 
     function titleCaseFromSnake(value) {
@@ -167,7 +209,11 @@
     let characterSetEnum = ['alphanumeric', 'alphabetic', 'numeric'];
     let rangeFormatEnum = ['StartCount', 'StartEnd'];
     let selectionDistributionEnum = [...DEFAULT_SELECTION_DISTRIBUTIONS];
-    let assistantFollowups = null;
+    let stringPatternEnum = [...DEFAULT_STRING_PATTERNS];
+    const assistantConversation = [];
+    const assistantAnswerStore = {};
+    const assistantClarificationIndex = new Map();
+    let assistantGateMessage = '';
     const lockedTopFields = new Set();
     const lockedOperationFields = new Map();
 
@@ -282,6 +328,22 @@
       if (derivedSelectionDistributionEnum.length > 0) {
         selectionDistributionEnum = derivedSelectionDistributionEnum;
       }
+
+      const stringExprVariants = schema.$defs && schema.$defs.StringExprInner && Array.isArray(schema.$defs.StringExprInner.oneOf)
+        ? schema.$defs.StringExprInner.oneOf
+        : [];
+      const derivedStringPatterns = stringExprVariants
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object' || !entry.properties || typeof entry.properties !== 'object') {
+            return null;
+          }
+          const keys = Object.keys(entry.properties);
+          return keys.length === 1 ? keys[0] : null;
+        })
+        .filter((value) => typeof value === 'string' && value.trim() !== '');
+      if (derivedStringPatterns.length > 0) {
+        stringPatternEnum = derivedStringPatterns;
+      }
     }
 
     // Keep the character-set dropdown aligned with schema enum values.
@@ -347,12 +409,6 @@
         reportUiIssue('Failed to build operation controls', e);
       }
       try {
-        assistantFollowups = createAssistantFollowupController();
-      } catch (e) {
-        assistantFollowups = null;
-        reportUiIssue('Failed to initialize assistant follow-up controls', e);
-      }
-      try {
         resetFormInterface();
       } catch (e) {
         reportUiIssue('Failed to reset form interface', e);
@@ -377,7 +433,7 @@
             assistantInput.value = '';
             assistantInput.focus();
           }
-          clearAssistantFeedback();
+          clearAssistantThread();
           setAssistantStatus('Ready', 'default');
         });
       }
@@ -488,6 +544,12 @@
         }
       } else if (eventTarget && eventTarget.dataset && eventTarget.dataset.field === 'selection_distribution') {
         refreshSelectionParamVisibility(eventTarget.dataset.op);
+      } else if (
+        eventTarget
+        && eventTarget.dataset
+        && (eventTarget.dataset.field === 'key_pattern' || eventTarget.dataset.field === 'val_pattern')
+      ) {
+        refreshStringPatternVisibility(eventTarget.dataset.op);
       }
       updateJsonFromForm();
     }
@@ -560,6 +622,7 @@
       setOperationCardVisibility(op, checked);
       if (checked) {
         refreshSelectionParamVisibility(op);
+        refreshStringPatternVisibility(op);
       }
     }
 
@@ -576,6 +639,7 @@
         setOperationInputValue(op, field, value);
       });
       refreshSelectionParamVisibility(op);
+      refreshStringPatternVisibility(op);
     }
 
     function ensureOperationDefaultsIfEmpty(op) {
@@ -586,6 +650,7 @@
         }
       });
       refreshSelectionParamVisibility(op);
+      refreshStringPatternVisibility(op);
     }
 
     function applyPreset(presetName) {
@@ -770,6 +835,13 @@
       return [...DEFAULT_SELECTION_DISTRIBUTIONS];
     }
 
+    function getStringPatternValues() {
+      if (Array.isArray(stringPatternEnum) && stringPatternEnum.length > 0) {
+        return stringPatternEnum;
+      }
+      return [...DEFAULT_STRING_PATTERNS];
+    }
+
     function getSelectionParamsForDistribution(distributionName) {
       return SELECTION_DISTRIBUTION_PARAMS[distributionName] || SELECTION_DISTRIBUTION_PARAMS.uniform;
     }
@@ -790,6 +862,36 @@
       }
       if (field === 'val_len') {
         return combineDescriptions([getOperationFieldDescription(op, 'val'), stringLenDescription]);
+      }
+      if (field === 'key_pattern') {
+        return combineDescriptions([
+          getOperationFieldDescription(op, 'key'),
+          'Pattern options: ' + getStringPatternValues().join(', ') + '.'
+        ]);
+      }
+      if (field === 'val_pattern') {
+        return combineDescriptions([
+          getOperationFieldDescription(op, 'val'),
+          'Pattern options: ' + getStringPatternValues().join(', ') + '.'
+        ]);
+      }
+      if (field === 'key_hot_len') {
+        return combineDescriptions([getOperationFieldDescription(op, 'key'), 'Length for key hot_range pattern.']);
+      }
+      if (field === 'key_hot_amount') {
+        return combineDescriptions([getOperationFieldDescription(op, 'key'), 'Amount for key hot_range pattern.']);
+      }
+      if (field === 'key_hot_probability') {
+        return combineDescriptions([getOperationFieldDescription(op, 'key'), 'Probability for key hot_range pattern.']);
+      }
+      if (field === 'val_hot_len') {
+        return combineDescriptions([getOperationFieldDescription(op, 'val'), 'Length for value hot_range pattern.']);
+      }
+      if (field === 'val_hot_amount') {
+        return combineDescriptions([getOperationFieldDescription(op, 'val'), 'Amount for value hot_range pattern.']);
+      }
+      if (field === 'val_hot_probability') {
+        return combineDescriptions([getOperationFieldDescription(op, 'val'), 'Probability for value hot_range pattern.']);
       }
       if (field === 'selection_distribution') {
         const optionsText = getSelectionDistributionValues().join(', ');
@@ -929,6 +1031,7 @@
         if (card) {
           operationConfigContainer.appendChild(card);
           refreshSelectionParamVisibility(op);
+          refreshStringPatternVisibility(op);
         }
       });
     }
@@ -1048,27 +1151,119 @@
 
       if (formOpsWithKeyFields.has(op)) {
         grid.appendChild(
-          createNumberField(
+          createStringPatternField(
             op,
-            'key_len',
-            'Key Length',
-            includeDescriptions ? defaults.key_len : (defaults.key_len || 20),
+            'key_pattern',
+            'Key Pattern',
+            defaults.key_pattern || STRING_PATTERN_DEFAULTS.key_pattern,
+            includeDescriptions ? getUiFieldDescription(op, 'key_pattern') : ''
+          )
+        );
+        const keyLenField = createNumberField(
+          op,
+          'key_len',
+          'Key Length',
+          includeDescriptions ? defaults.key_len : (defaults.key_len || 20),
+          '1',
+          '1',
+          includeDescriptions ? getUiFieldDescription(op, 'key_len') : ''
+        );
+        keyLenField.classList.add('string-uniform-field');
+        keyLenField.dataset.patternTarget = 'key';
+        grid.appendChild(keyLenField);
+        grid.appendChild(
+          createStringPatternHotField(
+            op,
+            'key_hot_len',
+            'Key Hot Length',
+            defaults.key_hot_len || STRING_PATTERN_DEFAULTS.key_hot_len,
             '1',
             '1',
-            includeDescriptions ? getUiFieldDescription(op, 'key_len') : ''
+            'key',
+            includeDescriptions ? getUiFieldDescription(op, 'key_hot_len') : ''
+          )
+        );
+        grid.appendChild(
+          createStringPatternHotField(
+            op,
+            'key_hot_amount',
+            'Key Hot Amount',
+            defaults.key_hot_amount || STRING_PATTERN_DEFAULTS.key_hot_amount,
+            '1',
+            '0',
+            'key',
+            includeDescriptions ? getUiFieldDescription(op, 'key_hot_amount') : ''
+          )
+        );
+        grid.appendChild(
+          createStringPatternHotField(
+            op,
+            'key_hot_probability',
+            'Key Hot Probability',
+            defaults.key_hot_probability === undefined ? STRING_PATTERN_DEFAULTS.key_hot_probability : defaults.key_hot_probability,
+            'any',
+            '0',
+            'key',
+            includeDescriptions ? getUiFieldDescription(op, 'key_hot_probability') : ''
           )
         );
       }
       if (formOpsWithValueFields.has(op)) {
         grid.appendChild(
-          createNumberField(
+          createStringPatternField(
             op,
-            'val_len',
-            'Value Length',
-            includeDescriptions ? defaults.val_len : (defaults.val_len || 256),
+            'val_pattern',
+            'Value Pattern',
+            defaults.val_pattern || STRING_PATTERN_DEFAULTS.val_pattern,
+            includeDescriptions ? getUiFieldDescription(op, 'val_pattern') : ''
+          )
+        );
+        const valLenField = createNumberField(
+          op,
+          'val_len',
+          'Value Length',
+          includeDescriptions ? defaults.val_len : (defaults.val_len || 256),
+          '1',
+          '1',
+          includeDescriptions ? getUiFieldDescription(op, 'val_len') : ''
+        );
+        valLenField.classList.add('string-uniform-field');
+        valLenField.dataset.patternTarget = 'val';
+        grid.appendChild(valLenField);
+        grid.appendChild(
+          createStringPatternHotField(
+            op,
+            'val_hot_len',
+            'Value Hot Length',
+            defaults.val_hot_len || STRING_PATTERN_DEFAULTS.val_hot_len,
             '1',
             '1',
-            includeDescriptions ? getUiFieldDescription(op, 'val_len') : ''
+            'val',
+            includeDescriptions ? getUiFieldDescription(op, 'val_hot_len') : ''
+          )
+        );
+        grid.appendChild(
+          createStringPatternHotField(
+            op,
+            'val_hot_amount',
+            'Value Hot Amount',
+            defaults.val_hot_amount || STRING_PATTERN_DEFAULTS.val_hot_amount,
+            '1',
+            '0',
+            'val',
+            includeDescriptions ? getUiFieldDescription(op, 'val_hot_amount') : ''
+          )
+        );
+        grid.appendChild(
+          createStringPatternHotField(
+            op,
+            'val_hot_probability',
+            'Value Hot Probability',
+            defaults.val_hot_probability === undefined ? STRING_PATTERN_DEFAULTS.val_hot_probability : defaults.val_hot_probability,
+            'any',
+            '0',
+            'val',
+            includeDescriptions ? getUiFieldDescription(op, 'val_hot_probability') : ''
           )
         );
       }
@@ -1122,6 +1317,7 @@
       if (formOpsWithSelectionFields.has(op)) {
         refreshSelectionParamVisibility(op);
       }
+      refreshStringPatternVisibility(op);
       return card;
     }
 
@@ -1206,6 +1402,42 @@
       return label;
     }
 
+    function createStringPatternField(op, field, labelText, defaultValue, description = '') {
+      const label = document.createElement('label');
+      label.className = 'field string-pattern-selector';
+      label.dataset.patternTarget = field === 'key_pattern' ? 'key' : 'val';
+      const title = document.createElement('span');
+      appendTitleWithHelp(title, labelText, description);
+      const select = document.createElement('select');
+      select.dataset.op = op;
+      select.dataset.field = field;
+
+      getStringPatternValues().forEach((patternName) => {
+        const option = document.createElement('option');
+        option.value = patternName;
+        option.textContent = patternName;
+        select.appendChild(option);
+      });
+
+      select.value = defaultValue;
+      label.appendChild(title);
+      label.appendChild(select);
+      if (description) {
+        const desc = document.createElement('small');
+        desc.className = 'field-description';
+        desc.textContent = description;
+        label.appendChild(desc);
+      }
+      return label;
+    }
+
+    function createStringPatternHotField(op, field, labelText, placeholder, step, min, target, description = '') {
+      const label = createNumberField(op, field, labelText, placeholder, step, min, description);
+      label.classList.add('string-hot-field');
+      label.dataset.patternTarget = target;
+      return label;
+    }
+
     function createSelectionParamField(op, field, labelText, placeholder, step, min, description = '') {
       const label = createNumberField(op, field, labelText, placeholder, step, min, description);
       label.classList.add('selection-param-field');
@@ -1243,6 +1475,56 @@
             input.value = String(defaultValue);
           }
         }
+      });
+    }
+
+    function refreshStringPatternVisibility(op) {
+      const patternValues = getStringPatternValues();
+      ['key', 'val'].forEach((target) => {
+        const supportsTarget = target === 'key' ? formOpsWithKeyFields.has(op) : formOpsWithValueFields.has(op);
+        if (!supportsTarget) {
+          return;
+        }
+
+        const patternField = target === 'key' ? 'key_pattern' : 'val_pattern';
+        const uniformLenField = target === 'key' ? 'key_len' : 'val_len';
+        const hotLenField = target === 'key' ? 'key_hot_len' : 'val_hot_len';
+        const hotAmountField = target === 'key' ? 'key_hot_amount' : 'val_hot_amount';
+        const hotProbabilityField = target === 'key' ? 'key_hot_probability' : 'val_hot_probability';
+
+        let patternName = readOperationField(op, patternField) || STRING_PATTERN_DEFAULTS[patternField] || 'uniform';
+        if (!patternValues.includes(patternName)) {
+          patternName = patternValues[0] || 'uniform';
+          setOperationInputValue(op, patternField, patternName);
+        }
+
+        const showUniformLen = patternName === 'uniform';
+        const showHotFields = patternName === 'hot_range';
+
+        const uniformLenInput = operationConfigContainer.querySelector('[data-op="' + op + '"][data-field="' + uniformLenField + '"]');
+        if (uniformLenInput && uniformLenInput.closest('.field')) {
+          uniformLenInput.closest('.field').classList.toggle('hidden', !showUniformLen);
+          if (showUniformLen && uniformLenInput.value === '') {
+            const fallbackLen = target === 'key'
+              ? (OPERATION_DEFAULTS[op] && OPERATION_DEFAULTS[op].key_len) || 20
+              : (OPERATION_DEFAULTS[op] && OPERATION_DEFAULTS[op].val_len) || 256;
+            uniformLenInput.value = String(fallbackLen);
+          }
+        }
+
+        [hotLenField, hotAmountField, hotProbabilityField].forEach((fieldName) => {
+          const input = operationConfigContainer.querySelector('[data-op="' + op + '"][data-field="' + fieldName + '"]');
+          if (!input || !input.closest('.field')) {
+            return;
+          }
+          input.closest('.field').classList.toggle('hidden', !showHotFields);
+          if (showHotFields && input.value === '') {
+            const defaultValue = STRING_PATTERN_DEFAULTS[fieldName];
+            if (defaultValue !== undefined) {
+              input.value = String(defaultValue);
+            }
+          }
+        });
       });
     }
 
@@ -1287,18 +1569,106 @@
       return n || fallback;
     }
 
+    function nonNegativeIntOrDefault(value, fallback) {
+      if (value === '' || value === null || value === undefined) {
+        return fallback;
+      }
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return fallback;
+      }
+      return Math.max(0, Math.floor(numeric));
+    }
+
     function readOperationField(op, field) {
       const selector = '[data-op="' + op + '"][data-field="' + field + '"]';
       const el = operationConfigContainer.querySelector(selector);
       return el ? el.value : '';
     }
 
-    function buildStringExpr(len, characterSet) {
+    function buildUniformStringExpr(len, characterSet) {
       const uniform = { len };
       if (characterSet) {
         uniform.character_set = characterSet;
       }
       return { uniform };
+    }
+
+    function probabilityOrDefault(value, fallback) {
+      const numeric = numberOrDefault(value, fallback);
+      if (!Number.isFinite(numeric)) {
+        return fallback;
+      }
+      if (numeric < 0) {
+        return 0;
+      }
+      if (numeric > 1) {
+        return 1;
+      }
+      return numeric;
+    }
+
+    function buildStringExprFromForm(op, target, characterSet, defaults) {
+      const isKey = target === 'key';
+      const patternField = isKey ? 'key_pattern' : 'val_pattern';
+      const lenField = isKey ? 'key_len' : 'val_len';
+      const hotLenField = isKey ? 'key_hot_len' : 'val_hot_len';
+      const hotAmountField = isKey ? 'key_hot_amount' : 'val_hot_amount';
+      const hotProbabilityField = isKey ? 'key_hot_probability' : 'val_hot_probability';
+      const defaultLen = isKey ? (defaults.key_len || 20) : (defaults.val_len || 256);
+      const validPatterns = getStringPatternValues();
+      let patternName = readOperationField(op, patternField) || defaults[patternField] || STRING_PATTERN_DEFAULTS[patternField] || 'uniform';
+      if (!validPatterns.includes(patternName)) {
+        patternName = validPatterns[0] || 'uniform';
+      }
+
+      if (patternName === 'hot_range') {
+        const hotLenDefault = defaults[hotLenField] === undefined ? STRING_PATTERN_DEFAULTS[hotLenField] : defaults[hotLenField];
+        const hotAmountDefault = defaults[hotAmountField] === undefined ? STRING_PATTERN_DEFAULTS[hotAmountField] : defaults[hotAmountField];
+        const hotProbabilityDefault = defaults[hotProbabilityField] === undefined
+          ? STRING_PATTERN_DEFAULTS[hotProbabilityField]
+          : defaults[hotProbabilityField];
+        return {
+          hot_range: {
+            len: intOrDefault(readOperationField(op, hotLenField), hotLenDefault),
+            amount: nonNegativeIntOrDefault(readOperationField(op, hotAmountField), hotAmountDefault),
+            probability: probabilityOrDefault(readOperationField(op, hotProbabilityField), hotProbabilityDefault)
+          }
+        };
+      }
+
+      if (patternName === 'weighted') {
+        const weightedValue = buildUniformStringExpr(
+          intOrDefault(readOperationField(op, lenField), defaultLen),
+          characterSet
+        );
+        return {
+          weighted: [
+            {
+              weight: 1,
+              value: weightedValue
+            }
+          ]
+        };
+      }
+
+      if (patternName === 'segmented') {
+        const segmentValue = buildUniformStringExpr(
+          intOrDefault(readOperationField(op, lenField), defaultLen),
+          characterSet
+        );
+        return {
+          segmented: {
+            separator: '-',
+            segments: [segmentValue]
+          }
+        };
+      }
+
+      return buildUniformStringExpr(
+        intOrDefault(readOperationField(op, lenField), defaultLen),
+        characterSet
+      );
     }
 
     function buildSelectionDistributionSpec(op, defaults) {
@@ -1334,17 +1704,11 @@
       };
 
       if (formOpsWithKeyFields.has(op)) {
-        config.key = buildStringExpr(
-          intOrDefault(readOperationField(op, 'key_len'), defaults.key_len || 20),
-          characterSet
-        );
+        config.key = buildStringExprFromForm(op, 'key', characterSet, defaults);
       }
 
       if (formOpsWithValueFields.has(op)) {
-        config.val = buildStringExpr(
-          intOrDefault(readOperationField(op, 'val_len'), defaults.val_len || 256),
-          characterSet
-        );
+        config.val = buildStringExprFromForm(op, 'val', characterSet, defaults);
       }
 
       if (formOpsWithSelectionFields.has(op)) {
@@ -1449,76 +1813,15 @@
       validationResult.textContent = '';
     }
 
-    function createAssistantFollowupController() {
-      if (
-        !assistantQuestionInputs ||
-        !window.AssistantFollowups ||
-        typeof window.AssistantFollowups.createController !== 'function'
-      ) {
-        if (assistantQuestionInputs) {
-          assistantQuestionInputs.innerHTML = '';
-        }
-        return null;
+    function clearAssistantThread() {
+      assistantConversation.length = 0;
+      assistantClarificationIndex.clear();
+      Object.keys(assistantAnswerStore).forEach((key) => delete assistantAnswerStore[key]);
+      assistantGateMessage = '';
+      if (assistantTimeline) {
+        assistantTimeline.innerHTML = '';
       }
-
-      return window.AssistantFollowups.createController({
-        containerEl: assistantQuestionInputs,
-        getOperationOrder: () => [...operationOrder],
-        getOperationLabel: (op) => getOperationLabel(op),
-        getSelectedOperations: () => getSelectedOperations(),
-        isSelectionOp: (op) => formOpsWithSelectionFields.has(op),
-        isRangeOp: (op) => formOpsWithRangeFields.has(op),
-        isKeyOp: (op) => formOpsWithKeyFields.has(op),
-        isValueOp: (op) => formOpsWithValueFields.has(op),
-        getCharacterSets: () => [...characterSetEnum],
-        getRangeFormats: () => getRangeFormatValues(),
-        getSelectionDistributions: () => getSelectionDistributionValues(),
-        getSelectionParamsForDistribution: (distributionName) => getSelectionParamsForDistribution(distributionName),
-        getSelectionParamDefaults: () => ({ ...SELECTION_PARAM_DEFAULTS }),
-        getOperationDefaults: (op) => ({ ...(OPERATION_DEFAULTS[op] || {}) }),
-        readTopField: (fieldName) => {
-          if (fieldName === 'character_set') {
-            return formCharacterSet ? formCharacterSet.value : '';
-          }
-          if (fieldName === 'sections_count') {
-            return formSections ? formSections.value : '';
-          }
-          if (fieldName === 'groups_per_section') {
-            return formGroups ? formGroups.value : '';
-          }
-          return '';
-        },
-        writeTopField: (fieldName, value) => {
-          if (fieldName === 'character_set' && formCharacterSet) {
-            formCharacterSet.value = String(value);
-          } else if (fieldName === 'sections_count' && formSections) {
-            formSections.value = String(value);
-          } else if (fieldName === 'groups_per_section' && formGroups) {
-            formGroups.value = String(value);
-          }
-        },
-        readOperationField: (op, fieldName) => readOperationField(op, fieldName),
-        writeOperationField: (op, fieldName, value) => setOperationInputValue(op, fieldName, value),
-        setOperationChecked: (op, checked) => setOperationChecked(op, checked),
-        ensureOperationDefaultsIfEmpty: (op) => ensureOperationDefaultsIfEmpty(op),
-        refreshSelectionParamVisibility: (op) => refreshSelectionParamVisibility(op),
-        updateJson: () => updateJsonFromForm()
-      });
-    }
-
-    function clearAssistantFeedback() {
-      if (assistantSummary) {
-        assistantSummary.textContent = '';
-      }
-      if (assistantQuestions) {
-        assistantQuestions.innerHTML = '';
-      }
-      if (assistantFollowups) {
-        assistantFollowups.clear();
-      } else if (assistantQuestionInputs) {
-        assistantQuestionInputs.innerHTML = '';
-      }
-      setAssistantRawOutput(null);
+      setAssistantComposerHint('Answer required clarifications to continue the thread.');
     }
 
     function setAssistantStatus(text, tone) {
@@ -1536,115 +1839,10 @@
       }
     }
 
-    function setAssistantSummary(text) {
-      if (!assistantSummary) {
-        return;
-      }
-      assistantSummary.textContent = text || '';
-    }
-
-    function setAssistantQuestions(questions) {
-      if (!assistantQuestions) {
-        return;
-      }
-      assistantQuestions.innerHTML = '';
-      const list = Array.isArray(questions) ? questions : [];
-      list.forEach((question) => {
-        const cleaned = String(question || '').trim();
-        if (!cleaned) {
-          return;
-        }
-        const item = document.createElement('li');
-        item.textContent = cleaned;
-        assistantQuestions.appendChild(item);
-      });
-    }
-
-    function setAssistantRawOutput(rawOutputText) {
-      if (!assistantRawWrap || !assistantRawOutput) {
-        return;
-      }
-      const text = typeof rawOutputText === 'string' ? rawOutputText.trim() : '';
-      assistantRawOutput.textContent = text;
-      assistantRawWrap.classList.toggle('show', text.length > 0);
-      if (text.length === 0) {
-        assistantRawWrap.removeAttribute('open');
-      }
-    }
-
-    function formatAssistantDebugInfo(debug) {
-      if (!debug || typeof debug !== 'object') {
-        return '';
-      }
-      const pieces = [];
-      if (debug.reason) {
-        pieces.push('reason=' + String(debug.reason));
-      }
-      if (debug.model) {
-        pieces.push('model=' + String(debug.model));
-      }
-      if (debug.max_tokens !== undefined && debug.max_tokens !== null) {
-        pieces.push('max_tokens=' + String(debug.max_tokens));
-      }
-      if (debug.timeout_ms !== undefined && debug.timeout_ms !== null) {
-        pieces.push('timeout_ms=' + String(debug.timeout_ms));
-      }
-      if (debug.retry_attempts !== undefined && debug.retry_attempts !== null) {
-        pieces.push('retries=' + String(debug.retry_attempts));
-      }
-      if (Array.isArray(debug.attempts) && debug.attempts.length > 0) {
-        const attemptSummary = debug.attempts
-          .map((entry) => {
-            const attempt = entry && entry.attempt !== undefined ? '#' + entry.attempt : '#?';
-            const model = entry && entry.model ? '[' + String(entry.model) + ']' : '';
-            const message = entry && entry.message ? String(entry.message) : 'unknown';
-            return attempt + model + ':' + message;
-          })
-          .join(' | ');
-        pieces.push('attempts=' + attemptSummary);
-      }
-      if (debug.error && typeof debug.error === 'object' && debug.error.message) {
-        pieces.push('error=' + String(debug.error.message));
-      }
-      return pieces.join('; ');
-    }
-
-    function extractAssistantAiOutput(result) {
-      if (!result || typeof result !== 'object') {
-        return '';
-      }
-      if (typeof result.ai_output === 'string' && result.ai_output.trim()) {
-        return result.ai_output.trim();
-      }
-      const debug = result.debug && typeof result.debug === 'object' ? result.debug : null;
-      if (!debug) {
-        return '';
-      }
-      if (typeof debug.last_ai_output === 'string' && debug.last_ai_output.trim()) {
-        return debug.last_ai_output.trim();
-      }
-      if (Array.isArray(debug.attempts)) {
-        let lastMessage = '';
-        for (let index = debug.attempts.length - 1; index >= 0; index -= 1) {
-          const attempt = debug.attempts[index];
-          if (attempt && typeof attempt.ai_output === 'string' && attempt.ai_output.trim()) {
-            return attempt.ai_output.trim();
-          }
-          if (attempt && typeof attempt.message === 'string' && attempt.message.trim()) {
-            lastMessage = attempt.message.trim();
-          }
-        }
-        if (lastMessage) {
-          return 'No Workers AI output captured. Last attempt error: ' + lastMessage;
-        }
-      }
-      return '';
-    }
-
     function setAssistantBusy(isBusy) {
       if (assistantApplyBtn) {
         assistantApplyBtn.disabled = !!isBusy;
-        assistantApplyBtn.textContent = isBusy ? 'Applying...' : 'Apply to Form';
+        assistantApplyBtn.textContent = isBusy ? 'Applying...' : 'Apply';
       }
       if (assistantClearBtn) {
         assistantClearBtn.disabled = !!isBusy;
@@ -1652,6 +1850,827 @@
       if (assistantInput) {
         assistantInput.disabled = !!isBusy;
       }
+    }
+
+    function setAssistantComposerHint(text) {
+      if (!assistantComposerHint) {
+        return;
+      }
+      assistantComposerHint.textContent = text || '';
+    }
+
+    function createTurnId() {
+      return 'turn-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+    }
+
+    function normalizeAssistantClarification(entry) {
+      if (!entry || typeof entry !== 'object') {
+        return null;
+      }
+      const id = typeof entry.id === 'string' && entry.id.trim()
+        ? entry.id.trim()
+        : createTurnId();
+      const text = typeof entry.text === 'string' ? entry.text.trim() : '';
+      if (!text) {
+        return null;
+      }
+      const binding = entry.binding && typeof entry.binding === 'object' ? entry.binding : null;
+      const type = binding && typeof binding.type === 'string' ? binding.type : '';
+      if (!['top_field', 'operation_field', 'operations_set'].includes(type)) {
+        return null;
+      }
+
+      const inputType = typeof entry.input === 'string' ? entry.input : 'text';
+      let options = Array.isArray(entry.options)
+        ? entry.options.map((item) => String(item || '').trim()).filter(Boolean)
+        : [];
+      const validation = entry.validation && typeof entry.validation === 'object'
+        ? entry.validation
+        : null;
+      if (options.length === 0) {
+        if (type === 'top_field' && binding.field === 'character_set') {
+          options = [...characterSetEnum];
+        } else if (type === 'operation_field' && binding.field === 'selection_distribution') {
+          options = getSelectionDistributionValues();
+        } else if (type === 'operation_field' && (binding.field === 'key_pattern' || binding.field === 'val_pattern')) {
+          options = getStringPatternValues();
+        } else if (type === 'operation_field' && binding.field === 'range_format') {
+          options = getRangeFormatValues();
+        } else if (type === 'operations_set') {
+          options = [...operationOrder];
+        }
+      }
+
+      return {
+        id,
+        text,
+        required: entry.required === true,
+        binding,
+        input: ['number', 'enum', 'multi_enum', 'boolean', 'text'].includes(inputType) ? inputType : 'text',
+        options,
+        validation,
+        default_behavior: typeof entry.default_behavior === 'string' ? entry.default_behavior : 'use_default'
+      };
+    }
+
+    function normalizeAssistantAssumption(entry, index) {
+      if (typeof entry === 'string') {
+        const text = entry.trim();
+        return text ? { id: 'assume-' + index, text, field_ref: null, reason: 'default_applied', applied_value: null } : null;
+      }
+      if (!entry || typeof entry !== 'object') {
+        return null;
+      }
+      const text = typeof entry.text === 'string' ? entry.text.trim() : '';
+      if (!text) {
+        return null;
+      }
+      return {
+        id: typeof entry.id === 'string' && entry.id.trim() ? entry.id.trim() : ('assume-' + index),
+        text,
+        field_ref: typeof entry.field_ref === 'string' ? entry.field_ref.trim() : null,
+        reason: typeof entry.reason === 'string' ? entry.reason.trim() : 'default_applied',
+        applied_value: entry.applied_value
+      };
+    }
+
+    function normalizeAssistantResponse(result) {
+      const summary = typeof result.summary === 'string' && result.summary.trim()
+        ? result.summary.trim()
+        : 'Applied your request to the form.';
+      let clarifications = Array.isArray(result.clarifications)
+        ? result.clarifications.map((entry) => normalizeAssistantClarification(entry)).filter(Boolean)
+        : [];
+      if (clarifications.length === 0 && Array.isArray(result.questions)) {
+        clarifications = result.questions
+          .map((questionText, index) => normalizeAssistantClarification({
+            id: 'fallback-question-' + index,
+            text: String(questionText || '').trim(),
+            required: false,
+            binding: { type: 'operations_set' },
+            input: 'multi_enum',
+            options: [...operationOrder]
+          }))
+          .filter(Boolean);
+      }
+      const assumptions = Array.isArray(result.assumptions)
+        ? result.assumptions.map((entry, index) => normalizeAssistantAssumption(entry, index)).filter(Boolean)
+        : [];
+      if (assumptions.length === 0 && Array.isArray(result.assumption_texts)) {
+        result.assumption_texts.forEach((text, index) => {
+          const normalized = normalizeAssistantAssumption(String(text || ''), index);
+          if (normalized) {
+            assumptions.push(normalized);
+          }
+        });
+      }
+      const warnings = Array.isArray(result.warnings)
+        ? result.warnings.map((entry) => String(entry || '').trim()).filter(Boolean)
+        : [];
+      return {
+        summary,
+        clarifications,
+        assumptions,
+        warnings,
+        source: typeof result.source === 'string' ? result.source : 'unknown'
+      };
+    }
+
+    function addAssistantTimelineTurn(turn) {
+      assistantConversation.push(turn);
+      while (assistantConversation.length > 80) {
+        assistantConversation.shift();
+      }
+      renderAssistantTimeline();
+    }
+
+    function pruneAssistantAnswerStore() {
+      const validClarificationIds = new Set(assistantClarificationIndex.keys());
+      Object.keys(assistantAnswerStore).forEach((answerId) => {
+        if (!validClarificationIds.has(answerId)) {
+          delete assistantAnswerStore[answerId];
+        }
+      });
+    }
+
+    function getAnswersForRequest() {
+      pruneAssistantAnswerStore();
+      const filtered = {};
+      Object.entries(assistantAnswerStore).forEach(([key, value]) => {
+        if (!assistantClarificationIndex.has(key)) {
+          return;
+        }
+        filtered[key] = value;
+      });
+      return filtered;
+    }
+
+    function getOperationsForSelectionBinding(binding, clarification) {
+      const available = Array.isArray(clarification.options) && clarification.options.length > 0
+        ? clarification.options
+        : operationOrder;
+      if (!binding || binding.type !== 'operations_set') {
+        return [...available];
+      }
+      const capability = typeof binding.capability === 'string' ? binding.capability : '';
+      if (!capability || capability === 'all') {
+        return [...available];
+      }
+      return available.filter((op) => {
+        if (capability === 'selection') {
+          return formOpsWithSelectionFields.has(op);
+        }
+        if (capability === 'range') {
+          return formOpsWithRangeFields.has(op);
+        }
+        if (capability === 'key') {
+          return formOpsWithKeyFields.has(op);
+        }
+        if (capability === 'value') {
+          return formOpsWithValueFields.has(op);
+        }
+        return true;
+      });
+    }
+
+    function getClarificationCurrentValue(clarification) {
+      if (!clarification || !clarification.binding) {
+        return null;
+      }
+      if (Object.prototype.hasOwnProperty.call(assistantAnswerStore, clarification.id)) {
+        return assistantAnswerStore[clarification.id];
+      }
+      const binding = clarification.binding;
+      if (binding.type === 'top_field') {
+        if (binding.field === 'character_set') {
+          return formCharacterSet ? formCharacterSet.value : '';
+        }
+        if (binding.field === 'sections_count') {
+          return formSections ? formSections.value : '';
+        }
+        if (binding.field === 'groups_per_section') {
+          return formGroups ? formGroups.value : '';
+        }
+      }
+      if (binding.type === 'operation_field' && typeof binding.operation === 'string') {
+        if (binding.field === 'enabled') {
+          const toggle = getOperationToggle(binding.operation);
+          return !!(toggle && toggle.checked);
+        }
+        return readOperationField(binding.operation, binding.field);
+      }
+      if (binding.type === 'operations_set') {
+        const selected = getSelectedOperations();
+        return selected.filter((op) => getOperationsForSelectionBinding(binding, clarification).includes(op));
+      }
+      return null;
+    }
+
+    function parseInputValueByType(inputEl, clarification) {
+      if (!inputEl || !clarification) {
+        return null;
+      }
+      const inputType = clarification.input;
+      if (inputType === 'multi_enum') {
+        if (!(inputEl instanceof HTMLSelectElement)) {
+          return [];
+        }
+        return Array.from(inputEl.selectedOptions || [])
+          .map((opt) => String(opt.value || '').trim())
+          .filter(Boolean);
+      }
+      if (inputType === 'boolean') {
+        if (inputEl.value === 'true') return true;
+        if (inputEl.value === 'false') return false;
+        return null;
+      }
+      if (inputType === 'number') {
+        if (inputEl.value === '') {
+          return null;
+        }
+        const value = Number(inputEl.value);
+        return Number.isFinite(value) ? value : null;
+      }
+      const text = String(inputEl.value || '').trim();
+      return text ? text : null;
+    }
+
+    function hasAnswerValue(value) {
+      if (value === null || value === undefined) {
+        return false;
+      }
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+      if (typeof value === 'string') {
+        return value.trim().length > 0;
+      }
+      return true;
+    }
+
+    function validateClarificationAnswer(clarification, value) {
+      const validation = clarification && clarification.validation && typeof clarification.validation === 'object'
+        ? clarification.validation
+        : {};
+      if (!hasAnswerValue(value)) {
+        if (clarification && clarification.required) {
+          if (clarification.binding && clarification.binding.type === 'operations_set') {
+            return {
+              valid: false,
+              message: 'Select one or more operations in the Operations section below.'
+            };
+          }
+          return { valid: false, message: 'Required field.' };
+        }
+        return { valid: true, message: '' };
+      }
+
+      if (clarification.input === 'enum') {
+        if (clarification.options.length > 0 && !clarification.options.includes(String(value))) {
+          return { valid: false, message: 'Choose one of the allowed options.' };
+        }
+      }
+
+      if (clarification.input === 'multi_enum') {
+        const values = Array.isArray(value) ? value : [];
+        if (validation.min_items && values.length < Number(validation.min_items)) {
+          return { valid: false, message: 'Select at least ' + validation.min_items + ' option(s).' };
+        }
+        if (validation.max_items && values.length > Number(validation.max_items)) {
+          return { valid: false, message: 'Select at most ' + validation.max_items + ' option(s).' };
+        }
+        if (clarification.options.length > 0 && values.some((item) => !clarification.options.includes(item))) {
+          return { valid: false, message: 'Selected operation is not allowed.' };
+        }
+      }
+
+      if (clarification.input === 'number') {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+          return { valid: false, message: 'Enter a valid number.' };
+        }
+        if (validation.integer && !Number.isInteger(numeric)) {
+          return { valid: false, message: 'Enter a whole number.' };
+        }
+        if (Number.isFinite(validation.min) && numeric < validation.min) {
+          return { valid: false, message: 'Value must be >= ' + validation.min + '.' };
+        }
+        if (Number.isFinite(validation.max) && numeric > validation.max) {
+          return { valid: false, message: 'Value must be <= ' + validation.max + '.' };
+        }
+      }
+
+      return { valid: true, message: '' };
+    }
+
+    function applyClarificationAnswerToForm(clarification, value) {
+      if (!clarification || !clarification.binding || !hasAnswerValue(value)) {
+        return;
+      }
+      const binding = clarification.binding;
+
+      if (binding.type === 'top_field') {
+        if (binding.field === 'character_set' && typeof value === 'string' && formCharacterSet) {
+          const values = Array.from(formCharacterSet.options || []).map((option) => option.value);
+          if (values.includes(value)) {
+            formCharacterSet.value = value;
+            lockTopField('character_set');
+          }
+        } else if (binding.field === 'sections_count' && formSections) {
+          const numeric = Math.floor(Number(value));
+          if (Number.isFinite(numeric) && numeric > 0) {
+            formSections.value = String(numeric);
+            lockTopField('sections_count');
+          }
+        } else if (binding.field === 'groups_per_section' && formGroups) {
+          const numeric = Math.floor(Number(value));
+          if (Number.isFinite(numeric) && numeric > 0) {
+            formGroups.value = String(numeric);
+            lockTopField('groups_per_section');
+          }
+        }
+        updateJsonFromForm();
+        return;
+      }
+
+      if (binding.type === 'operations_set') {
+        const selected = Array.isArray(value) ? value : [];
+        const allowed = new Set(getOperationsForSelectionBinding(binding, clarification));
+        allowed.forEach((op) => {
+          setOperationChecked(op, selected.includes(op));
+          lockOperationField(op, 'enabled');
+          if (selected.includes(op)) {
+            ensureOperationDefaultsIfEmpty(op);
+          }
+        });
+        updateJsonFromForm();
+        return;
+      }
+
+      if (binding.type === 'operation_field' && typeof binding.operation === 'string' && operationOrder.includes(binding.operation)) {
+        const op = binding.operation;
+        const field = binding.field;
+        if (field === 'enabled') {
+          setOperationChecked(op, value === true);
+          lockOperationField(op, 'enabled');
+          if (value === true) {
+            ensureOperationDefaultsIfEmpty(op);
+          }
+          updateJsonFromForm();
+          return;
+        }
+
+        setOperationChecked(op, true);
+        ensureOperationDefaultsIfEmpty(op);
+
+        if (field === 'selection_distribution') {
+          const options = getSelectionDistributionValues();
+          if (typeof value === 'string' && options.includes(value)) {
+            setOperationInputValue(op, field, value);
+            refreshSelectionParamVisibility(op);
+            lockOperationField(op, field);
+          }
+          updateJsonFromForm();
+          return;
+        }
+
+        if (field === 'key_pattern' || field === 'val_pattern') {
+          const options = getStringPatternValues();
+          if (typeof value === 'string' && options.includes(value)) {
+            setOperationInputValue(op, field, value);
+            refreshStringPatternVisibility(op);
+            lockOperationField(op, field);
+          }
+          updateJsonFromForm();
+          return;
+        }
+
+        if (field === 'range_format') {
+          const options = getRangeFormatValues();
+          if (typeof value === 'string' && options.includes(value)) {
+            setOperationInputValue(op, field, value);
+            lockOperationField(op, field);
+          }
+          updateJsonFromForm();
+          return;
+        }
+
+        const numericValue = Number(value);
+        if (Number.isFinite(numericValue)) {
+          setOperationInputValue(op, field, numericValue);
+          lockOperationField(op, field);
+        }
+        if (field.startsWith('selection_')) {
+          refreshSelectionParamVisibility(op);
+        }
+        updateJsonFromForm();
+      }
+    }
+
+    function validateAndRenderClarificationState() {
+      const unresolved = [];
+      assistantClarificationIndex.forEach((entry, clarificationId) => {
+        const value = assistantAnswerStore[clarificationId];
+        const validation = validateClarificationAnswer(entry.clarification, value);
+        const hasValue = hasAnswerValue(value);
+        const isResolved = entry.clarification.required === true && validation.valid && hasValue;
+        entry.refs.forEach((ref) => {
+          if (ref && ref.errorEl) {
+            ref.errorEl.textContent = validation.valid
+              ? ''
+              : (entry.clarification.required || hasAnswerValue(value) ? validation.message : '');
+          }
+          if (ref && ref.inputEl) {
+            ref.inputEl.classList.toggle('invalid', !validation.valid && (entry.clarification.required || hasAnswerValue(value)));
+          }
+          if (ref && ref.blockEl) {
+            ref.blockEl.classList.toggle('required', entry.clarification.required === true && !isResolved);
+            ref.blockEl.classList.toggle('resolved', isResolved);
+          }
+          if (ref && ref.badgeEl) {
+            ref.badgeEl.textContent = isResolved ? 'Resolved' : 'Required';
+            ref.badgeEl.classList.toggle('resolved', isResolved);
+          }
+          if (ref && ref.hintEl) {
+            ref.hintEl.textContent = buildClarificationHintText(entry.clarification, isResolved);
+          }
+        });
+        if (entry.clarification.required && !validation.valid) {
+          unresolved.push({ id: clarificationId, message: validation.message });
+        }
+      });
+
+      if (unresolved.length > 0) {
+        assistantGateMessage = 'Resolve ' + unresolved.length + ' required clarification' + (unresolved.length > 1 ? 's' : '') + ' before sending the next prompt.';
+        setAssistantComposerHint(assistantGateMessage);
+        if (!assistantStatus || !assistantStatus.classList.contains('loading')) {
+          setAssistantStatus('Resolve required', 'warn');
+        }
+      } else if (assistantConversation.length > 0) {
+        assistantGateMessage = '';
+        setAssistantComposerHint('All required clarifications are resolved. You can continue the thread.');
+        if (!assistantStatus || !assistantStatus.classList.contains('loading') && !assistantStatus.classList.contains('error')) {
+          setAssistantStatus('Ready', 'default');
+        }
+      } else {
+        assistantGateMessage = '';
+        setAssistantComposerHint('Answer required clarifications to continue the thread.');
+      }
+
+      return unresolved;
+    }
+
+    function registerClarificationRef(clarification, refs) {
+      if (!clarification || !clarification.id) {
+        return;
+      }
+      if (!assistantClarificationIndex.has(clarification.id)) {
+        assistantClarificationIndex.set(clarification.id, { clarification, refs: [] });
+      }
+      const entry = assistantClarificationIndex.get(clarification.id);
+      entry.clarification = clarification;
+      entry.refs.push(refs || {});
+    }
+
+    function writeValueToClarificationInput(inputEl, clarification, value) {
+      if (!inputEl || !clarification) {
+        return;
+      }
+      if (!hasAnswerValue(value)) {
+        if (clarification.input === 'multi_enum' && inputEl instanceof HTMLSelectElement) {
+          Array.from(inputEl.options || []).forEach((optionEl) => {
+            optionEl.selected = false;
+          });
+        } else {
+          inputEl.value = '';
+        }
+        return;
+      }
+      if (clarification.input === 'multi_enum' && inputEl instanceof HTMLSelectElement) {
+        const asArray = Array.isArray(value) ? value : [];
+        Array.from(inputEl.options || []).forEach((optionEl) => {
+          optionEl.selected = asArray.includes(optionEl.value);
+        });
+        return;
+      }
+      if (clarification.input === 'boolean') {
+        inputEl.value = value === true ? 'true' : (value === false ? 'false' : '');
+        return;
+      }
+      inputEl.value = String(value);
+    }
+
+    function createClarificationInput(clarification) {
+      if (!clarification) {
+        return null;
+      }
+      if (shouldHideClarificationInput(clarification)) {
+        return null;
+      }
+      let inputEl;
+      if (clarification.input === 'enum') {
+        const select = document.createElement('select');
+        select.className = 'assistant-clarification-input';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '(choose)';
+        select.appendChild(placeholder);
+        clarification.options.forEach((optionValue) => {
+          const optionEl = document.createElement('option');
+          optionEl.value = optionValue;
+          optionEl.textContent = optionValue;
+          select.appendChild(optionEl);
+        });
+        inputEl = select;
+      } else if (clarification.input === 'multi_enum') {
+        const select = document.createElement('select');
+        select.className = 'assistant-clarification-input';
+        select.multiple = true;
+        select.size = Math.max(3, Math.min(6, clarification.options.length || 4));
+        clarification.options.forEach((optionValue) => {
+          const optionEl = document.createElement('option');
+          optionEl.value = optionValue;
+          optionEl.textContent = optionValue;
+          select.appendChild(optionEl);
+        });
+        inputEl = select;
+      } else if (clarification.input === 'boolean') {
+        const select = document.createElement('select');
+        select.className = 'assistant-clarification-input';
+        [
+          { value: '', label: '(choose)' },
+          { value: 'true', label: 'Yes' },
+          { value: 'false', label: 'No' }
+        ].forEach((entry) => {
+          const optionEl = document.createElement('option');
+          optionEl.value = entry.value;
+          optionEl.textContent = entry.label;
+          select.appendChild(optionEl);
+        });
+        inputEl = select;
+      } else {
+        const input = document.createElement('input');
+        input.className = 'assistant-clarification-input';
+        input.type = clarification.input === 'number' ? 'number' : 'text';
+        if (clarification.input === 'number') {
+          input.step = clarification.validation && clarification.validation.integer ? '1' : 'any';
+          if (clarification.validation && Number.isFinite(clarification.validation.min)) {
+            input.min = String(clarification.validation.min);
+          }
+          if (clarification.validation && Number.isFinite(clarification.validation.max)) {
+            input.max = String(clarification.validation.max);
+          }
+        }
+        inputEl = input;
+      }
+      return inputEl;
+    }
+
+    function shouldHideClarificationInput(clarification) {
+      return !!(
+        clarification
+        && clarification.binding
+        && clarification.binding.type === 'operations_set'
+      );
+    }
+
+    function buildClarificationHintText(clarification, isResolved) {
+      if (!clarification || !clarification.binding) {
+        return '';
+      }
+      if (clarification.binding.type === 'operations_set') {
+        if (clarification.required) {
+          return isResolved
+            ? 'Operations are set below.'
+            : 'Use the Operations section below. At least one operation is required.';
+        }
+        return 'Use the Operations section below to change operation selection.';
+      }
+      if (clarification.required) {
+        return isResolved ? 'Required answer provided.' : 'Required for next prompt.';
+      }
+      return 'Optional. Defaults will be used if left blank.';
+    }
+
+    function getClarificationFieldLabel(fieldName) {
+      const labels = {
+        selection_mean: 'mean',
+        selection_std_dev: 'standard deviation',
+        selection_alpha: 'alpha',
+        selection_beta: 'beta',
+        selection_lambda: 'lambda',
+        selection_scale: 'scale',
+        selection_shape: 'shape',
+        selection_min: 'minimum',
+        selection_max: 'maximum',
+        selection_n: 'parameter n',
+        selection_s: 'parameter s'
+      };
+      return labels[fieldName] || '';
+    }
+
+    function getClarificationDisplayText(clarification) {
+      const baseText = clarification && typeof clarification.text === 'string'
+        ? clarification.text.trim()
+        : '';
+      if (!baseText || !clarification || !clarification.binding) {
+        return baseText;
+      }
+
+      if (
+        clarification.binding.type !== 'operation_field'
+        || clarification.input !== 'number'
+        || typeof clarification.binding.field !== 'string'
+      ) {
+        return baseText;
+      }
+
+      const fieldName = clarification.binding.field;
+      if (!fieldName.startsWith('selection_')) {
+        return baseText;
+      }
+
+      const lower = baseText.toLowerCase();
+      const looksMultiParam = (
+        (/\bmean\b/.test(lower) && /\bstandard\s+deviation\b|\bstd(?:\.?\s*dev|_?dev|_?deviation)?\b/.test(lower))
+        || /\balpha\b/.test(lower) && /\bbeta\b/.test(lower)
+        || /\bmin(?:imum)?\b/.test(lower) && /\bmax(?:imum)?\b/.test(lower)
+        || /\bscale\b/.test(lower) && /\bshape\b/.test(lower)
+      );
+      if (!looksMultiParam) {
+        return baseText;
+      }
+
+      const fieldLabel = getClarificationFieldLabel(fieldName);
+      if (!fieldLabel) {
+        return baseText;
+      }
+
+      const distributionMatch = baseText.match(/\bfor\s+([a-z_ -]+)\s+selection distribution\b/i);
+      const distributionLabel = distributionMatch && distributionMatch[1]
+        ? distributionMatch[1].trim()
+        : 'selection';
+      return 'For ' + distributionLabel + ' distribution, what ' + fieldLabel + ' should I use?';
+    }
+
+    function renderAssistantTimeline() {
+      if (!assistantTimeline) {
+        return;
+      }
+      assistantTimeline.innerHTML = '';
+      assistantClarificationIndex.clear();
+
+      assistantConversation.forEach((turn) => {
+        const turnEl = document.createElement('article');
+        turnEl.className = 'assistant-turn ' + (turn.role === 'user' ? 'user' : 'assistant');
+
+        const header = document.createElement('div');
+        header.className = 'assistant-turn-header';
+        const left = document.createElement('span');
+        left.textContent = turn.role === 'user' ? 'You' : 'Assistant';
+        const right = document.createElement('span');
+        right.textContent = turn.at || '';
+        header.appendChild(left);
+        header.appendChild(right);
+        turnEl.appendChild(header);
+
+        if (turn.role === 'user') {
+          const message = document.createElement('p');
+          message.className = 'assistant-turn-message';
+          message.textContent = turn.text || '';
+          turnEl.appendChild(message);
+          assistantTimeline.appendChild(turnEl);
+          return;
+        }
+
+        const summary = document.createElement('p');
+        summary.className = 'assistant-turn-summary';
+        summary.textContent = turn.summary || 'Applied.';
+        turnEl.appendChild(summary);
+
+        if (Array.isArray(turn.warnings) && turn.warnings.length > 0) {
+          const warning = document.createElement('p');
+          warning.className = 'assistant-inline-meta';
+          warning.textContent = 'Warnings: ' + turn.warnings.join(' ');
+          turnEl.appendChild(warning);
+        }
+
+        if (Array.isArray(turn.assumptions) && turn.assumptions.length > 0) {
+          const assumptionsWrap = document.createElement('div');
+          assumptionsWrap.className = 'assistant-assumptions';
+          const assumptionsTitle = document.createElement('span');
+          assumptionsTitle.className = 'assistant-inline-meta';
+          assumptionsTitle.textContent = 'Assumptions applied:';
+          assumptionsWrap.appendChild(assumptionsTitle);
+          const assumptionList = document.createElement('ul');
+          assumptionList.className = 'assistant-assumption-list';
+          turn.assumptions.forEach((entry) => {
+            const item = document.createElement('li');
+            item.textContent = entry.text;
+            assumptionList.appendChild(item);
+          });
+          assumptionsWrap.appendChild(assumptionList);
+          turnEl.appendChild(assumptionsWrap);
+        }
+
+        if (Array.isArray(turn.clarifications) && turn.clarifications.length > 0) {
+          const clarificationsWrap = document.createElement('div');
+          clarificationsWrap.className = 'assistant-clarification-list';
+          turn.clarifications.forEach((clarification) => {
+            const currentValue = getClarificationCurrentValue(clarification);
+            const currentValidation = validateClarificationAnswer(clarification, currentValue);
+            const isResolved = clarification.required === true
+              && currentValidation.valid
+              && hasAnswerValue(currentValue);
+            const block = document.createElement('div');
+            const blockClasses = ['assistant-clarification'];
+            if (clarification.required && !isResolved) {
+              blockClasses.push('required');
+            }
+            if (isResolved) {
+              blockClasses.push('resolved');
+            }
+            block.className = blockClasses.join(' ');
+
+            const label = document.createElement('label');
+            label.className = 'assistant-clarification-label';
+            label.textContent = getClarificationDisplayText(clarification);
+            let badge = null;
+            if (clarification.required) {
+              badge = document.createElement('span');
+              badge.className = 'assistant-required-badge';
+              badge.textContent = isResolved ? 'Resolved' : 'Required';
+              badge.classList.toggle('resolved', isResolved);
+              label.appendChild(badge);
+            }
+            block.appendChild(label);
+
+            const inputEl = createClarificationInput(clarification);
+            if (inputEl) {
+              writeValueToClarificationInput(inputEl, clarification, currentValue);
+              block.appendChild(inputEl);
+            }
+
+            const hint = document.createElement('p');
+            hint.className = 'assistant-clarification-hint';
+            hint.textContent = buildClarificationHintText(clarification, isResolved);
+            block.appendChild(hint);
+
+            const errorEl = document.createElement('p');
+            errorEl.className = 'assistant-clarification-error';
+            block.appendChild(errorEl);
+            registerClarificationRef(clarification, {
+              inputEl,
+              errorEl,
+              blockEl: block,
+              badgeEl: badge,
+              hintEl: hint
+            });
+
+            if (inputEl) {
+              const applyFromInput = () => {
+                const parsedValue = parseInputValueByType(inputEl, clarification);
+                if (hasAnswerValue(parsedValue)) {
+                  assistantAnswerStore[clarification.id] = parsedValue;
+                } else {
+                  delete assistantAnswerStore[clarification.id];
+                }
+                const validation = validateClarificationAnswer(clarification, assistantAnswerStore[clarification.id]);
+                if (validation.valid) {
+                  applyClarificationAnswerToForm(clarification, assistantAnswerStore[clarification.id]);
+                }
+                validateAndRenderClarificationState();
+              };
+
+              if (inputEl.tagName === 'SELECT') {
+                inputEl.addEventListener('change', applyFromInput);
+              } else {
+                inputEl.addEventListener('input', applyFromInput);
+                inputEl.addEventListener('blur', applyFromInput);
+              }
+            }
+
+            clarificationsWrap.appendChild(block);
+          });
+          turnEl.appendChild(clarificationsWrap);
+
+          const footer = document.createElement('div');
+          footer.className = 'assistant-card-footer';
+          const footerLeft = document.createElement('span');
+          footerLeft.textContent = 'Edits save automatically.';
+          const footerRight = document.createElement('span');
+          footerRight.textContent = 'Required answers gate next send.';
+          footer.appendChild(footerLeft);
+          footer.appendChild(footerRight);
+          turnEl.appendChild(footer);
+        }
+
+        assistantTimeline.appendChild(turnEl);
+      });
+
+      pruneAssistantAnswerStore();
+      assistantTimeline.scrollTop = assistantTimeline.scrollHeight;
+      validateAndRenderClarificationState();
     }
 
     function toFiniteNumber(value) {
@@ -1671,6 +2690,12 @@
           'op_count',
           'key_len',
           'val_len',
+          'key_hot_len',
+          'key_hot_amount',
+          'key_hot_probability',
+          'val_hot_len',
+          'val_hot_amount',
+          'val_hot_probability',
           'selection_min',
           'selection_max',
           'selection_mean',
@@ -1692,6 +2717,14 @@
         const selectionDistribution = readOperationField(op, 'selection_distribution');
         if (selectionDistribution) {
           opState.selection_distribution = selectionDistribution;
+        }
+        const keyPattern = readOperationField(op, 'key_pattern');
+        if (keyPattern) {
+          opState.key_pattern = keyPattern;
+        }
+        const valPattern = readOperationField(op, 'val_pattern');
+        if (valPattern) {
+          opState.val_pattern = valPattern;
         }
         const rangeFormatValue = readOperationField(op, 'range_format');
         if (rangeFormatValue) {
@@ -1724,14 +2757,24 @@
         character_sets: characterSetEnum,
         range_formats: getRangeFormatValues(),
         selection_distributions: getSelectionDistributionValues(),
+        string_patterns: getStringPatternValues(),
         capabilities
       };
     }
 
     function applyAssistantPatch(patch) {
+      let context = {};
+      if (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object') {
+        context = arguments[1];
+      }
       if (!patch || typeof patch !== 'object') {
         return;
       }
+
+      const scopeOp = deriveAssistantScopeOperation(context);
+      const allowOperationSetChanges = assistantPromptHasOperationIntent(
+        context && typeof context.promptText === 'string' ? context.promptText : ''
+      );
 
       if (typeof patch.character_set === 'string' && formCharacterSet && !isTopFieldLocked('character_set')) {
         const optionValues = Array.from(formCharacterSet.options || []).map((option) => option.value);
@@ -1758,7 +2801,7 @@
         formGroups.value = String(Math.floor(patch.groups_per_section));
       }
 
-      if (patch.clear_operations === true) {
+      if (patch.clear_operations === true && allowOperationSetChanges) {
         operationOrder.forEach((op) => {
           if (!isOperationFieldLocked(op, 'enabled')) {
             setOperationChecked(op, false);
@@ -1774,14 +2817,35 @@
         if (!operationOrder.includes(op) || !opPatch || typeof opPatch !== 'object') {
           return;
         }
-        if (typeof opPatch.enabled === 'boolean' && !isOperationFieldLocked(op, 'enabled')) {
+        const scopeBlocksEnable = scopeOp && op !== scopeOp && opPatch.enabled === true;
+        const scopeBlocksDisable = scopeOp && op === scopeOp && opPatch.enabled === false;
+        if (
+          typeof opPatch.enabled === 'boolean'
+          && allowOperationSetChanges
+          && !isOperationFieldLocked(op, 'enabled')
+          && !scopeBlocksEnable
+          && !scopeBlocksDisable
+        ) {
           setOperationChecked(op, opPatch.enabled);
           if (opPatch.enabled) {
             ensureOperationDefaultsIfEmpty(op);
           }
         }
 
-        ['op_count', 'key_len', 'val_len', 'selection_min', 'selection_max', 'selectivity'].forEach((field) => {
+        [
+          'op_count',
+          'key_len',
+          'val_len',
+          'key_hot_len',
+          'key_hot_amount',
+          'key_hot_probability',
+          'val_hot_len',
+          'val_hot_amount',
+          'val_hot_probability',
+          'selection_min',
+          'selection_max',
+          'selectivity'
+        ].forEach((field) => {
           if (!Object.prototype.hasOwnProperty.call(opPatch, field)) {
             return;
           }
@@ -1827,6 +2891,22 @@
           }
         }
 
+        if (typeof opPatch.key_pattern === 'string' && !isOperationFieldLocked(op, 'key_pattern')) {
+          const validPatterns = getStringPatternValues();
+          if (validPatterns.includes(opPatch.key_pattern)) {
+            setOperationInputValue(op, 'key_pattern', opPatch.key_pattern);
+            refreshStringPatternVisibility(op);
+          }
+        }
+
+        if (typeof opPatch.val_pattern === 'string' && !isOperationFieldLocked(op, 'val_pattern')) {
+          const validPatterns = getStringPatternValues();
+          if (validPatterns.includes(opPatch.val_pattern)) {
+            setOperationInputValue(op, 'val_pattern', opPatch.val_pattern);
+            refreshStringPatternVisibility(op);
+          }
+        }
+
         if (typeof opPatch.range_format === 'string' && !isOperationFieldLocked(op, 'range_format')) {
           const validRangeFormats = getRangeFormatValues();
           if (validRangeFormats.includes(opPatch.range_format)) {
@@ -1836,6 +2916,83 @@
       });
     }
 
+    function deriveAssistantScopeOperation(context) {
+      const promptText = context && typeof context.promptText === 'string' ? context.promptText.trim() : '';
+      const selectedBefore = context && Array.isArray(context.selectedOpsBeforeApply)
+        ? context.selectedOpsBeforeApply.filter((op) => operationOrder.includes(op))
+        : [];
+      if (selectedBefore.length !== 1) {
+        return null;
+      }
+      if (assistantPromptBroadensOperationScope(promptText, selectedBefore[0])) {
+        return null;
+      }
+      return selectedBefore[0];
+    }
+
+    function assistantPromptHasOperationIntent(promptText) {
+      const lower = String(promptText || '').toLowerCase();
+      if (!lower) {
+        return false;
+      }
+      if (/\boperation(?:s)?\b|\boperation\s*mix\b|\bonly\b|\binclude\b|\badd\b|\benable\b|\bdisable\b|\bremove\b|\bexclude\b|\bwithout\b/.test(lower)) {
+        return true;
+      }
+      return operationOrder.some((op) => promptMentionsOperation(op, lower));
+    }
+
+    function assistantPromptBroadensOperationScope(promptText, scopedOp) {
+      const lower = String(promptText || '').toLowerCase();
+      if (!lower) {
+        return false;
+      }
+
+      const explicitScopeChange = /\b(add|include|also|plus|enable|disable|remove|exclude|operation\s*mix|operations?)\b/.test(lower);
+      if (explicitScopeChange) {
+        return true;
+      }
+
+      const matchedOps = operationOrder.filter((op) => promptMentionsOperation(op, lower));
+      if (matchedOps.length === 0) {
+        return false;
+      }
+      if (matchedOps.length === 1 && matchedOps[0] === scopedOp) {
+        return false;
+      }
+      return true;
+    }
+
+    function promptMentionsOperation(op, lowerPromptText) {
+      const lower = String(lowerPromptText || '');
+      if (!lower || !op) {
+        return false;
+      }
+
+      const byName = op.toLowerCase();
+      if (lower.includes(byName) || lower.includes(byName.replace(/_/g, ' '))) {
+        return true;
+      }
+
+      const label = (operationLabels[op] || op).toLowerCase().replace(/\s+/g, ' ');
+      if (label && lower.includes(label)) {
+        return true;
+      }
+
+      const matcherByOp = {
+        inserts: /\binsert(?:s|ion)?\b/,
+        updates: /\bupdate(?:s)?\b/,
+        merges: /\bmerge(?:s)?\b|\bread[- ]?modify[- ]?write\b|\brmw\b/,
+        point_queries: /\bpoint\s*(?:query|queries|read|reads)\b/,
+        range_queries: /\brange\s*(?:query|queries)\b/,
+        point_deletes: /\bpoint\s*delete(?:s)?\b/,
+        range_deletes: /\brange\s*delete(?:s)?\b/,
+        empty_point_queries: /\bempty\s+point\s*(?:query|queries|read|reads)\b/,
+        empty_point_deletes: /\bempty\s+point\s*delete(?:s)?\b/
+      };
+      const matcher = matcherByOp[op];
+      return !!(matcher && matcher.test(lower));
+    }
+
     async function requestAssistantPatch(promptText) {
       const currentJson = buildJsonFromForm();
       const response = await fetch(ASSIST_ENDPOINT, {
@@ -1843,6 +3000,13 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: promptText,
+          conversation: assistantConversation.map((turn) => ({
+            role: turn.role === 'assistant' ? 'assistant' : 'user',
+            text: turn.role === 'assistant'
+              ? (turn.summary || turn.text || '')
+              : (turn.text || '')
+          })),
+          answers: getAnswersForRequest(),
           form_state: getCurrentFormState(),
           schema_hints: getSchemaHintsForAssist(),
           current_json: currentJson
@@ -1870,65 +3034,76 @@
       const promptText = assistantInput ? assistantInput.value.trim() : '';
       if (!promptText) {
         setAssistantStatus('Enter details to apply', 'warn');
-        setAssistantSummary('Describe your workload in plain English, then click Apply to Form.');
-        setAssistantQuestions([]);
-        if (assistantFollowups) {
-          assistantFollowups.clear();
-        }
+        setAssistantComposerHint('Describe your workload in plain English, then click Apply.');
         return;
       }
 
+      const unresolvedBeforeSend = validateAndRenderClarificationState();
+      if (unresolvedBeforeSend.length > 0) {
+        setAssistantStatus('Resolve required', 'warn');
+        setAssistantComposerHint(assistantGateMessage || 'Resolve required clarifications before sending the next prompt.');
+        return;
+      }
+
+      const userTurn = {
+        id: createTurnId(),
+        role: 'user',
+        text: promptText,
+        at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      addAssistantTimelineTurn(userTurn);
+      if (assistantInput) {
+        assistantInput.value = '';
+      }
+
       setAssistantBusy(true);
-      clearAssistantFeedback();
       setAssistantStatus('Interpreting...', 'loading');
+      setAssistantComposerHint('Generating a patch and clarification metadata...');
 
       try {
+        const selectedOpsBeforeApply = getSelectedOperations();
         const result = await requestAssistantPatch(promptText);
-        applyAssistantPatch(result.patch);
+        applyAssistantPatch(result.patch, {
+          promptText,
+          selectedOpsBeforeApply
+        });
         updateJsonFromForm();
 
-        const summaryText = typeof result.summary === 'string' && result.summary.trim()
-          ? result.summary.trim()
-          : 'Applied your request to the form.';
-        const warnings = Array.isArray(result.warnings)
-          ? result.warnings.map((item) => String(item || '').trim()).filter(Boolean)
-          : [];
-        const warningSuffix = warnings.length > 0 ? ' Note: ' + warnings.join(' ') : '';
-        const debugText = formatAssistantDebugInfo(result.debug);
-        const debugSuffix = debugText ? ' Debug: ' + debugText : '';
-        setAssistantSummary(summaryText + warningSuffix + debugSuffix);
-        setAssistantRawOutput(extractAssistantAiOutput(result));
-        if (debugText) {
-          console.warn('Assistant debug:', result.debug);
-        }
-        const followupQuestions = Array.isArray(result.questions) ? result.questions : [];
-        setAssistantQuestions(followupQuestions);
-        if (assistantFollowups) {
-          assistantFollowups.render(followupQuestions, {
-            patch: result.patch && typeof result.patch === 'object' ? result.patch : null,
-            prompt: promptText
-          });
-        } else if (assistantQuestionInputs) {
-          assistantQuestionInputs.innerHTML = '';
-        }
+        const normalizedResult = normalizeAssistantResponse(result);
+        const assistantTurn = {
+          id: createTurnId(),
+          role: 'assistant',
+          summary: normalizedResult.summary,
+          clarifications: normalizedResult.clarifications,
+          assumptions: normalizedResult.assumptions,
+          warnings: normalizedResult.warnings,
+          source: normalizedResult.source,
+          at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        addAssistantTimelineTurn(assistantTurn);
 
-        if (followupQuestions.length > 0) {
-          setAssistantStatus('Needs details', 'warn');
-        } else if (result.source === 'fallback') {
-          setAssistantStatus('Applied (fallback)', 'warn');
+        const unresolvedAfterApply = validateAndRenderClarificationState();
+        if (unresolvedAfterApply.length > 0) {
+          setAssistantStatus('Resolve required', 'warn');
+        } else if (normalizedResult.warnings.length > 0 || normalizedResult.source === 'fallback') {
+          setAssistantStatus('Applied with notes', 'warn');
         } else {
           setAssistantStatus('Applied', 'default');
         }
       } catch (e) {
         setAssistantStatus('Assistant failed', 'error');
-        setAssistantSummary(e && e.message ? e.message : 'Failed to apply assistant suggestion.');
-        setAssistantQuestions([]);
-        if (assistantFollowups) {
-          assistantFollowups.clear();
-        } else if (assistantQuestionInputs) {
-          assistantQuestionInputs.innerHTML = '';
-        }
-        setAssistantRawOutput(null);
+        const errorTurn = {
+          id: createTurnId(),
+          role: 'assistant',
+          summary: e && e.message ? e.message : 'Failed to apply assistant suggestion.',
+          clarifications: [],
+          assumptions: [],
+          warnings: [],
+          source: 'error',
+          at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        addAssistantTimelineTurn(errorTurn);
+        setAssistantComposerHint('The previous request failed. Update your prompt and try again.');
       } finally {
         setAssistantBusy(false);
       }
@@ -1940,7 +3115,7 @@
       operationOrder.forEach((op) => setOperationCardVisibility(op, false));
       formSections.value = '';
       formGroups.value = '';
-      clearAssistantFeedback();
+      clearAssistantThread();
       setAssistantStatus('Ready', 'default');
       const initial = JSON.parse(INITIAL_JSON_TEXT);
       renderGeneratedJson(initial);

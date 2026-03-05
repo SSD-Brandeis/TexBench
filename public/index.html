@@ -166,32 +166,32 @@
 
     .assistant-panel {
       border: 1px solid var(--border);
-      background: linear-gradient(160deg, #ffffff 0%, #f2faf9 100%);
-      border-radius: 12px;
-      padding: 12px;
+      background: linear-gradient(164deg, #ffffff 0%, #eff9f7 100%);
+      border-radius: 14px;
+      padding: 14px;
       margin-bottom: 10px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
     }
 
     .assistant-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      gap: 10px;
     }
 
     .assistant-title {
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 14px;
+      font-weight: 700;
       color: var(--text);
     }
 
     .assistant-status {
-      font-size: 11px;
+      font-size: 12px;
       border-radius: 999px;
-      padding: 3px 8px;
+      padding: 5px 10px;
       border: 1px solid #d3e7f7;
       background: #ecf6fd;
       color: #245272;
@@ -214,6 +214,211 @@
       border-color: #f1ddb2;
       background: #fff8e8;
       color: #8a5d0a;
+    }
+
+    .assistant-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 360px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .assistant-timeline:empty {
+      display: none;
+    }
+
+    .assistant-turn {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      animation: fadeSlide 0.18s ease;
+    }
+
+    .assistant-turn.user {
+      background: #f1f8fd;
+      border-color: #d8e8f5;
+    }
+
+    .assistant-turn-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11px;
+      color: #5f7284;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .assistant-turn-message {
+      font-size: 13px;
+      line-height: 1.42;
+      color: #1a2e40;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .assistant-turn-summary {
+      font-size: 12px;
+      line-height: 1.4;
+      color: #345066;
+    }
+
+    .assistant-inline-meta {
+      font-size: 11px;
+      color: #5a6e82;
+      line-height: 1.35;
+    }
+
+    .assistant-assumptions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .assistant-assumption-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .assistant-assumption-list li {
+      font-size: 11px;
+      line-height: 1.3;
+      color: #35506b;
+      border: 1px solid #cfe2f4;
+      background: #edf5fc;
+      border-radius: 999px;
+      padding: 4px 8px;
+    }
+
+    .assistant-clarification-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .assistant-clarification {
+      border: 1px solid #d7e5ef;
+      background: #fbfdff;
+      border-radius: 9px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .assistant-clarification.required {
+      border-color: #e7c39f;
+      background: #fff8ee;
+    }
+
+    .assistant-clarification.resolved {
+      border-color: #9bc9ab;
+      background: #f2fbf5;
+    }
+
+    .assistant-clarification-label {
+      font-size: 12px;
+      color: #2f485d;
+      line-height: 1.4;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .assistant-required-badge {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: #8a4d02;
+      background: #fde7cd;
+      border: 1px solid #f3c48d;
+      border-radius: 999px;
+      padding: 2px 6px;
+    }
+
+    .assistant-required-badge.resolved {
+      color: #21623a;
+      background: #ddf3e5;
+      border-color: #a5d3b6;
+    }
+
+    .assistant-clarification-input {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .assistant-clarification-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    }
+
+    .assistant-clarification-input.invalid {
+      border-color: #d0472f;
+      box-shadow: 0 0 0 3px rgba(220, 56, 44, 0.12);
+    }
+
+    .assistant-clarification-hint {
+      font-size: 11px;
+      color: #5a6e82;
+      line-height: 1.35;
+    }
+
+    .assistant-clarification-error {
+      font-size: 11px;
+      color: #b4371d;
+      line-height: 1.35;
+      min-height: 14px;
+    }
+
+    .assistant-card-footer {
+      border-top: 1px solid #deebf5;
+      padding-top: 6px;
+      font-size: 11px;
+      color: #5a6e82;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .assistant-composer {
+      border: 1px solid #d5e7e4;
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .assistant-composer-label {
+      font-size: 12px;
+      color: #486174;
+      font-weight: 600;
     }
 
     .assistant-input {
@@ -244,98 +449,11 @@
       flex-wrap: wrap;
     }
 
-    .assistant-summary {
-      font-size: 12px;
-      color: #3e596d;
-      line-height: 1.4;
-    }
-
-    .assistant-list {
-      margin: 0;
-      padding-left: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      color: #3e596d;
-      font-size: 12px;
-    }
-
-    .assistant-list:empty {
-      display: none;
-    }
-
-    .assistant-question-inputs {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .assistant-question-inputs:empty {
-      display: none;
-    }
-
-    .assistant-question-field {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 8px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #ffffff;
-    }
-
-    .assistant-question-label {
-      font-size: 12px;
-      color: #3e596d;
-      line-height: 1.35;
-    }
-
-    .assistant-question-input {
-      width: 100%;
-      padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 13px;
-      color: var(--text);
-      background: #fff;
-      outline: none;
-      font-family: inherit;
-    }
-
-    .assistant-question-input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
-    }
-
-    .assistant-raw {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #f8fcfb;
-      padding: 8px 10px;
-      display: none;
-    }
-
-    .assistant-raw.show {
-      display: block;
-    }
-
-    .assistant-raw summary {
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 600;
-      color: #3e596d;
-    }
-
-    .assistant-raw pre {
-      margin-top: 8px;
-      white-space: pre-wrap;
-      word-break: break-word;
+    .assistant-composer-hint {
       font-size: 11px;
-      line-height: 1.4;
-      color: #3e596d;
-      font-family: 'JetBrains Mono', monospace;
-      max-height: 180px;
-      overflow: auto;
+      color: #5a6e82;
+      line-height: 1.35;
+      min-height: 16px;
     }
 
     .hud {
@@ -697,6 +815,18 @@
       .hud {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+      .assistant-timeline {
+        max-height: 420px;
+      }
+      .assistant-card-footer {
+        position: sticky;
+        bottom: 0;
+        background: #ffffff;
+        padding-bottom: 6px;
+      }
+      .assistant-actions .btn {
+        min-height: 44px;
+      }
     }
   </style>
 </head>
@@ -719,24 +849,22 @@
             <div class="assistant-panel">
               <div class="assistant-head">
                 <span class="assistant-title">Describe Workload</span>
-                <span class="assistant-status" id="assistantStatus">Ready</span>
+                <span class="assistant-status" id="assistantStatus" aria-live="polite">Ready</span>
               </div>
-              <textarea
-                id="assistantInput"
-                class="assistant-input"
-                placeholder="Example: Generate an insert-only workload with 1 KB key value size. The number of inserts is 100K."
-              ></textarea>
-              <div class="assistant-actions">
-                <button type="button" class="btn btn-ghost" id="assistantApplyBtn">Apply to Form</button>
-                <button type="button" class="btn btn-ghost" id="assistantClearBtn">Clear Text</button>
+              <div class="assistant-timeline" id="assistantTimeline" aria-live="polite"></div>
+              <div class="assistant-composer">
+                <label for="assistantInput" class="assistant-composer-label">Describe or refine your workload</label>
+                <textarea
+                  id="assistantInput"
+                  class="assistant-input"
+                  placeholder="Example: Generate an insert-only workload with 1 KB key value size. The number of inserts is 100K."
+                ></textarea>
+                <div class="assistant-actions">
+                  <button type="button" class="btn btn-ghost" id="assistantApplyBtn">Apply</button>
+                  <button type="button" class="btn btn-ghost" id="assistantClearBtn">Clear</button>
+                </div>
+                <p class="assistant-composer-hint" id="assistantComposerHint">Answer required clarifications to continue the thread.</p>
               </div>
-              <p class="assistant-summary" id="assistantSummary"></p>
-              <ul class="assistant-list" id="assistantQuestions"></ul>
-              <div class="assistant-question-inputs" id="assistantQuestionInputs"></div>
-              <details class="assistant-raw" id="assistantRawWrap">
-                <summary>Workers AI Output</summary>
-                <pre id="assistantRawOutput"></pre>
-              </details>
             </div>
             <p class="builder-hint">Start with a preset or configure fields manually. The JSON preview updates live as you edit.</p>
             <div class="hud">
@@ -823,7 +951,6 @@
     </main>
   </div>
 
-  <script src="/assistant-followups.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

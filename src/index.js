@@ -50,6 +50,47 @@ const SELECTION_PARAM_DEFAULTS = {
   selection_scale: 1,
   selection_shape: 2
 };
+const STRING_PATTERN_VALUES = ['uniform', 'weighted', 'segmented', 'hot_range'];
+const STRING_PATTERN_DEFAULTS = {
+  key_pattern: 'uniform',
+  val_pattern: 'uniform',
+  key_hot_len: 20,
+  key_hot_amount: 100,
+  key_hot_probability: 0.8,
+  val_hot_len: 256,
+  val_hot_amount: 100,
+  val_hot_probability: 0.8
+};
+const TOP_LEVEL_BINDING_FIELDS = new Set(['character_set', 'sections_count', 'groups_per_section']);
+const OPERATION_BINDING_FIELDS = new Set([
+  'enabled',
+  'op_count',
+  'key_len',
+  'val_len',
+  'key_pattern',
+  'val_pattern',
+  'key_hot_len',
+  'key_hot_amount',
+  'key_hot_probability',
+  'val_hot_len',
+  'val_hot_amount',
+  'val_hot_probability',
+  'selection_distribution',
+  'selection_min',
+  'selection_max',
+  'selection_mean',
+  'selection_std_dev',
+  'selection_alpha',
+  'selection_beta',
+  'selection_n',
+  'selection_s',
+  'selection_lambda',
+  'selection_scale',
+  'selection_shape',
+  'selectivity',
+  'range_format'
+]);
+const CLARIFICATION_INPUT_TYPES = new Set(['number', 'enum', 'multi_enum', 'boolean', 'text']);
 
 export default {
   async fetch(request, env) {
@@ -82,8 +123,17 @@ async function handleAssistRequest(request, env) {
   const schemaHints = normalizeSchemaHints(body.schema_hints);
   const formState = normalizeFormState(body.form_state, schemaHints);
   const currentJson = normalizeCurrentJson(body.current_json);
+  const conversation = normalizeConversation(body.conversation);
+  const answers = normalizeAssistantAnswers(body.answers);
   const fallbackAssistPayload = buildFallbackAssistPayload(prompt, schemaHints, formState);
   const warnings = [];
+
+  if (shouldForceFallbackForStringDistributionRequest(prompt, schemaHints, formState)) {
+    const normalizedForced = normalizeAssistPayload(fallbackAssistPayload, schemaHints, formState, prompt);
+    normalizedForced.source = 'fallback_forced';
+    normalizedForced.warnings = ['Used deterministic parser for key/value distribution request to preserve operation scope.'];
+    return jsonResponse(normalizedForced, 200);
+  }
 
   if (shouldUseFastFallback(prompt, fallbackAssistPayload, formState)) {
     const normalizedFast = normalizeAssistPayload(fallbackAssistPayload, schemaHints, formState, prompt);
@@ -99,7 +149,16 @@ async function handleAssistRequest(request, env) {
   try {
     if (env.AI && typeof env.AI.run === 'function') {
       const aiConfig = getAiRequestConfig(env);
-      const outcome = await runAssistantWithRetries(env, prompt, schemaHints, formState, currentJson, aiConfig);
+      const outcome = await runAssistantWithRetries(
+        env,
+        prompt,
+        schemaHints,
+        formState,
+        currentJson,
+        conversation,
+        answers,
+        aiConfig
+      );
       if (outcome && outcome.payload) {
         assistPayload = outcome.payload;
         source = 'ai';
@@ -144,7 +203,7 @@ async function handleAssistRequest(request, env) {
   return jsonResponse(normalized, 200);
 }
 
-async function runAssistantWithRetries(env, prompt, schemaHints, formState, currentJson, aiConfig) {
+async function runAssistantWithRetries(env, prompt, schemaHints, formState, currentJson, conversation, answers, aiConfig) {
   const attempts = [];
   let lastAiOutput = null;
   const models = Array.isArray(aiConfig.modelNames) && aiConfig.modelNames.length > 0
@@ -166,6 +225,8 @@ async function runAssistantWithRetries(env, prompt, schemaHints, formState, curr
           schemaHints,
           formState,
           currentJson,
+          conversation,
+          answers,
           aiConfig,
           modelName,
           attemptMaxTokens
@@ -213,8 +274,19 @@ async function runAssistantWithRetries(env, prompt, schemaHints, formState, curr
   };
 }
 
-async function runAssistantOnce(env, prompt, schemaHints, formState, currentJson, aiConfig, modelName, maxTokensOverride) {
-  const messages = buildAssistantMessages(prompt, schemaHints, formState, currentJson);
+async function runAssistantOnce(
+  env,
+  prompt,
+  schemaHints,
+  formState,
+  currentJson,
+  conversation,
+  answers,
+  aiConfig,
+  modelName,
+  maxTokensOverride
+) {
+  const messages = buildAssistantMessages(prompt, schemaHints, formState, currentJson, conversation, answers);
   const selectedModel = typeof modelName === 'string' && modelName.trim() ? modelName.trim() : aiConfig.modelName;
   const selectedMaxTokens = Number.isFinite(maxTokensOverride) && maxTokensOverride > 0
     ? Math.floor(maxTokensOverride)
@@ -263,7 +335,7 @@ async function runAssistantOnce(env, prompt, schemaHints, formState, currentJson
   throw error;
 }
 
-function buildAssistantMessages(prompt, schemaHints, formState, currentJson) {
+function buildAssistantMessages(prompt, schemaHints, formState, currentJson, conversation, answers) {
   const systemMessage = [
     'You are a form-patch generator for workload specs.',
     'Return one JSON object only.',
@@ -276,23 +348,32 @@ function buildAssistantMessages(prompt, schemaHints, formState, currentJson) {
     'Never include null fields.',
     'Never set enabled=false unless the user explicitly asks to disable/remove an operation.',
     'For selection updates, set selection_distribution and matching params.',
+    'For key/value string expression updates, set key_pattern/val_pattern and matching params.',
     'If user asks for a distribution but no selection-capable operation is active, ask which operations should use it.',
     'Output contract (sparse):',
-    '{ "summary": "short sentence", "patch": { "character_set": "...", "sections_count": 1, "groups_per_section": 1, "clear_operations": false, "operations": { "<operation_name>": { "enabled": true, "op_count": 100000, "selection_distribution": "normal", "selection_mean": 0.5, "selection_std_dev": 0.15 } } }, "questions": ["high-level question"], "assumptions": ["short assumption"] }',
-    'Allowed operation field names: enabled, op_count, key_len, val_len, selection_distribution, selection_min, selection_max, selection_mean, selection_std_dev, selection_alpha, selection_beta, selection_n, selection_s, selection_lambda, selection_scale, selection_shape, selectivity, range_format.',
+    '{ "summary": "short sentence", "patch": { "character_set": "...", "sections_count": 1, "groups_per_section": 1, "clear_operations": false, "operations": { "<operation_name>": { "enabled": true, "op_count": 100000, "key_pattern": "uniform", "val_pattern": "uniform", "selection_distribution": "normal", "selection_mean": 0.5, "selection_std_dev": 0.15 } } }, "clarifications": [{ "id": "clarify.operations", "text": "Which operations should be enabled?", "required": true, "binding": { "type": "operations_set" }, "input": "multi_enum", "options": ["inserts", "updates"], "default_behavior": "wait_for_user" }], "assumptions": [{ "id": "assume.character_set", "text": "Using alphanumeric character set.", "field_ref": "character_set", "reason": "missing_input", "applied_value": "alphanumeric" }] }',
+    'clarifications[].binding.type must be one of: top_field, operation_field, operations_set.',
+    'For top_field binding include field from: character_set, sections_count, groups_per_section.',
+    'For operation_field binding include operation + field.',
+    'input must be one of: number, enum, multi_enum, boolean, text.',
+    'If clarification asks for distribution parameters (mean/std_dev/alpha/beta/lambda/scale/shape/min/max/n/s), bind it to operation_field + numeric input, not operations_set.',
+    'Allowed operation field names: enabled, op_count, key_len, val_len, key_pattern, val_pattern, key_hot_len, key_hot_amount, key_hot_probability, val_hot_len, val_hot_amount, val_hot_probability, selection_distribution, selection_min, selection_max, selection_mean, selection_std_dev, selection_alpha, selection_beta, selection_n, selection_s, selection_lambda, selection_scale, selection_shape, selectivity, range_format.',
+    'Allowed key/val patterns: uniform, weighted, segmented, hot_range.',
     'Rules:',
     '- Ask only for missing information.',
-    '- Keep questions high-level and user-friendly.',
+    '- Keep clarifications high-level and user-friendly.',
     '- Use safe defaults when missing; list them in assumptions.',
     '- Keep output compact. Do not emit untouched operations.',
     '- Convert units/counts: 1KB=1024, 100K=100000, 1M=1000000.',
     '- Use only operation names and enum values from schema_hints.',
-    '- If unsure, return a conservative patch and ask questions.'
+    '- If unsure, return a conservative patch and clarifications.'
   ].join('\n');
 
   const userMessage = JSON.stringify(
     {
       request: prompt,
+      conversation,
+      answers,
       current_form_state: formState,
       current_generated_json: currentJson,
       schema_hints: schemaHints
@@ -311,7 +392,7 @@ async function attemptJsonRepair(env, aiConfig, rawOutputText, modelName, maxTok
   const repairSystem = [
     'Convert the input into strict JSON only.',
     'Do not output markdown, code blocks, Python, comments, or explanations.',
-    'Extract/repair into exactly one JSON object with keys: summary, patch, questions, assumptions.',
+    'Extract/repair into exactly one JSON object with keys: summary, patch, clarifications, assumptions.',
     'If the input contains code, ignore code and output the JSON object only.'
   ].join('\n');
   const repairUser = JSON.stringify({ raw_output: rawOutputText });
@@ -361,6 +442,9 @@ function normalizeSchemaHints(rawHints) {
   const selectionDistributions = Array.isArray(hints.selection_distributions)
     ? hints.selection_distributions.filter((value) => typeof value === 'string' && value.trim() !== '')
     : [];
+  const stringPatterns = Array.isArray(hints.string_patterns)
+    ? hints.string_patterns.filter((value) => typeof value === 'string' && value.trim() !== '')
+    : [];
   const capabilities = hints.capabilities && typeof hints.capabilities === 'object'
     ? hints.capabilities
     : {};
@@ -371,6 +455,7 @@ function normalizeSchemaHints(rawHints) {
     character_sets: characterSets.length > 0 ? characterSets : ['alphanumeric', 'alphabetic', 'numeric'],
     range_formats: rangeFormats.length > 0 ? rangeFormats : ['StartCount', 'StartEnd'],
     selection_distributions: selectionDistributions.length > 0 ? selectionDistributions : [...DEFAULT_SELECTION_DISTRIBUTIONS],
+    string_patterns: stringPatterns.length > 0 ? stringPatterns : [...STRING_PATTERN_VALUES],
     capabilities
   };
 }
@@ -403,36 +488,187 @@ function normalizeCurrentJson(rawJson) {
   }
 }
 
+function normalizeConversation(rawConversation) {
+  if (!Array.isArray(rawConversation)) {
+    return [];
+  }
+  return rawConversation
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return null;
+      }
+      const role = entry.role === 'assistant' ? 'assistant' : (entry.role === 'user' ? 'user' : null);
+      const text = typeof entry.text === 'string' ? entry.text.trim() : '';
+      if (!role || !text) {
+        return null;
+      }
+      return { role, text };
+    })
+    .filter(Boolean)
+    .slice(-30);
+}
+
+function normalizeAssistantAnswers(rawAnswers) {
+  if (!rawAnswers || typeof rawAnswers !== 'object' || Array.isArray(rawAnswers)) {
+    return {};
+  }
+  const normalized = {};
+  Object.entries(rawAnswers).forEach(([key, value]) => {
+    if (typeof key !== 'string' || !key.trim()) {
+      return;
+    }
+    if (value === null || value === undefined) {
+      return;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        normalized[key] = trimmed;
+      }
+      return;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      normalized[key] = value;
+      return;
+    }
+    if (Array.isArray(value)) {
+      normalized[key] = value
+        .map((item) => String(item || '').trim())
+        .filter((item) => item.length > 0)
+        .slice(0, 32);
+      return;
+    }
+    if (typeof value === 'object') {
+      try {
+        normalized[key] = JSON.parse(JSON.stringify(value));
+      } catch {
+        // Ignore non-serializable answers.
+      }
+    }
+  });
+  return normalized;
+}
+
 function normalizeAssistPayload(rawPayload, schemaHints, formState, prompt) {
   const payload = rawPayload && typeof rawPayload === 'object' ? rawPayload : {};
   const patch = normalizePatch(payload.patch, schemaHints);
   const fallback = buildFallbackAssistPayload(prompt, schemaHints, formState);
 
-  const payloadAssumptions = Array.isArray(payload.assumptions)
-    ? normalizeStringList(payload.assumptions)
-    : [];
-  const fallbackAssumptions = normalizeStringList(fallback.assumptions);
-  const assumptions = uniqueStrings([...payloadAssumptions, ...fallbackAssumptions]);
-
-  const payloadQuestions = Array.isArray(payload.questions)
-    ? normalizeStringList(payload.questions)
-    : [];
-  const fallbackQuestions = normalizeStringList(fallback.questions);
-  const questions = uniqueStrings([...payloadQuestions, ...fallbackQuestions]);
-
   const mergedPatch = mergePatchWithFallback(patch, fallback.patch, formState, prompt, schemaHints);
+  constrainPatchToCurrentOperationScope(mergedPatch, formState, prompt, schemaHints);
+  suppressSelectionPatchForStringDistributionPrompts(mergedPatch, formState, prompt, schemaHints);
+  const clarificationContext = {
+    patch: mergedPatch,
+    formState,
+    prompt
+  };
+  const payloadClarifications = normalizeClarifications(
+    payload.clarifications,
+    payload.questions,
+    schemaHints,
+    clarificationContext
+  );
+  const fallbackClarifications = normalizeClarifications(
+    fallback.clarifications,
+    fallback.questions,
+    schemaHints,
+    clarificationContext
+  );
+  const clarifications = mergeClarifications(payloadClarifications, fallbackClarifications);
+  const payloadAssumptions = normalizeAssumptionEntries(payload.assumptions);
+  const fallbackAssumptions = normalizeAssumptionEntries(fallback.assumptions);
+  const assumptions = mergeAssumptions(payloadAssumptions, fallbackAssumptions);
   const summary = buildSummary(payload.summary, assumptions);
 
   return {
     summary,
     patch: mergedPatch,
-    questions,
-    assumptions
+    clarifications,
+    assumptions,
+    questions: clarifications.map((entry) => entry.text),
+    assumption_texts: assumptions.map((entry) => entry.text)
   };
+}
+
+function constrainPatchToCurrentOperationScope(mergedPatch, formState, prompt, schemaHints) {
+  if (!mergedPatch || typeof mergedPatch !== 'object' || !mergedPatch.operations || typeof mergedPatch.operations !== 'object') {
+    return;
+  }
+
+  const currentEnabled = schemaHints.operation_order.filter((op) => {
+    const current = formState.operations && formState.operations[op] ? formState.operations[op] : null;
+    return !!(current && current.enabled);
+  });
+  if (currentEnabled.length !== 1) {
+    return;
+  }
+
+  const scopeOp = currentEnabled[0];
+  const lowerPrompt = String(prompt || '').toLowerCase();
+  const hasAnyExplicitOperationMention = schemaHints.operation_order.some((op) => promptMentionsOperation(lowerPrompt, op, schemaHints));
+  const hasExplicitBroadeningIntent = /\b(add|include|also|plus|enable|operation mix|change operations|operations)\b/.test(lowerPrompt);
+
+  // If prompt does not explicitly change operation mix, keep changes scoped to currently enabled op.
+  if (!hasAnyExplicitOperationMention && !hasExplicitBroadeningIntent) {
+    schemaHints.operation_order.forEach((op) => {
+      const opPatch = mergedPatch.operations[op];
+      if (!opPatch || typeof opPatch !== 'object') {
+        return;
+      }
+      if (op === scopeOp) {
+        if (opPatch.enabled === false && !promptExplicitlyDisablesOperation(prompt, op, schemaHints)) {
+          opPatch.enabled = true;
+        }
+        return;
+      }
+      if (opPatch.enabled === true) {
+        opPatch.enabled = false;
+      }
+    });
+  }
+}
+
+function suppressSelectionPatchForStringDistributionPrompts(mergedPatch, formState, prompt, schemaHints) {
+  if (!mergedPatch || typeof mergedPatch !== 'object' || !mergedPatch.operations || typeof mergedPatch.operations !== 'object') {
+    return;
+  }
+  const lowerPrompt = String(prompt || '').toLowerCase();
+  if (!shouldTreatPromptAsStringDistribution(lowerPrompt, schemaHints)) {
+    return;
+  }
+
+  schemaHints.operation_order.forEach((op) => {
+    const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+    if (!caps.has_selection) {
+      return;
+    }
+    if (promptMentionsOperation(lowerPrompt, op, schemaHints)) {
+      return;
+    }
+    const opPatch = mergedPatch.operations[op];
+    if (!opPatch || typeof opPatch !== 'object') {
+      return;
+    }
+    const current = formState.operations && formState.operations[op] ? formState.operations[op] : {};
+    opPatch.enabled = !!current.enabled;
+    opPatch.selection_distribution = current.selection_distribution || null;
+    opPatch.selection_min = current.selection_min ?? null;
+    opPatch.selection_max = current.selection_max ?? null;
+    opPatch.selection_mean = current.selection_mean ?? null;
+    opPatch.selection_std_dev = current.selection_std_dev ?? null;
+    opPatch.selection_alpha = current.selection_alpha ?? null;
+    opPatch.selection_beta = current.selection_beta ?? null;
+    opPatch.selection_n = current.selection_n ?? null;
+    opPatch.selection_s = current.selection_s ?? null;
+    opPatch.selection_lambda = current.selection_lambda ?? null;
+    opPatch.selection_scale = current.selection_scale ?? null;
+    opPatch.selection_shape = current.selection_shape ?? null;
+  });
 }
 
 function mergePatchWithFallback(primaryPatch, fallbackPatch, formState, prompt, schemaHints) {
   const clearOperations = primaryPatch.clear_operations === true || fallbackPatch.clear_operations === true;
+  const allowOperationSetChanges = clearOperations || promptHasOperationIntent(prompt, schemaHints);
   const merged = {
     character_set: primaryPatch.character_set || fallbackPatch.character_set || null,
     sections_count: primaryPatch.sections_count || fallbackPatch.sections_count || null,
@@ -461,19 +697,29 @@ function mergePatchWithFallback(primaryPatch, fallbackPatch, formState, prompt, 
     const primaryHasSignal = operationPatchHasSignal(primary);
     const primaryDisableRequested = primary.enabled === false
       && (clearOperations || primaryHasSignal || promptExplicitlyDisablesOperation(prompt, op, schemaHints));
-    const mergedEnabled = primary.enabled === true
-      ? true
-      : (primaryDisableRequested
-          ? false
-          : (typeof fallback.enabled === 'boolean'
-              ? fallback.enabled
-              : (clearOperations ? false : !!current.enabled)));
+    const mergedEnabled = allowOperationSetChanges
+      ? (primary.enabled === true
+          ? true
+          : (primaryDisableRequested
+              ? false
+              : (typeof fallback.enabled === 'boolean'
+                  ? fallback.enabled
+                  : (clearOperations ? false : !!current.enabled))))
+      : !!current.enabled;
 
     merged.operations[op] = {
       enabled: mergedEnabled,
       op_count: primary.op_count ?? fallback.op_count ?? current.op_count,
       key_len: primary.key_len ?? fallback.key_len ?? current.key_len,
       val_len: primary.val_len ?? fallback.val_len ?? current.val_len,
+      key_pattern: primary.key_pattern || fallback.key_pattern || current.key_pattern,
+      val_pattern: primary.val_pattern || fallback.val_pattern || current.val_pattern,
+      key_hot_len: primary.key_hot_len ?? fallback.key_hot_len ?? current.key_hot_len,
+      key_hot_amount: primary.key_hot_amount ?? fallback.key_hot_amount ?? current.key_hot_amount,
+      key_hot_probability: primary.key_hot_probability ?? fallback.key_hot_probability ?? current.key_hot_probability,
+      val_hot_len: primary.val_hot_len ?? fallback.val_hot_len ?? current.val_hot_len,
+      val_hot_amount: primary.val_hot_amount ?? fallback.val_hot_amount ?? current.val_hot_amount,
+      val_hot_probability: primary.val_hot_probability ?? fallback.val_hot_probability ?? current.val_hot_probability,
       selection_distribution: primary.selection_distribution || fallback.selection_distribution || current.selection_distribution,
       selection_min: primary.selection_min ?? fallback.selection_min ?? current.selection_min,
       selection_max: primary.selection_max ?? fallback.selection_max ?? current.selection_max,
@@ -494,6 +740,19 @@ function mergePatchWithFallback(primaryPatch, fallbackPatch, formState, prompt, 
   return merged;
 }
 
+function promptHasOperationIntent(prompt, schemaHints) {
+  const text = String(prompt || '').toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  if (/\boperation(?:s)?\b|\boperation\s*mix\b|\bonly\b|\binclude\b|\badd\b|\benable\b|\bdisable\b|\bremove\b|\bexclude\b|\bwithout\b/.test(text)) {
+    return true;
+  }
+
+  return schemaHints.operation_order.some((op) => promptMentionsOperation(text, op, schemaHints));
+}
+
 function operationPatchHasSignal(operationPatch) {
   if (!operationPatch || typeof operationPatch !== 'object') {
     return false;
@@ -502,6 +761,14 @@ function operationPatchHasSignal(operationPatch) {
     'op_count',
     'key_len',
     'val_len',
+    'key_pattern',
+    'val_pattern',
+    'key_hot_len',
+    'key_hot_amount',
+    'key_hot_probability',
+    'val_hot_len',
+    'val_hot_amount',
+    'val_hot_probability',
     'selection_distribution',
     'selection_min',
     'selection_max',
@@ -569,6 +836,9 @@ function normalizeOperationPatch(rawPatch, op, schemaHints) {
   const hasExplicitFields = Object.keys(patch).length > 0;
   const rangeFormats = Array.isArray(schemaHints.range_formats) ? schemaHints.range_formats : [];
   const selectionDistributions = Array.isArray(schemaHints.selection_distributions) ? schemaHints.selection_distributions : [];
+  const stringPatterns = Array.isArray(schemaHints.string_patterns) && schemaHints.string_patterns.length > 0
+    ? schemaHints.string_patterns
+    : STRING_PATTERN_VALUES;
   const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
 
   const normalized = {
@@ -576,6 +846,14 @@ function normalizeOperationPatch(rawPatch, op, schemaHints) {
     op_count: positiveNumberOrNull(patch.op_count),
     key_len: positiveIntegerOrNull(patch.key_len),
     val_len: positiveIntegerOrNull(patch.val_len),
+    key_pattern: normalizeStringPatternName(patch.key_pattern, stringPatterns),
+    val_pattern: normalizeStringPatternName(patch.val_pattern, stringPatterns),
+    key_hot_len: positiveIntegerOrNull(patch.key_hot_len),
+    key_hot_amount: nonNegativeIntegerOrNull(patch.key_hot_amount),
+    key_hot_probability: probabilityOrNull(patch.key_hot_probability),
+    val_hot_len: positiveIntegerOrNull(patch.val_hot_len),
+    val_hot_amount: nonNegativeIntegerOrNull(patch.val_hot_amount),
+    val_hot_probability: probabilityOrNull(patch.val_hot_probability),
     selection_distribution: typeof patch.selection_distribution === 'string' && selectionDistributions.includes(patch.selection_distribution)
       ? patch.selection_distribution
       : null,
@@ -608,6 +886,12 @@ function normalizeOperationPatch(rawPatch, op, schemaHints) {
   if (normalized.selection_n === null && typeof patch.selection_n === 'string') {
     normalized.selection_n = positiveIntegerOrNull(parseHumanCountToken(patch.selection_n));
   }
+  if (normalized.key_hot_amount === null && typeof patch.key_hot_amount === 'string') {
+    normalized.key_hot_amount = nonNegativeIntegerOrNull(parseHumanCountToken(patch.key_hot_amount));
+  }
+  if (normalized.val_hot_amount === null && typeof patch.val_hot_amount === 'string') {
+    normalized.val_hot_amount = nonNegativeIntegerOrNull(parseHumanCountToken(patch.val_hot_amount));
+  }
 
   if (normalized.enabled === undefined && hasExplicitFields) {
     normalized.enabled = inferOperationEnabledFromPatch(normalized, op, schemaHints);
@@ -616,9 +900,17 @@ function normalizeOperationPatch(rawPatch, op, schemaHints) {
   // Enforce schema capabilities so AI cannot set invalid fields for an operation.
   if (!caps.has_key) {
     normalized.key_len = null;
+    normalized.key_pattern = null;
+    normalized.key_hot_len = null;
+    normalized.key_hot_amount = null;
+    normalized.key_hot_probability = null;
   }
   if (!caps.has_val) {
     normalized.val_len = null;
+    normalized.val_pattern = null;
+    normalized.val_hot_len = null;
+    normalized.val_hot_amount = null;
+    normalized.val_hot_probability = null;
   }
   if (!caps.has_selection) {
     normalized.selection_distribution = null;
@@ -650,10 +942,28 @@ function inferOperationEnabledFromPatch(operationPatch, op, schemaHints) {
     return true;
   }
   const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
-  if (caps.has_key && operationPatch.key_len !== null) {
+  if (
+    caps.has_key
+    && (
+      operationPatch.key_len !== null
+      || operationPatch.key_pattern !== null
+      || operationPatch.key_hot_len !== null
+      || operationPatch.key_hot_amount !== null
+      || operationPatch.key_hot_probability !== null
+    )
+  ) {
     return true;
   }
-  if (caps.has_val && operationPatch.val_len !== null) {
+  if (
+    caps.has_val
+    && (
+      operationPatch.val_len !== null
+      || operationPatch.val_pattern !== null
+      || operationPatch.val_hot_len !== null
+      || operationPatch.val_hot_amount !== null
+      || operationPatch.val_hot_probability !== null
+    )
+  ) {
     return true;
   }
   if (
@@ -702,16 +1012,22 @@ function buildFallbackAssistPayload(prompt, schemaHints, formState) {
   applySelectionDistributionFromPrompt(prompt, lowerPrompt, patch, schemaHints, formState);
   applyOperationCountsFromPrompt(prompt, patch, schemaHints);
   applyStringSizesFromPrompt(prompt, patch, schemaHints);
+  applyStringPatternsFromPrompt(prompt, lowerPrompt, patch, schemaHints, formState, assumptions);
   applyRangeSettingsDefaults(patch, schemaHints);
-  applyMissingDefaults(patch, schemaHints, formState, assumptions);
-
   const questions = buildHighLevelMissingQuestions(prompt, patch, schemaHints, formState);
+  const clarifications = normalizeClarifications(null, questions, schemaHints, {
+    patch,
+    formState,
+    prompt
+  });
+  applyMissingDefaults(patch, schemaHints, formState, assumptions);
 
   return {
     summary: 'Applied what I could from your message and filled safe defaults for missing values.',
     patch,
     assumptions,
-    questions
+    questions,
+    clarifications
   };
 }
 
@@ -730,12 +1046,13 @@ function shouldUseFastFallback(prompt, fallbackAssistPayload, formState) {
   // Prefer fast path for short operational prompts and follow-up edits.
   const isShortPrompt = normalizedPrompt.length <= 260;
   const hasParsedChanges = fallbackPatchHasSubstantialChanges(fallbackAssistPayload, formState);
-  const noOutstandingQuestions = !Array.isArray(fallbackAssistPayload.questions) || fallbackAssistPayload.questions.length === 0;
+  const noOutstandingRequiredClarifications = !Array.isArray(fallbackAssistPayload.clarifications)
+    || fallbackAssistPayload.clarifications.every((entry) => !entry || entry.required !== true);
 
   if (!hasParsedChanges) {
-    return !noOutstandingQuestions;
+    return !noOutstandingRequiredClarifications;
   }
-  if (noOutstandingQuestions) {
+  if (noOutstandingRequiredClarifications) {
     return true;
   }
   return isShortPrompt;
@@ -768,6 +1085,12 @@ function fallbackPatchHasSubstantialChanges(fallbackAssistPayload, formState) {
     if (typeof opPatch.enabled === 'boolean' && opPatch.enabled !== !!current.enabled) {
       return true;
     }
+    if (opPatch.key_pattern && opPatch.key_pattern !== current.key_pattern) {
+      return true;
+    }
+    if (opPatch.val_pattern && opPatch.val_pattern !== current.val_pattern) {
+      return true;
+    }
     if (opPatch.selection_distribution && opPatch.selection_distribution !== current.selection_distribution) {
       return true;
     }
@@ -775,6 +1098,12 @@ function fallbackPatchHasSubstantialChanges(fallbackAssistPayload, formState) {
       'op_count',
       'key_len',
       'val_len',
+      'key_hot_len',
+      'key_hot_amount',
+      'key_hot_probability',
+      'val_hot_len',
+      'val_hot_amount',
+      'val_hot_probability',
       'selection_min',
       'selection_max',
       'selection_mean',
@@ -870,6 +1199,10 @@ function applyOperationSelectionFromPrompt(lowerPrompt, patch, schemaHints) {
 }
 
 function applySelectionDistributionFromPrompt(prompt, lowerPrompt, patch, schemaHints, formState) {
+  if (shouldTreatPromptAsStringDistribution(lowerPrompt, schemaHints)) {
+    return;
+  }
+
   const distributionName = detectSelectionDistribution(lowerPrompt, schemaHints.selection_distributions);
   if (!distributionName) {
     return;
@@ -1061,6 +1394,180 @@ function applyStringSizesFromPrompt(prompt, patch, schemaHints) {
   });
 }
 
+function applyStringPatternsFromPrompt(prompt, lowerPrompt, patch, schemaHints, formState, assumptions) {
+  const hasKeyValueIntent = keyValueDistributionIntent(lowerPrompt) || mentionsStringPatternStyle(lowerPrompt);
+  if (!hasKeyValueIntent) {
+    return;
+  }
+
+  const allowedPatterns = Array.isArray(schemaHints.string_patterns) && schemaHints.string_patterns.length > 0
+    ? schemaHints.string_patterns
+    : STRING_PATTERN_VALUES;
+
+  let requestedPattern = detectStringPattern(lowerPrompt, allowedPatterns);
+  let mappedZipfToHotRange = false;
+  if (!requestedPattern && /\bzipf(?:ian)?\b/.test(lowerPrompt)) {
+    requestedPattern = 'hot_range';
+    mappedZipfToHotRange = true;
+  }
+  if (!requestedPattern) {
+    return;
+  }
+
+  const target = detectStringPatternTarget(lowerPrompt);
+  const targetOperations = getStringPatternTargetOperations(lowerPrompt, patch, schemaHints, formState, target);
+  if (targetOperations.length === 0) {
+    return;
+  }
+
+  targetOperations.forEach((op) => {
+    const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+    const opPatch = patch.operations[op];
+    if (!opPatch || typeof opPatch !== 'object') {
+      return;
+    }
+    opPatch.enabled = true;
+    if (target.key && caps.has_key) {
+      opPatch.key_pattern = requestedPattern;
+      applyStringPatternParamDefaults(opPatch, 'key', requestedPattern);
+      if (mappedZipfToHotRange) {
+        addAssumptionEntry(
+          assumptions,
+          'Zipf is not available for key/value string patterns; using hot_range for ' + humanizeOperation(op, schemaHints) + ' keys.',
+          op + '.key_pattern',
+          'unsupported_enum',
+          'hot_range'
+        );
+      }
+    }
+    if (target.value && caps.has_val) {
+      opPatch.val_pattern = requestedPattern;
+      applyStringPatternParamDefaults(opPatch, 'val', requestedPattern);
+      if (mappedZipfToHotRange) {
+        addAssumptionEntry(
+          assumptions,
+          'Zipf is not available for key/value string patterns; using hot_range for ' + humanizeOperation(op, schemaHints) + ' values.',
+          op + '.val_pattern',
+          'unsupported_enum',
+          'hot_range'
+        );
+      }
+    }
+  });
+}
+
+function detectStringPatternTarget(lowerPrompt) {
+  const hasKey = /\bkey(?:s)?\b/.test(lowerPrompt);
+  const hasValue = /\bvalue(?:s)?\b|\bval(?:s)?\b/.test(lowerPrompt);
+  if (hasKey && hasValue) {
+    return { key: true, value: true };
+  }
+  if (hasKey) {
+    return { key: true, value: false };
+  }
+  if (hasValue) {
+    return { key: false, value: true };
+  }
+  return { key: true, value: true };
+}
+
+function getStringPatternTargetOperations(lowerPrompt, patch, schemaHints, formState, target) {
+  const matchesTarget = (op) => {
+    const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+    return (target.key && caps.has_key) || (target.value && caps.has_val);
+  };
+
+  const explicit = schemaHints.operation_order.filter((op) => {
+    return matchesTarget(op) && promptMentionsOperation(lowerPrompt, op, schemaHints);
+  });
+  if (explicit.length > 0) {
+    return explicit;
+  }
+
+  const enabledFromState = schemaHints.operation_order.filter((op) => {
+    if (!matchesTarget(op)) {
+      return false;
+    }
+    const current = formState.operations && formState.operations[op] ? formState.operations[op] : null;
+    return !!(current && current.enabled);
+  });
+  if (enabledFromState.length > 0) {
+    return enabledFromState;
+  }
+
+  return schemaHints.operation_order.filter((op) => {
+    if (!matchesTarget(op)) {
+      return false;
+    }
+    const opPatch = patch.operations && patch.operations[op] ? patch.operations[op] : null;
+    return !!(opPatch && opPatch.enabled === true);
+  });
+}
+
+function detectStringPattern(lowerPrompt, allowedPatterns) {
+  const patterns = Array.isArray(allowedPatterns) && allowedPatterns.length > 0
+    ? allowedPatterns
+    : STRING_PATTERN_VALUES;
+  const aliasMap = {
+    uniform: ['uniform'],
+    weighted: ['weighted'],
+    segmented: ['segmented', 'segment'],
+    hot_range: ['hot_range', 'hot range']
+  };
+
+  for (const candidate of patterns) {
+    const aliases = aliasMap[candidate] || [candidate];
+    const matched = aliases.some((alias) => {
+      const escaped = escapeRegExp(alias);
+      const regex = new RegExp('\\b' + escaped + '\\b', 'i');
+      return regex.test(lowerPrompt);
+    });
+    if (matched) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function applyStringPatternParamDefaults(operationPatch, target, pattern) {
+  if (!operationPatch || typeof operationPatch !== 'object') {
+    return;
+  }
+  if (target === 'key') {
+    if (operationPatch.key_pattern === undefined) {
+      operationPatch.key_pattern = STRING_PATTERN_DEFAULTS.key_pattern;
+    }
+    if (pattern === 'hot_range') {
+      if (operationPatch.key_hot_len === undefined) {
+        operationPatch.key_hot_len = STRING_PATTERN_DEFAULTS.key_hot_len;
+      }
+      if (operationPatch.key_hot_amount === undefined) {
+        operationPatch.key_hot_amount = STRING_PATTERN_DEFAULTS.key_hot_amount;
+      }
+      if (operationPatch.key_hot_probability === undefined) {
+        operationPatch.key_hot_probability = STRING_PATTERN_DEFAULTS.key_hot_probability;
+      }
+    }
+    return;
+  }
+  if (target === 'val') {
+    if (operationPatch.val_pattern === undefined) {
+      operationPatch.val_pattern = STRING_PATTERN_DEFAULTS.val_pattern;
+    }
+    if (pattern === 'hot_range') {
+      if (operationPatch.val_hot_len === undefined) {
+        operationPatch.val_hot_len = STRING_PATTERN_DEFAULTS.val_hot_len;
+      }
+      if (operationPatch.val_hot_amount === undefined) {
+        operationPatch.val_hot_amount = STRING_PATTERN_DEFAULTS.val_hot_amount;
+      }
+      if (operationPatch.val_hot_probability === undefined) {
+        operationPatch.val_hot_probability = STRING_PATTERN_DEFAULTS.val_hot_probability;
+      }
+    }
+  }
+}
+
 function applyRangeSettingsDefaults(patch, schemaHints) {
   const defaultRangeFormat = Array.isArray(schemaHints.range_formats) && schemaHints.range_formats.length > 0
     ? schemaHints.range_formats[0]
@@ -1097,17 +1604,35 @@ function applyMissingDefaults(patch, schemaHints, formState, assumptions) {
       ? schemaHints.character_sets[0]
       : 'alphanumeric';
     patch.character_set = fallbackCharacterSet;
-    assumptions.push('Using ' + fallbackCharacterSet + ' character set.');
+    addAssumptionEntry(
+      assumptions,
+      'Using ' + fallbackCharacterSet + ' character set.',
+      'character_set',
+      'missing_input',
+      fallbackCharacterSet
+    );
   }
 
   if (!patch.sections_count && !formState.sections_count) {
     patch.sections_count = 1;
-    assumptions.push('Using one workload section.');
+    addAssumptionEntry(
+      assumptions,
+      'Using one workload section.',
+      'sections_count',
+      'missing_input',
+      1
+    );
   }
 
   if (!patch.groups_per_section && !formState.groups_per_section) {
     patch.groups_per_section = 1;
-    assumptions.push('Using one group per section.');
+    addAssumptionEntry(
+      assumptions,
+      'Using one group per section.',
+      'groups_per_section',
+      'missing_input',
+      1
+    );
   }
 
   const defaultRangeFormat = Array.isArray(schemaHints.range_formats) && schemaHints.range_formats.length > 0
@@ -1126,17 +1651,77 @@ function applyMissingDefaults(patch, schemaHints, formState, assumptions) {
 
     if (opPatch.op_count === undefined && currentOp.op_count == null) {
       opPatch.op_count = 500000;
-      assumptions.push('Using default operation count (500000) for ' + humanizeOperation(op, schemaHints) + '.');
+      addAssumptionEntry(
+        assumptions,
+        'Using default operation count (500000) for ' + humanizeOperation(op, schemaHints) + '.',
+        op + '.op_count',
+        'missing_input',
+        500000
+      );
     }
 
     if (caps.has_key && opPatch.key_len === undefined && currentOp.key_len == null) {
       opPatch.key_len = 20;
-      assumptions.push('Using default key length (20) for ' + humanizeOperation(op, schemaHints) + '.');
+      addAssumptionEntry(
+        assumptions,
+        'Using default key length (20) for ' + humanizeOperation(op, schemaHints) + '.',
+        op + '.key_len',
+        'missing_input',
+        20
+      );
+    }
+    if (caps.has_key && !opPatch.key_pattern && !currentOp.key_pattern) {
+      opPatch.key_pattern = STRING_PATTERN_DEFAULTS.key_pattern;
+      addAssumptionEntry(
+        assumptions,
+        'Using uniform key pattern for ' + humanizeOperation(op, schemaHints) + '.',
+        op + '.key_pattern',
+        'missing_input',
+        STRING_PATTERN_DEFAULTS.key_pattern
+      );
+    }
+    if ((opPatch.key_pattern || currentOp.key_pattern) === 'hot_range') {
+      if (opPatch.key_hot_len === undefined && currentOp.key_hot_len == null) {
+        opPatch.key_hot_len = STRING_PATTERN_DEFAULTS.key_hot_len;
+      }
+      if (opPatch.key_hot_amount === undefined && currentOp.key_hot_amount == null) {
+        opPatch.key_hot_amount = STRING_PATTERN_DEFAULTS.key_hot_amount;
+      }
+      if (opPatch.key_hot_probability === undefined && currentOp.key_hot_probability == null) {
+        opPatch.key_hot_probability = STRING_PATTERN_DEFAULTS.key_hot_probability;
+      }
     }
 
     if (caps.has_val && opPatch.val_len === undefined && currentOp.val_len == null) {
       opPatch.val_len = 256;
-      assumptions.push('Using default value length (256) for ' + humanizeOperation(op, schemaHints) + '.');
+      addAssumptionEntry(
+        assumptions,
+        'Using default value length (256) for ' + humanizeOperation(op, schemaHints) + '.',
+        op + '.val_len',
+        'missing_input',
+        256
+      );
+    }
+    if (caps.has_val && !opPatch.val_pattern && !currentOp.val_pattern) {
+      opPatch.val_pattern = STRING_PATTERN_DEFAULTS.val_pattern;
+      addAssumptionEntry(
+        assumptions,
+        'Using uniform value pattern for ' + humanizeOperation(op, schemaHints) + '.',
+        op + '.val_pattern',
+        'missing_input',
+        STRING_PATTERN_DEFAULTS.val_pattern
+      );
+    }
+    if ((opPatch.val_pattern || currentOp.val_pattern) === 'hot_range') {
+      if (opPatch.val_hot_len === undefined && currentOp.val_hot_len == null) {
+        opPatch.val_hot_len = STRING_PATTERN_DEFAULTS.val_hot_len;
+      }
+      if (opPatch.val_hot_amount === undefined && currentOp.val_hot_amount == null) {
+        opPatch.val_hot_amount = STRING_PATTERN_DEFAULTS.val_hot_amount;
+      }
+      if (opPatch.val_hot_probability === undefined && currentOp.val_hot_probability == null) {
+        opPatch.val_hot_probability = STRING_PATTERN_DEFAULTS.val_hot_probability;
+      }
     }
 
     if (caps.has_selection) {
@@ -1151,7 +1736,13 @@ function applyMissingDefaults(patch, schemaHints, formState, assumptions) {
         }
       });
       if (!currentOp.selection_distribution && opPatch.selection_distribution) {
-        assumptions.push('Using ' + opPatch.selection_distribution + ' selection distribution for ' + humanizeOperation(op, schemaHints) + '.');
+        addAssumptionEntry(
+          assumptions,
+          'Using ' + opPatch.selection_distribution + ' selection distribution for ' + humanizeOperation(op, schemaHints) + '.',
+          op + '.selection_distribution',
+          'missing_input',
+          opPatch.selection_distribution
+        );
       }
     }
 
@@ -1172,6 +1763,7 @@ function buildHighLevelMissingQuestions(prompt, patch, schemaHints, formState) {
   const effective = buildEffectiveState(patch, formState, schemaHints);
   const selectedOps = getEnabledOperationNames(effective, schemaHints);
   const requestedSelectionDistribution = detectSelectionDistribution(lowerPrompt, schemaHints.selection_distributions);
+  const treatAsStringDistribution = shouldTreatPromptAsStringDistribution(lowerPrompt, schemaHints);
 
   if (selectedOps.length === 0) {
     questions.push('Which operations do you want in this workload (for example inserts, point queries, range queries, updates, deletes)?');
@@ -1204,14 +1796,38 @@ function buildHighLevelMissingQuestions(prompt, patch, schemaHints, formState) {
     const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
     return !!(caps.has_key || caps.has_val);
   });
-  const mentionsStringPattern = mentionsStringPatternStyle(lowerPrompt);
-  const asksForKeyValueDistribution = /\b(key|keys|value|values)\b[\s\S]{0,30}\bdistribution\b|\bdistribution\b[\s\S]{0,30}\b(key|keys|value|values)\b/.test(lowerPrompt);
+  const asksForKeyValueDistribution = keyValueDistributionIntent(lowerPrompt);
+  const requestedStringPattern = detectStringPattern(
+    lowerPrompt,
+    Array.isArray(schemaHints.string_patterns) && schemaHints.string_patterns.length > 0
+      ? schemaHints.string_patterns
+      : STRING_PATTERN_VALUES
+  );
+  const mentionsValues = /\bvalue(?:s)?\b|\bval(?:s)?\b|\bkey\/value\b|\bkv\b/.test(lowerPrompt);
 
-  if (hasStringOperations && !mentionsStringPattern) {
-    if (asksForKeyValueDistribution && requestedSelectionDistribution) {
-      questions.push('For keys/values, which string pattern do you want (uniform, weighted, segmented, or hot_range)?');
-    } else {
-      questions.push('Do you want simple uniform random keys/values, or a patterned distribution (weighted, segmented, or hot range)?');
+  if (hasStringOperations && asksForKeyValueDistribution && !requestedStringPattern) {
+    const stringTarget = detectStringPatternTarget(lowerPrompt);
+    const targetOps = getStringPatternTargetOperations(lowerPrompt, patch, schemaHints, formState, stringTarget);
+    targetOps.forEach((op) => {
+      const opLabel = humanizeOperation(op, schemaHints);
+      const opState = effective.operations && effective.operations[op] ? effective.operations[op] : {};
+      const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+      const mappedZipfKey = /\bzipf(?:ian)?\b/.test(lowerPrompt) && opState.key_pattern === 'hot_range';
+      const mappedZipfValue = /\bzipf(?:ian)?\b/.test(lowerPrompt) && opState.val_pattern === 'hot_range';
+      if (stringTarget.key && caps.has_key) {
+        if (!mappedZipfKey) {
+          questions.push('For ' + opLabel + ' keys, which string pattern should I use (uniform, weighted, segmented, or hot_range)?');
+        }
+      }
+      if (stringTarget.value && caps.has_val) {
+        if (!mappedZipfValue) {
+          questions.push('For ' + opLabel + ' values, which string pattern should I use (uniform, weighted, segmented, or hot_range)?');
+        }
+      }
+    });
+
+    if (targetOps.length === 0) {
+      questions.push('For keys/values, which string pattern should I use (uniform, weighted, segmented, or hot_range)?');
     }
   }
 
@@ -1219,19 +1835,31 @@ function buildHighLevelMissingQuestions(prompt, patch, schemaHints, formState) {
     const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
     return !!caps.has_selection;
   });
+  const selectedValueOps = selectedOps.filter((op) => {
+    const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+    return !!caps.has_val;
+  });
 
-  if (requestedSelectionDistribution && selectedSelectionOps.length === 0) {
-    const selectionCapable = schemaHints.operation_order.filter((op) => {
-      const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
-      return !!caps.has_selection;
-    });
-    const operationList = selectionCapable.map((op) => humanizeOperation(op, schemaHints)).join(', ');
-    questions.push(
-      'Which operations should use ' + requestedSelectionDistribution + ' key selection distribution? Available: ' + operationList + '.'
-    );
+  if (requestedSelectionDistribution && !treatAsStringDistribution && selectedSelectionOps.length === 0) {
+    if (mentionsValues && selectedValueOps.length > 0) {
+      const valueOpsLabel = selectedValueOps.map((op) => humanizeOperation(op, schemaHints)).join(', ');
+      questions.push(
+        'You asked for "' + requestedSelectionDistribution + '" on values. For ' + valueOpsLabel
+          + ', values use string patterns (uniform, weighted, segmented, hot_range). Which value pattern should I use?'
+      );
+    } else {
+      const selectionCapable = schemaHints.operation_order.filter((op) => {
+        const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+        return !!caps.has_selection;
+      });
+      const operationList = selectionCapable.map((op) => humanizeOperation(op, schemaHints)).join(', ');
+      questions.push(
+        'Which operations should use ' + requestedSelectionDistribution + ' key selection distribution? Available: ' + operationList + '.'
+      );
+    }
   }
 
-  if (requestedSelectionDistribution) {
+  if (requestedSelectionDistribution && !treatAsStringDistribution) {
     const missingParams = getMissingDistributionParamsFromPrompt(lowerPrompt, requestedSelectionDistribution);
     if (missingParams.length > 0) {
       const paramLabel = missingParams.join(' and ');
@@ -1263,6 +1891,14 @@ function buildEffectiveState(patch, formState, schemaHints) {
       op_count: next.op_count ?? current.op_count ?? null,
       key_len: next.key_len ?? current.key_len ?? null,
       val_len: next.val_len ?? current.val_len ?? null,
+      key_pattern: next.key_pattern || current.key_pattern || null,
+      val_pattern: next.val_pattern || current.val_pattern || null,
+      key_hot_len: next.key_hot_len ?? current.key_hot_len ?? null,
+      key_hot_amount: next.key_hot_amount ?? current.key_hot_amount ?? null,
+      key_hot_probability: next.key_hot_probability ?? current.key_hot_probability ?? null,
+      val_hot_len: next.val_hot_len ?? current.val_hot_len ?? null,
+      val_hot_amount: next.val_hot_amount ?? current.val_hot_amount ?? null,
+      val_hot_probability: next.val_hot_probability ?? current.val_hot_probability ?? null,
       selection_distribution: next.selection_distribution || current.selection_distribution || null,
       selection_min: next.selection_min ?? current.selection_min ?? null,
       selection_max: next.selection_max ?? current.selection_max ?? null,
@@ -1291,7 +1927,82 @@ function getEnabledOperationNames(state, schemaHints) {
 }
 
 function mentionsStringPatternStyle(lowerPrompt) {
-  return /\b(uniform|weighted|segment(?:ed)?|hot[_ -]?range|literal)\b/.test(lowerPrompt);
+  return /\b(uniform|weighted|segment(?:ed)?|hot[_ -]?range|literal|zipf(?:ian)?)\b/.test(lowerPrompt);
+}
+
+function keyValueDistributionIntent(lowerPrompt) {
+  const text = String(lowerPrompt || '');
+  const keyValMentions = /\b(key|keys|value|values|val|vals|key\/value|kv)\b/.test(text);
+  const distributionMentions = /\bdistribution\b|\bnormal\b|\buniform\b|\bzipf(?:ian)?\b|\bbeta\b|\bexponential\b|\blog[- ]?normal\b|\bpoisson\b|\bweibull\b|\bpareto\b/.test(text);
+  if (!keyValMentions || !distributionMentions) {
+    return false;
+  }
+  return /\b(key|keys|value|values|val|vals|key\/value|kv)\b[\s\S]{0,36}\bdistribution\b|\bdistribution\b[\s\S]{0,36}\b(key|keys|value|values|val|vals|key\/value|kv)\b/.test(text)
+    || /(?:change|set|make|update).{0,40}(?:key|keys|value|values|val|vals|key\/value|kv).{0,40}(?:normal|uniform|zipf|beta|exponential|log[- ]?normal|poisson|weibull|pareto)/.test(text);
+}
+
+function getMentionedOperationsFromPrompt(lowerPrompt, schemaHints) {
+  const text = String(lowerPrompt || '');
+  if (!text) {
+    return [];
+  }
+  return schemaHints.operation_order.filter((op) => promptMentionsOperation(text, op, schemaHints));
+}
+
+function shouldTreatPromptAsStringDistribution(lowerPrompt, schemaHints) {
+  const text = String(lowerPrompt || '');
+  if (!keyValueDistributionIntent(text)) {
+    return false;
+  }
+
+  const mentionsKeyOrValue = /\b(key|keys|value|values|val|vals|key\/value|kv)\b/.test(text);
+  if (!mentionsKeyOrValue) {
+    return false;
+  }
+
+  const mentionedOps = getMentionedOperationsFromPrompt(text, schemaHints);
+  if (mentionedOps.length === 0) {
+    return true;
+  }
+
+  const hasMentionedSelectionOp = mentionedOps.some((op) => {
+    const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+    return !!caps.has_selection;
+  });
+  const hasMentionedStringOp = mentionedOps.some((op) => {
+    const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+    return !!(caps.has_key || caps.has_val);
+  });
+  return hasMentionedStringOp && !hasMentionedSelectionOp;
+}
+
+function shouldForceFallbackForStringDistributionRequest(prompt, schemaHints, formState) {
+  const lowerPrompt = String(prompt || '').toLowerCase();
+  if (!keyValueDistributionIntent(lowerPrompt)) {
+    return false;
+  }
+
+  const enabledOps = schemaHints.operation_order.filter((op) => {
+    const current = formState.operations && formState.operations[op] ? formState.operations[op] : null;
+    return !!(current && current.enabled);
+  });
+  if (enabledOps.length === 0) {
+    return false;
+  }
+
+  const hasSelectionEnabled = enabledOps.some((op) => {
+    const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+    return !!caps.has_selection;
+  });
+  if (hasSelectionEnabled) {
+    return false;
+  }
+
+  const hasStringEnabled = enabledOps.some((op) => {
+    const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+    return !!(caps.has_key || caps.has_val);
+  });
+  return hasStringEnabled;
 }
 
 function getMissingDistributionParamsFromPrompt(lowerPrompt, distributionName) {
@@ -1433,18 +2144,836 @@ function buildSummary(rawSummary, assumptions) {
   if (!Array.isArray(assumptions) || assumptions.length === 0) {
     return summary;
   }
-  return summary + ' Assumptions: ' + assumptions.join(' ');
+  const assumptionText = assumptions
+    .map((entry) => (entry && typeof entry.text === 'string' ? entry.text.trim() : ''))
+    .filter(Boolean);
+  if (assumptionText.length === 0) {
+    return summary;
+  }
+  return summary + ' Assumptions: ' + assumptionText.join(' ');
 }
 
-function normalizeStringList(values) {
-  if (!Array.isArray(values)) {
+function addAssumptionEntry(target, text, fieldRef, reason, appliedValue) {
+  if (!Array.isArray(target)) {
+    return;
+  }
+  const cleanedText = typeof text === 'string' ? text.trim() : '';
+  if (!cleanedText) {
+    return;
+  }
+  const normalizedFieldRef = typeof fieldRef === 'string' && fieldRef.trim() ? fieldRef.trim() : null;
+  const normalizedReason = typeof reason === 'string' && reason.trim() ? reason.trim() : 'default_applied';
+  target.push({
+    id: buildStableId('assume', normalizedFieldRef || cleanedText, normalizedReason),
+    text: cleanedText,
+    field_ref: normalizedFieldRef,
+    reason: normalizedReason,
+    applied_value: sanitizeSerializableValue(appliedValue)
+  });
+}
+
+function normalizeAssumptionEntries(rawAssumptions) {
+  if (!Array.isArray(rawAssumptions)) {
+    return [];
+  }
+  const normalized = [];
+  rawAssumptions.forEach((entry) => {
+    if (typeof entry === 'string') {
+      addAssumptionEntry(normalized, entry, null, 'default_applied', null);
+      return;
+    }
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+    const text = typeof entry.text === 'string' ? entry.text.trim() : '';
+    if (!text) {
+      return;
+    }
+    const fieldRef = typeof entry.field_ref === 'string' && entry.field_ref.trim()
+      ? entry.field_ref.trim()
+      : null;
+    const reason = typeof entry.reason === 'string' && entry.reason.trim()
+      ? entry.reason.trim()
+      : 'default_applied';
+    const normalizedEntry = {
+      id: typeof entry.id === 'string' && entry.id.trim()
+        ? entry.id.trim()
+        : buildStableId('assume', fieldRef || text, reason),
+      text,
+      field_ref: fieldRef,
+      reason,
+      applied_value: sanitizeSerializableValue(entry.applied_value)
+    };
+    normalized.push(normalizedEntry);
+  });
+  return dedupeByKey(normalized, (entry) => (entry.id || '') + '|' + entry.text + '|' + (entry.field_ref || ''));
+}
+
+function mergeAssumptions(primary, fallback) {
+  return dedupeByKey(
+    [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(fallback) ? fallback : [])],
+    (entry) => (entry && entry.id ? entry.id : '') + '|' + (entry && entry.text ? entry.text : '')
+  );
+}
+
+function normalizeClarifications(rawClarifications, rawQuestions, schemaHints, context = null) {
+  const clarifications = [];
+  const rawList = Array.isArray(rawClarifications) ? rawClarifications : [];
+  rawList.forEach((entry) => {
+    const normalized = normalizeClarificationEntry(entry, schemaHints, context);
+    if (normalized) {
+      clarifications.push(normalized);
+    }
+  });
+
+  const questionList = Array.isArray(rawQuestions) ? rawQuestions : [];
+  questionList.forEach((questionText) => {
+    const inferred = inferClarificationFromQuestionText(questionText, schemaHints, context);
+    if (inferred) {
+      clarifications.push(inferred);
+    }
+  });
+
+  return dedupeByKey(clarifications, (entry) => entry.id + '|' + entry.text);
+}
+
+function mergeClarifications(primary, fallback) {
+  return dedupeByKey(
+    [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(fallback) ? fallback : [])],
+    (entry) => (entry && entry.id ? entry.id : '') + '|' + (entry && entry.text ? entry.text : '')
+  );
+}
+
+function normalizeClarificationEntry(rawEntry, schemaHints, context = null) {
+  if (!rawEntry || typeof rawEntry !== 'object') {
+    return null;
+  }
+  const text = typeof rawEntry.text === 'string' ? rawEntry.text.trim() : '';
+  if (!text) {
+    return null;
+  }
+
+  const inferred = inferClarificationFromQuestionText(text, schemaHints, context);
+  const sanitizedBinding = sanitizeClarificationBinding(rawEntry.binding, schemaHints);
+  const distributionParamQuestion = clarificationMentionsDistributionParams(text);
+  const contextPromptLower = context && typeof context.prompt === 'string'
+    ? context.prompt.toLowerCase()
+    : '';
+  if (distributionParamQuestion && shouldTreatPromptAsStringDistribution(contextPromptLower, schemaHints)) {
+    return null;
+  }
+  let binding = sanitizedBinding || (inferred ? inferred.binding : null);
+  if (
+    distributionParamQuestion
+    && inferred
+    && inferred.binding
+    && inferred.binding.type === 'operation_field'
+    && binding
+    && binding.type === 'operations_set'
+  ) {
+    // Prefer deterministic inferred parameter binding when model metadata is too broad.
+    binding = inferred.binding;
+  }
+  if (
+    distributionParamQuestion
+    && binding
+    && binding.type === 'operation_field'
+    && typeof binding.field === 'string'
+    && binding.field.startsWith('selection_')
+  ) {
+    const preferredOp = choosePreferredOperationForSelectionParam(schemaHints, context, binding.field, text);
+    if (preferredOp && preferredOp !== binding.operation) {
+      binding = {
+        ...binding,
+        operation: preferredOp
+      };
+    }
+  }
+  if (!binding) {
+    return null;
+  }
+
+  let input = typeof rawEntry.input === 'string' && CLARIFICATION_INPUT_TYPES.has(rawEntry.input)
+    ? rawEntry.input
+    : null;
+  if (!input && inferred && typeof inferred.input === 'string') {
+    input = inferred.input;
+  }
+  if (
+    distributionParamQuestion
+    && inferred
+    && inferred.binding
+    && inferred.binding.type === 'operation_field'
+    && (input === 'multi_enum' || input === 'enum' || input === 'boolean')
+  ) {
+    input = 'number';
+  }
+  if (!input) {
+    input = suggestedInputForBinding(binding);
+  }
+
+  let options = normalizeOptionStrings(rawEntry.options);
+  if (options.length === 0 && inferred && Array.isArray(inferred.options)) {
+    options = normalizeOptionStrings(inferred.options);
+  }
+  if ((input === 'enum' || input === 'multi_enum') && options.length === 0) {
+    options = defaultOptionsForBinding(binding, schemaHints);
+  }
+
+  const validation = sanitizeClarificationValidation(rawEntry.validation, input);
+  const required = rawEntry.required === true || (inferred && inferred.required === true);
+  const id = typeof rawEntry.id === 'string' && rawEntry.id.trim()
+    ? rawEntry.id.trim()
+    : buildStableId('clarify', text, JSON.stringify(binding));
+
+  const normalized = {
+    id,
+    text,
+    required: required === true,
+    binding,
+    input,
+    default_behavior: typeof rawEntry.default_behavior === 'string' && rawEntry.default_behavior.trim()
+      ? rawEntry.default_behavior.trim()
+      : (inferred && inferred.default_behavior ? inferred.default_behavior : 'use_default')
+  };
+  if (options.length > 0 && (input === 'enum' || input === 'multi_enum')) {
+    normalized.options = options;
+  }
+  if (validation) {
+    normalized.validation = validation;
+  }
+  return normalized;
+}
+
+function inferClarificationFromQuestionText(questionText, schemaHints, context = null) {
+  const text = typeof questionText === 'string' ? questionText.trim() : '';
+  if (!text) {
+    return null;
+  }
+  const lower = text.toLowerCase();
+  const promptLower = context && typeof context.prompt === 'string' ? context.prompt.toLowerCase() : '';
+  const op = detectOperationMention(lower, schemaHints) || detectOperationMention(promptLower, schemaHints);
+  const hasDistributionParamCue = clarificationMentionsDistributionParams(text);
+
+  if (/\bwhich operations?\b|\boperations?\s+do you want\b|\boperation mix\b/.test(lower)) {
+    return {
+      id: buildStableId('clarify', 'operations_set', text),
+      text,
+      required: true,
+      binding: { type: 'operations_set' },
+      input: 'multi_enum',
+      options: [...schemaHints.operation_order],
+      default_behavior: 'wait_for_user'
+    };
+  }
+
+  if (/\bphase\b|\bsections?\b/.test(lower)) {
+    return {
+      id: buildStableId('clarify', 'sections_count', text),
+      text,
+      required: false,
+      binding: { type: 'top_field', field: 'sections_count' },
+      input: 'number',
+      validation: { min: 1, integer: true },
+      default_behavior: 'use_default'
+    };
+  }
+
+  if (/\bgroups?\s*(?:per|\/)\s*section\b/.test(lower)) {
+    return {
+      id: buildStableId('clarify', 'groups_per_section', text),
+      text,
+      required: false,
+      binding: { type: 'top_field', field: 'groups_per_section' },
+      input: 'number',
+      validation: { min: 1, integer: true },
+      default_behavior: 'use_default'
+    };
+  }
+
+  if (/\bcharacter\s*set\b/.test(lower)) {
+    return {
+      id: buildStableId('clarify', 'character_set', text),
+      text,
+      required: false,
+      binding: { type: 'top_field', field: 'character_set' },
+      input: 'enum',
+      options: [...schemaHints.character_sets],
+      default_behavior: 'use_default'
+    };
+  }
+
+  if ((/\bhow many\b|\bnumber of\b|\bop[_\s-]?count\b/.test(lower)) && op) {
+    return {
+      id: buildStableId('clarify', op + '.op_count', text),
+      text,
+      required: true,
+      binding: { type: 'operation_field', operation: op, field: 'op_count' },
+      input: 'number',
+      validation: { min: 1, integer: true },
+      default_behavior: 'wait_for_user'
+    };
+  }
+
+  if (/\bkey\b.*\b(size|length|len)\b/.test(lower) && op) {
+    return {
+      id: buildStableId('clarify', op + '.key_len', text),
+      text,
+      required: false,
+      binding: { type: 'operation_field', operation: op, field: 'key_len' },
+      input: 'number',
+      validation: { min: 1, integer: true },
+      default_behavior: 'use_default'
+    };
+  }
+
+  if (/\bvalue\b.*\b(size|length|len)\b|\bval\b.*\b(size|length|len)\b/.test(lower) && op) {
+    return {
+      id: buildStableId('clarify', op + '.val_len', text),
+      text,
+      required: false,
+      binding: { type: 'operation_field', operation: op, field: 'val_len' },
+      input: 'number',
+      validation: { min: 1, integer: true },
+      default_behavior: 'use_default'
+    };
+  }
+
+  if (
+    /\bstring pattern\b|\bpatterned distribution\b|\bsimple uniform random keys\/values\b|\bwhich value pattern should i use\b|\bwhich string pattern should i use\b/.test(lower)
+  ) {
+    const asksKey = /\bkey(?:s)?\b/.test(lower);
+    const asksValue = /\bvalue(?:s)?\b|\bval(?:s)?\b/.test(lower);
+    let targetField = null;
+    if (asksKey && !asksValue) {
+      targetField = 'key_pattern';
+    } else if (asksValue && !asksKey) {
+      targetField = 'val_pattern';
+    }
+    if (!targetField && op) {
+      const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+      if (caps.has_key) {
+        targetField = 'key_pattern';
+      } else if (caps.has_val) {
+        targetField = 'val_pattern';
+      }
+    }
+    if (!targetField) {
+      targetField = asksValue ? 'val_pattern' : 'key_pattern';
+    }
+
+    const targetOp = op
+      || choosePreferredOperationForStringPattern(schemaHints, context, targetField, text)
+      || firstOperationByCapability(schemaHints, targetField === 'key_pattern' ? 'key' : 'value');
+    if (!targetOp) {
+      return {
+        id: buildStableId('clarify', 'operations_set.string_pattern', text),
+        text,
+        required: false,
+        binding: {
+          type: 'operations_set',
+          capability: targetField === 'key_pattern' ? 'key' : 'value'
+        },
+        input: 'multi_enum',
+        options: defaultOptionsForBinding(
+          {
+            type: 'operations_set',
+            capability: targetField === 'key_pattern' ? 'key' : 'value'
+          },
+          schemaHints
+        ),
+        default_behavior: 'use_default'
+      };
+    }
+    return {
+      id: buildStableId('clarify', targetOp + '.' + targetField, text),
+      text,
+      required: false,
+      binding: { type: 'operation_field', operation: targetOp, field: targetField },
+      input: 'enum',
+      options: defaultOptionsForBinding({ type: 'operation_field', operation: targetOp, field: targetField }, schemaHints),
+      default_behavior: 'use_default'
+    };
+  }
+
+  if ((/\bselection\s+distribution\b|\bkey selection distribution\b/.test(lower)) && !hasDistributionParamCue) {
+    if (op) {
+      return {
+        id: buildStableId('clarify', op + '.selection_distribution', text),
+        text,
+        required: false,
+        binding: { type: 'operation_field', operation: op, field: 'selection_distribution' },
+        input: 'enum',
+        options: [...schemaHints.selection_distributions],
+        default_behavior: 'use_default'
+      };
+    }
+    return {
+      id: buildStableId('clarify', 'operations_set.selection', text),
+      text,
+      required: true,
+      binding: { type: 'operations_set', capability: 'selection' },
+      input: 'multi_enum',
+      options: defaultOptionsForBinding({ type: 'operations_set', capability: 'selection' }, schemaHints),
+      default_behavior: 'wait_for_user'
+    };
+  }
+
+  const distributionParamMap = [
+    { matcher: /\bmean\b/, field: 'selection_mean' },
+    { matcher: /\bstandard\s+deviation\b|\bstd(?:\.?\s*dev|_?dev|_?deviation)?\b/, field: 'selection_std_dev' },
+    { matcher: /\balpha\b/, field: 'selection_alpha' },
+    { matcher: /\bbeta\b/, field: 'selection_beta' },
+    { matcher: /\blambda\b/, field: 'selection_lambda' },
+    { matcher: /\bscale\b/, field: 'selection_scale' },
+    { matcher: /\bshape\b/, field: 'selection_shape' },
+    { matcher: /\bmin(?:imum)?\b/, field: 'selection_min' },
+    { matcher: /\bmax(?:imum)?\b/, field: 'selection_max' },
+    { matcher: /\bparameter\s+n\b|\bn\b/, field: 'selection_n' },
+    { matcher: /\bparameter\s+s\b|\bs\b/, field: 'selection_s' }
+  ];
+  const paramEntry = distributionParamMap.find((entry) => entry.matcher.test(lower));
+  if (paramEntry) {
+    const targetOp = op
+      || choosePreferredOperationForSelectionParam(schemaHints, context, paramEntry.field, text)
+      || firstOperationByCapability(schemaHints, 'selection');
+    if (!targetOp) {
+      return {
+        id: buildStableId('clarify', 'operations_set.selection', text),
+        text,
+        required: true,
+        binding: { type: 'operations_set', capability: 'selection' },
+        input: 'multi_enum',
+        options: defaultOptionsForBinding({ type: 'operations_set', capability: 'selection' }, schemaHints),
+        default_behavior: 'wait_for_user'
+      };
+    }
+    return {
+      id: buildStableId('clarify', targetOp + '.' + paramEntry.field, text),
+      text,
+      required: true,
+      binding: { type: 'operation_field', operation: targetOp, field: paramEntry.field },
+      input: 'number',
+      default_behavior: 'wait_for_user'
+    };
+  }
+
+  // Safe downgrade for malformed/unsupported question metadata.
+  return {
+    id: buildStableId('clarify', 'operations_set.generic', text),
+    text,
+    required: false,
+    binding: { type: 'operations_set' },
+    input: 'multi_enum',
+    options: [...schemaHints.operation_order],
+    default_behavior: 'use_default'
+  };
+}
+
+function sanitizeClarificationBinding(rawBinding, schemaHints) {
+  if (!rawBinding || typeof rawBinding !== 'object') {
+    return null;
+  }
+  const type = typeof rawBinding.type === 'string' ? rawBinding.type.trim() : '';
+  if (type === 'top_field') {
+    const field = typeof rawBinding.field === 'string' ? rawBinding.field.trim() : '';
+    if (!TOP_LEVEL_BINDING_FIELDS.has(field)) {
+      return null;
+    }
+    return { type: 'top_field', field };
+  }
+  if (type === 'operation_field') {
+    const operation = typeof rawBinding.operation === 'string' ? rawBinding.operation.trim() : '';
+    const field = typeof rawBinding.field === 'string' ? rawBinding.field.trim() : '';
+    if (!schemaHints.operation_order.includes(operation)) {
+      return null;
+    }
+    if (!OPERATION_BINDING_FIELDS.has(field)) {
+      return null;
+    }
+    if (!operationSupportsField(operation, field, schemaHints)) {
+      return null;
+    }
+    return { type: 'operation_field', operation, field };
+  }
+  if (type === 'operations_set') {
+    const capability = typeof rawBinding.capability === 'string' ? rawBinding.capability.trim() : '';
+    if (!capability) {
+      return { type: 'operations_set' };
+    }
+    if (['selection', 'range', 'key', 'value', 'all'].includes(capability)) {
+      return { type: 'operations_set', capability };
+    }
+    return { type: 'operations_set' };
+  }
+  return null;
+}
+
+function sanitizeClarificationValidation(rawValidation, inputType) {
+  if (!rawValidation || typeof rawValidation !== 'object') {
+    return null;
+  }
+  const validation = {};
+  if (inputType === 'number') {
+    if (Number.isFinite(rawValidation.min)) {
+      validation.min = rawValidation.min;
+    }
+    if (Number.isFinite(rawValidation.max)) {
+      validation.max = rawValidation.max;
+    }
+    if (rawValidation.integer === true) {
+      validation.integer = true;
+    }
+  } else if (inputType === 'multi_enum') {
+    if (Number.isFinite(rawValidation.min_items) && rawValidation.min_items >= 0) {
+      validation.min_items = Math.floor(rawValidation.min_items);
+    }
+    if (Number.isFinite(rawValidation.max_items) && rawValidation.max_items >= 0) {
+      validation.max_items = Math.floor(rawValidation.max_items);
+    }
+  } else if (inputType === 'text') {
+    if (Number.isFinite(rawValidation.min_length) && rawValidation.min_length >= 0) {
+      validation.min_length = Math.floor(rawValidation.min_length);
+    }
+    if (Number.isFinite(rawValidation.max_length) && rawValidation.max_length >= 0) {
+      validation.max_length = Math.floor(rawValidation.max_length);
+    }
+  }
+  return Object.keys(validation).length > 0 ? validation : null;
+}
+
+function normalizeOptionStrings(rawOptions) {
+  if (!Array.isArray(rawOptions)) {
     return [];
   }
   return uniqueStrings(
-    values
+    rawOptions
       .map((value) => String(value || '').trim())
       .filter((value) => value.length > 0)
   );
+}
+
+function suggestedInputForBinding(binding) {
+  if (!binding || typeof binding !== 'object') {
+    return 'text';
+  }
+  if (binding.type === 'operations_set') {
+    return 'multi_enum';
+  }
+  if (binding.type === 'top_field') {
+    if (binding.field === 'character_set') {
+      return 'enum';
+    }
+    return 'number';
+  }
+  if (binding.type === 'operation_field') {
+    if (binding.field === 'enabled') {
+      return 'boolean';
+    }
+    if (binding.field === 'selection_distribution' || binding.field === 'range_format' || binding.field === 'key_pattern' || binding.field === 'val_pattern') {
+      return 'enum';
+    }
+    return 'number';
+  }
+  return 'text';
+}
+
+function defaultOptionsForBinding(binding, schemaHints) {
+  if (!binding || typeof binding !== 'object') {
+    return [];
+  }
+  if (binding.type === 'top_field' && binding.field === 'character_set') {
+    return [...schemaHints.character_sets];
+  }
+  if (binding.type === 'operation_field' && binding.field === 'selection_distribution') {
+    return [...schemaHints.selection_distributions];
+  }
+  if (binding.type === 'operation_field' && (binding.field === 'key_pattern' || binding.field === 'val_pattern')) {
+    return Array.isArray(schemaHints.string_patterns) && schemaHints.string_patterns.length > 0
+      ? [...schemaHints.string_patterns]
+      : [...STRING_PATTERN_VALUES];
+  }
+  if (binding.type === 'operation_field' && binding.field === 'range_format') {
+    return [...schemaHints.range_formats];
+  }
+  if (binding.type === 'operations_set') {
+    const capability = binding.capability || 'all';
+    if (capability === 'all') {
+      return [...schemaHints.operation_order];
+    }
+    return schemaHints.operation_order.filter((op) => {
+      const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+      if (capability === 'selection') {
+        return !!caps.has_selection;
+      }
+      if (capability === 'range') {
+        return !!caps.has_range;
+      }
+      if (capability === 'key') {
+        return !!caps.has_key;
+      }
+      if (capability === 'value') {
+        return !!caps.has_val;
+      }
+      return true;
+    });
+  }
+  return [];
+}
+
+function firstOperationByCapability(schemaHints, capabilityName) {
+  const operations = Array.isArray(schemaHints && schemaHints.operation_order)
+    ? schemaHints.operation_order
+    : [];
+  return operations.find((op) => {
+    const caps = schemaHints.capabilities && schemaHints.capabilities[op] ? schemaHints.capabilities[op] : {};
+    if (capabilityName === 'selection') {
+      return !!caps.has_selection;
+    }
+    if (capabilityName === 'range') {
+      return !!caps.has_range;
+    }
+    if (capabilityName === 'key') {
+      return !!caps.has_key;
+    }
+    if (capabilityName === 'value') {
+      return !!caps.has_val;
+    }
+    return true;
+  }) || null;
+}
+
+function choosePreferredOperationForSelectionParam(schemaHints, context, fieldName, questionText) {
+  if (typeof fieldName !== 'string' || !fieldName.startsWith('selection_')) {
+    return null;
+  }
+
+  const safeContext = context && typeof context === 'object' ? context : {};
+  const safeFormState = safeContext.formState && typeof safeContext.formState === 'object'
+    ? safeContext.formState
+    : {
+      character_set: null,
+      sections_count: null,
+      groups_per_section: null,
+      operations: {}
+    };
+  const safePatch = safeContext.patch && typeof safeContext.patch === 'object'
+    ? safeContext.patch
+    : {
+      character_set: null,
+      sections_count: null,
+      groups_per_section: null,
+      clear_operations: false,
+      operations: {}
+    };
+
+  const effective = buildEffectiveState(safePatch, safeFormState, schemaHints);
+  const enabledSelectionOps = getEnabledOperationNames(effective, schemaHints).filter((op) => {
+    return operationSupportsField(op, fieldName, schemaHints);
+  });
+
+  if (enabledSelectionOps.length === 1) {
+    return enabledSelectionOps[0];
+  }
+
+  let narrowed = enabledSelectionOps;
+  const distributionHint = detectSelectionDistribution(String(questionText || '').toLowerCase(), schemaHints.selection_distributions);
+  if (distributionHint) {
+    const byDistribution = enabledSelectionOps.filter((op) => {
+      const state = effective.operations && effective.operations[op] ? effective.operations[op] : {};
+      return state.selection_distribution === distributionHint;
+    });
+    if (byDistribution.length === 1) {
+      return byDistribution[0];
+    }
+    if (byDistribution.length > 0) {
+      narrowed = byDistribution;
+    }
+  }
+
+  const promptLower = typeof safeContext.prompt === 'string' ? safeContext.prompt.toLowerCase() : '';
+  if (promptLower) {
+    const mentionedNarrowed = narrowed.filter((op) => promptMentionsOperation(promptLower, op, schemaHints));
+    if (mentionedNarrowed.length === 1) {
+      return mentionedNarrowed[0];
+    }
+    const mentionedEnabled = enabledSelectionOps.filter((op) => promptMentionsOperation(promptLower, op, schemaHints));
+    if (mentionedEnabled.length === 1) {
+      return mentionedEnabled[0];
+    }
+  }
+
+  return null;
+}
+
+function choosePreferredOperationForStringPattern(schemaHints, context, fieldName, questionText) {
+  if (fieldName !== 'key_pattern' && fieldName !== 'val_pattern') {
+    return null;
+  }
+
+  const safeContext = context && typeof context === 'object' ? context : {};
+  const safeFormState = safeContext.formState && typeof safeContext.formState === 'object'
+    ? safeContext.formState
+    : {
+      character_set: null,
+      sections_count: null,
+      groups_per_section: null,
+      operations: {}
+    };
+  const safePatch = safeContext.patch && typeof safeContext.patch === 'object'
+    ? safeContext.patch
+    : {
+      character_set: null,
+      sections_count: null,
+      groups_per_section: null,
+      clear_operations: false,
+      operations: {}
+    };
+
+  const effective = buildEffectiveState(safePatch, safeFormState, schemaHints);
+  const enabledOps = getEnabledOperationNames(effective, schemaHints).filter((op) => {
+    return operationSupportsField(op, fieldName, schemaHints);
+  });
+  if (enabledOps.length === 1) {
+    return enabledOps[0];
+  }
+
+  const hintText = String(questionText || '').toLowerCase();
+  if (hintText) {
+    const hinted = enabledOps.filter((op) => promptMentionsOperation(hintText, op, schemaHints));
+    if (hinted.length === 1) {
+      return hinted[0];
+    }
+  }
+
+  const promptLower = typeof safeContext.prompt === 'string' ? safeContext.prompt.toLowerCase() : '';
+  if (promptLower) {
+    const mentioned = enabledOps.filter((op) => promptMentionsOperation(promptLower, op, schemaHints));
+    if (mentioned.length === 1) {
+      return mentioned[0];
+    }
+  }
+
+  return null;
+}
+
+function detectOperationMention(lowerText, schemaHints) {
+  const text = String(lowerText || '');
+  for (const op of schemaHints.operation_order) {
+    if (promptMentionsOperation(text, op, schemaHints)) {
+      return op;
+    }
+  }
+  return null;
+}
+
+function clarificationMentionsDistributionParams(textValue) {
+  const text = String(textValue || '').toLowerCase();
+  if (!text) {
+    return false;
+  }
+  return /\bmean\b|\bstandard\s+deviation\b|\bstd(?:\.?\s*dev|_?dev|_?deviation)?\b|\balpha\b|\bbeta\b|\blambda\b|\bscale\b|\bshape\b|\bmin(?:imum)?\b|\bmax(?:imum)?\b|\bparameter\s+n\b|\bparameter\s+s\b/.test(text);
+}
+
+function operationSupportsField(operation, fieldName, schemaHints) {
+  if (!operation || !fieldName) {
+    return false;
+  }
+  const caps = schemaHints.capabilities && schemaHints.capabilities[operation]
+    ? schemaHints.capabilities[operation]
+    : {};
+  if (fieldName === 'enabled' || fieldName === 'op_count') {
+    return true;
+  }
+  if (fieldName === 'key_len') {
+    return !!caps.has_key;
+  }
+  if (fieldName === 'key_pattern' || fieldName === 'key_hot_len' || fieldName === 'key_hot_amount' || fieldName === 'key_hot_probability') {
+    return !!caps.has_key;
+  }
+  if (fieldName === 'val_len') {
+    return !!caps.has_val;
+  }
+  if (fieldName === 'val_pattern' || fieldName === 'val_hot_len' || fieldName === 'val_hot_amount' || fieldName === 'val_hot_probability') {
+    return !!caps.has_val;
+  }
+  if (
+    [
+      'selection_distribution',
+      'selection_min',
+      'selection_max',
+      'selection_mean',
+      'selection_std_dev',
+      'selection_alpha',
+      'selection_beta',
+      'selection_n',
+      'selection_s',
+      'selection_lambda',
+      'selection_scale',
+      'selection_shape'
+    ].includes(fieldName)
+  ) {
+    return !!caps.has_selection;
+  }
+  if (fieldName === 'selectivity' || fieldName === 'range_format') {
+    return !!caps.has_range;
+  }
+  return false;
+}
+
+function buildStableId(prefix, ...parts) {
+  const joined = parts
+    .map((part) => String(part || '').trim())
+    .filter((part) => part.length > 0)
+    .join('|');
+  return prefix + '_' + hashString(joined || prefix);
+}
+
+function hashString(value) {
+  const text = String(value || '');
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function sanitizeSerializableValue(value) {
+  if (value === undefined) {
+    return null;
+  }
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeSerializableValue(item));
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function dedupeByKey(values, keyFn) {
+  const out = [];
+  const seen = new Set();
+  (Array.isArray(values) ? values : []).forEach((entry) => {
+    if (!entry) {
+      return;
+    }
+    const key = typeof keyFn === 'function' ? keyFn(entry) : String(entry);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    out.push(entry);
+  });
+  return out;
 }
 
 function uniqueStrings(values) {
@@ -1486,6 +3015,9 @@ function isAssistPayloadShape(value) {
     return false;
   }
   if (value.questions !== undefined && !Array.isArray(value.questions)) {
+    return false;
+  }
+  if (value.clarifications !== undefined && !Array.isArray(value.clarifications)) {
     return false;
   }
   if (value.assumptions !== undefined && !Array.isArray(value.assumptions)) {
@@ -1562,6 +3094,36 @@ function positiveNumberOrNull(value) {
 function nonNegativeNumberOrNull(value) {
   const parsed = numberOrNull(value);
   return parsed !== null && parsed >= 0 ? parsed : null;
+}
+
+function nonNegativeIntegerOrNull(value) {
+  const parsed = nonNegativeNumberOrNull(value);
+  if (parsed === null) {
+    return null;
+  }
+  return Math.floor(parsed);
+}
+
+function probabilityOrNull(value) {
+  const parsed = numberOrNull(value);
+  if (parsed === null) {
+    return null;
+  }
+  if (parsed < 0 || parsed > 1) {
+    return null;
+  }
+  return parsed;
+}
+
+function normalizeStringPatternName(value, allowedPatterns) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const cleaned = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const candidates = Array.isArray(allowedPatterns) && allowedPatterns.length > 0
+    ? allowedPatterns
+    : STRING_PATTERN_VALUES;
+  return candidates.includes(cleaned) ? cleaned : null;
 }
 
 function positiveIntegerOrNull(value) {
