@@ -1,30 +1,44 @@
-import http from 'node:http';
-import os from 'node:os';
-import path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
-import { createReadStream } from 'node:fs';
-import { promises as fs } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { validateWorkloadSpec } from './workload-spec-validation.mjs';
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { createReadStream } from "node:fs";
+import { promises as fs } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { validateWorkloadSpec } from "./workload-spec-validation.mjs";
 
-const HOST = process.env.LOCAL_RUNNER_HOST || '127.0.0.1';
+const HOST = process.env.LOCAL_RUNNER_HOST || "127.0.0.1";
 const PORT = parseInteger(process.env.LOCAL_RUNNER_PORT, 8788);
 const KNOWN_OUTPUT_DIR = path.resolve(
-  process.env.LOCAL_RUNNER_OUTPUT_DIR || path.join(process.cwd(), 'generated-workloads')
+  process.env.LOCAL_RUNNER_OUTPUT_DIR ||
+    path.join(process.cwd(), "generated-workloads"),
 );
-const RUNS_DIR = process.env.LOCAL_RUNNER_RUNS_DIR || path.join(KNOWN_OUTPUT_DIR, 'runs');
-const LATEST_SPEC_PATH = path.join(KNOWN_OUTPUT_DIR, 'latest-spec.json');
-const LATEST_WORKLOAD_PATH = path.join(KNOWN_OUTPUT_DIR, 'latest-workload.tar.gz');
-const TECTONIC_BIN = (process.env.TECTONIC_BIN || 'tectonic-cli').trim() || 'tectonic-cli';
+const RUNS_DIR =
+  process.env.LOCAL_RUNNER_RUNS_DIR || path.join(KNOWN_OUTPUT_DIR, "runs");
+const LATEST_SPEC_PATH = path.join(KNOWN_OUTPUT_DIR, "latest-spec.json");
+const LATEST_WORKLOAD_PATH = path.join(
+  KNOWN_OUTPUT_DIR,
+  "latest-workload.tar.gz",
+);
+const TECTONIC_BIN =
+  (process.env.TECTONIC_BIN || "tectonic-cli").trim() || "tectonic-cli";
 const MAX_SPEC_BYTES = parseInteger(process.env.RUN_MAX_SPEC_BYTES, 512 * 1024);
-const MAX_TIMEOUT_SECONDS = parseInteger(process.env.RUN_MAX_TIMEOUT_SECONDS, 1800);
+const MAX_TIMEOUT_SECONDS = parseInteger(
+  process.env.RUN_MAX_TIMEOUT_SECONDS,
+  1800,
+);
 const DEFAULT_TIMEOUT_SECONDS = 1800;
 const MIN_TIMEOUT_SECONDS = 30;
-const WORKLOAD_FILENAME = 'workload.tar.gz';
-const SPEC_FILENAME = 'spec.json';
-const ACTIVE_STATUSES = new Set(['starting', 'running']);
-const TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'cancelled', 'timed_out']);
+const WORKLOAD_FILENAME = "workload.tar.gz";
+const SPEC_FILENAME = "spec.json";
+const ACTIVE_STATUSES = new Set(["starting", "running"]);
+const TERMINAL_STATUSES = new Set([
+  "succeeded",
+  "failed",
+  "cancelled",
+  "timed_out",
+]);
 
 const runs = new Map();
 
@@ -37,7 +51,7 @@ export function getLocalRunnerConfig() {
     port: PORT,
     known_output_dir: KNOWN_OUTPUT_DIR,
     runs_dir: RUNS_DIR,
-    tectonic_bin: TECTONIC_BIN
+    tectonic_bin: TECTONIC_BIN,
   };
 }
 
@@ -45,10 +59,10 @@ export async function handleWorkloadRequest(req, res) {
   try {
     await routeRequest(req, res);
   } catch (error) {
-    console.error('Local runner unhandled error:', error);
+    console.error("Local runner unhandled error:", error);
     sendJson(res, 500, {
-      error: 'Unhandled local runner error.',
-      code: 'runner_unhandled_error'
+      error: "Unhandled local runner error.",
+      code: "runner_unhandled_error",
     });
   }
 }
@@ -57,7 +71,7 @@ export async function stopActiveRuns() {
   for (const run of runs.values()) {
     if (run && run.child && ACTIVE_STATUSES.has(run.status)) {
       try {
-        run.child.kill('SIGTERM');
+        run.child.kill("SIGTERM");
       } catch {
         // Ignore process kill errors during shutdown.
       }
@@ -69,7 +83,7 @@ function createStandaloneServer() {
   const server = http.createServer(async (req, res) => {
     await handleWorkloadRequest(req, res);
   });
-  server.on('error', (error) => {
+  server.on("error", (error) => {
     console.error(buildListenErrorMessage(error));
     process.exit(1);
   });
@@ -77,7 +91,7 @@ function createStandaloneServer() {
 }
 
 async function shutdownStandalone(signal, server) {
-  console.log('Received ' + signal + ', stopping local runner...');
+  console.log("Received " + signal + ", stopping local runner...");
   await stopActiveRuns();
   await new Promise((resolve) => server.close(resolve));
   process.exit(0);
@@ -98,10 +112,12 @@ function isDirectExecution() {
 if (isDirectExecution()) {
   const standalone = createStandaloneServer();
   standalone.listen(PORT, HOST, () => {
-    console.log('Local tectonic runner listening on http://' + HOST + ':' + PORT);
-    console.log('Using binary:', TECTONIC_BIN);
-    console.log('Known output directory:', KNOWN_OUTPUT_DIR);
-    console.log('Runs directory:', RUNS_DIR);
+    console.log(
+      "Local tectonic runner listening on http://" + HOST + ":" + PORT,
+    );
+    console.log("Using binary:", TECTONIC_BIN);
+    console.log("Known output directory:", KNOWN_OUTPUT_DIR);
+    console.log("Runs directory:", RUNS_DIR);
   });
 
   let shutdownPromise = null;
@@ -110,106 +126,108 @@ if (isDirectExecution()) {
       shutdownPromise = shutdownStandalone(signal, standalone);
       return;
     }
-    console.log('Received ' + signal + ', shutdown already in progress...');
+    console.log("Received " + signal + ", shutdown already in progress...");
   };
 
-  process.once('SIGINT', () => {
-    requestShutdown('SIGINT');
+  process.once("SIGINT", () => {
+    requestShutdown("SIGINT");
   });
 
-  process.once('SIGTERM', () => {
-    requestShutdown('SIGTERM');
+  process.once("SIGTERM", () => {
+    requestShutdown("SIGTERM");
   });
 }
 
 async function routeRequest(req, res) {
-  const method = String(req.method || 'GET').toUpperCase();
-  const url = new URL(req.url || '/', 'http://127.0.0.1');
-  const pathname = url.pathname.replace(/\/+$/, '') || '/';
+  const method = String(req.method || "GET").toUpperCase();
+  const url = new URL(req.url || "/", "http://127.0.0.1");
+  const pathname = url.pathname.replace(/\/+$/, "") || "/";
 
-  if (pathname === '/api/workloads/health') {
-    if (method !== 'GET') {
-      sendJson(res, 405, { error: 'Method not allowed' });
+  if (pathname === "/api/workloads/health") {
+    if (method !== "GET") {
+      sendJson(res, 405, { error: "Method not allowed" });
       return;
     }
     sendJson(res, 200, {
       ok: true,
-      runner: 'local_tectonic_runner',
+      runner: "local_tectonic_runner",
       host: HOST,
       port: PORT,
       tectonic_bin: TECTONIC_BIN,
-      known_output_dir: KNOWN_OUTPUT_DIR
+      known_output_dir: KNOWN_OUTPUT_DIR,
     });
     return;
   }
 
-  if (pathname === '/api/workloads/runs') {
-    if (method !== 'POST') {
-      sendJson(res, 405, { error: 'Method not allowed' });
+  if (pathname === "/api/workloads/runs") {
+    if (method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
       return;
     }
     await handleStartRun(req, res);
     return;
   }
 
-  const runMatch = pathname.match(/^\/api\/workloads\/runs\/([^/]+)(?:\/(cancel|download\/spec|download\/workload))?$/);
+  const runMatch = pathname.match(
+    /^\/api\/workloads\/runs\/([^/]+)(?:\/(cancel|download\/spec|download\/workload))?$/,
+  );
   if (!runMatch) {
     sendJson(res, 404, {
-      error: 'Not found.',
-      code: 'not_found'
+      error: "Not found.",
+      code: "not_found",
     });
     return;
   }
 
   const runId = safeDecodeURIComponent(runMatch[1]);
-  const action = runMatch[2] || 'status';
+  const action = runMatch[2] || "status";
   if (!runId) {
     sendJson(res, 400, {
-      error: 'Invalid run id.',
-      code: 'invalid_run_id'
+      error: "Invalid run id.",
+      code: "invalid_run_id",
     });
     return;
   }
 
-  if (action === 'status') {
-    if (method !== 'GET') {
-      sendJson(res, 405, { error: 'Method not allowed' });
+  if (action === "status") {
+    if (method !== "GET") {
+      sendJson(res, 405, { error: "Method not allowed" });
       return;
     }
     await handleRunStatus(res, runId);
     return;
   }
 
-  if (action === 'cancel') {
-    if (method !== 'POST') {
-      sendJson(res, 405, { error: 'Method not allowed' });
+  if (action === "cancel") {
+    if (method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" });
       return;
     }
     await handleCancelRun(res, runId);
     return;
   }
 
-  if (action === 'download/spec') {
-    if (method !== 'GET') {
-      sendJson(res, 405, { error: 'Method not allowed' });
+  if (action === "download/spec") {
+    if (method !== "GET") {
+      sendJson(res, 405, { error: "Method not allowed" });
       return;
     }
-    await handleDownloadArtifact(res, runId, 'spec');
+    await handleDownloadArtifact(res, runId, "spec");
     return;
   }
 
-  if (action === 'download/workload') {
-    if (method !== 'GET') {
-      sendJson(res, 405, { error: 'Method not allowed' });
+  if (action === "download/workload") {
+    if (method !== "GET") {
+      sendJson(res, 405, { error: "Method not allowed" });
       return;
     }
-    await handleDownloadArtifact(res, runId, 'workload');
+    await handleDownloadArtifact(res, runId, "workload");
     return;
   }
 
   sendJson(res, 404, {
-    error: 'Not found.',
-    code: 'not_found'
+    error: "Not found.",
+    code: "not_found",
   });
 }
 
@@ -219,17 +237,19 @@ async function handleStartRun(req, res) {
     sendJson(res, body.status, {
       error: body.error,
       code: body.code,
-      ...(body.details ? { details: body.details } : {})
+      ...(body.details ? { details: body.details } : {}),
     });
     return;
   }
 
-  const normalizedSpec = normalizeSpecPayload(body.value && body.value.spec_json);
+  const normalizedSpec = normalizeSpecPayload(
+    body.value && body.value.spec_json,
+  );
   if (!normalizedSpec) {
     sendJson(res, 400, {
-      error: 'spec_json must be a JSON object or a sections array.',
-      code: 'invalid_spec',
-      details: ['spec_json must be an object or array.']
+      error: "spec_json must be a JSON object or a sections array.",
+      code: "invalid_spec",
+      details: ["spec_json must be an object or array."],
     });
     return;
   }
@@ -237,42 +257,44 @@ async function handleStartRun(req, res) {
   const validationErrors = validateWorkloadSpec(normalizedSpec);
   if (validationErrors.length > 0) {
     sendJson(res, 400, {
-      error: 'Invalid spec_json for workload execution.',
-      code: 'invalid_spec',
-      details: validationErrors
+      error: "Invalid spec_json for workload execution.",
+      code: "invalid_spec",
+      details: validationErrors,
     });
     return;
   }
 
   const specText = JSON.stringify(normalizedSpec, null, 2);
-  const specBytes = Buffer.byteLength(specText, 'utf8');
+  const specBytes = Buffer.byteLength(specText, "utf8");
   if (specBytes > MAX_SPEC_BYTES) {
     sendJson(res, 413, {
-      error: 'Spec JSON exceeds maximum allowed size.',
-      code: 'spec_too_large',
-      max_bytes: MAX_SPEC_BYTES
+      error: "Spec JSON exceeds maximum allowed size.",
+      code: "spec_too_large",
+      max_bytes: MAX_SPEC_BYTES,
     });
     return;
   }
 
   const timeoutSeconds = normalizeTimeoutSeconds(
-    body.value && body.value.run_options && body.value.run_options.timeout_seconds
+    body.value &&
+      body.value.run_options &&
+      body.value.run_options.timeout_seconds,
   );
   const createdAt = new Date().toISOString();
   const runId = createRunId();
   const runDir = path.join(RUNS_DIR, runId);
   const specPath = path.join(runDir, SPEC_FILENAME);
-  const outputPath = path.join(runDir, 'workload-output');
+  const outputPath = path.join(runDir, "workload-output");
   const workloadPath = path.join(runDir, WORKLOAD_FILENAME);
 
   await fs.mkdir(runDir, { recursive: true });
-  await fs.writeFile(specPath, specText, 'utf8');
+  await fs.writeFile(specPath, specText, "utf8");
 
   const run = {
     run_id: runId,
     created_at: createdAt,
-    status: 'starting',
-    progress_text: 'Queued local workload generation.',
+    status: "starting",
+    progress_text: "Queued local workload generation.",
     error: null,
     spec_path: specPath,
     workload_path: workloadPath,
@@ -283,25 +305,33 @@ async function handleStartRun(req, res) {
     timeout_seconds: timeoutSeconds,
     child: null,
     timeout_timer: null,
-    started_at: null
+    started_at: null,
   };
   runs.set(runId, run);
   await fs.copyFile(specPath, LATEST_SPEC_PATH);
 
   startTectonicRun(run).catch((error) => {
-    console.error('Run execution failed unexpectedly:', error);
-    markRunFailed(run, 'runner_execution_failed', 'Runner failed to execute tectonic-cli.');
+    console.error("Run execution failed unexpectedly:", error);
+    markRunFailed(
+      run,
+      "runner_execution_failed",
+      "Runner failed to execute tectonic-cli.",
+    );
   });
 
   sendJson(res, 202, {
     run_id: runId,
-    status: 'starting',
+    status: "starting",
     created_at: createdAt,
     output_paths: buildOutputPaths(run),
     downloads: {
-      spec_download_path: '/api/workloads/runs/' + encodeURIComponent(runId) + '/download/spec',
-      workload_download_path: '/api/workloads/runs/' + encodeURIComponent(runId) + '/download/workload'
-    }
+      spec_download_path:
+        "/api/workloads/runs/" + encodeURIComponent(runId) + "/download/spec",
+      workload_download_path:
+        "/api/workloads/runs/" +
+        encodeURIComponent(runId) +
+        "/download/workload",
+    },
   });
 }
 
@@ -309,8 +339,8 @@ async function handleRunStatus(res, runId) {
   const run = runs.get(runId);
   if (!run) {
     sendJson(res, 404, {
-      error: 'Run not found.',
-      code: 'run_not_found'
+      error: "Run not found.",
+      code: "run_not_found",
     });
     return;
   }
@@ -326,20 +356,20 @@ async function handleRunStatus(res, runId) {
     output_paths: buildOutputPaths(run),
     artifacts: [
       {
-        kind: 'spec',
+        kind: "spec",
         filename: SPEC_FILENAME,
         ready: !!specStat,
-        bytes: specStat ? specStat.size : null
+        bytes: specStat ? specStat.size : null,
       },
       {
-        kind: 'workload',
+        kind: "workload",
         filename: WORKLOAD_FILENAME,
         ready: !!workloadStat,
-        bytes: workloadStat ? workloadStat.size : null
-      }
+        bytes: workloadStat ? workloadStat.size : null,
+      },
     ],
     links: buildRunLinks(run.run_id, run.status),
-    created_at: run.created_at
+    created_at: run.created_at,
   });
 }
 
@@ -347,8 +377,8 @@ async function handleCancelRun(res, runId) {
   const run = runs.get(runId);
   if (!run) {
     sendJson(res, 404, {
-      error: 'Run not found.',
-      code: 'run_not_found'
+      error: "Run not found.",
+      code: "run_not_found",
     });
     return;
   }
@@ -357,19 +387,19 @@ async function handleCancelRun(res, runId) {
     sendJson(res, 200, {
       run_id: run.run_id,
       status: run.status,
-      cancelled: run.status === 'cancelled'
+      cancelled: run.status === "cancelled",
     });
     return;
   }
 
-  run.status = 'cancelled';
-  run.progress_text = 'Cancellation requested.';
+  run.status = "cancelled";
+  run.progress_text = "Cancellation requested.";
   run.error = null;
   clearRunTimeout(run);
 
   if (run.child) {
     try {
-      run.child.kill('SIGTERM');
+      run.child.kill("SIGTERM");
     } catch {
       // Ignore cancellation kill errors.
     }
@@ -377,8 +407,8 @@ async function handleCancelRun(res, runId) {
 
   sendJson(res, 200, {
     run_id: run.run_id,
-    status: 'cancelled',
-    cancelled: true
+    status: "cancelled",
+    cancelled: true,
   });
 }
 
@@ -386,45 +416,53 @@ async function handleDownloadArtifact(res, runId, kind) {
   const run = runs.get(runId);
   if (!run) {
     sendJson(res, 404, {
-      error: 'Run not found.',
-      code: 'run_not_found'
+      error: "Run not found.",
+      code: "run_not_found",
     });
     return;
   }
 
-  const filePath = kind === 'spec' ? run.spec_path : run.workload_path;
-  const filename = kind === 'spec' ? SPEC_FILENAME : WORKLOAD_FILENAME;
-  const contentType = kind === 'spec' ? 'application/json; charset=utf-8' : 'application/gzip';
+  const filePath = kind === "spec" ? run.spec_path : run.workload_path;
+  const filename = kind === "spec" ? SPEC_FILENAME : WORKLOAD_FILENAME;
+  const contentType =
+    kind === "spec" ? "application/json; charset=utf-8" : "application/gzip";
   const stat = await safeStat(filePath);
 
   if (!stat) {
-    if (kind === 'workload') {
+    if (kind === "workload") {
       sendJson(res, 409, {
-        error: 'Workload artifact is not ready yet.',
-        code: 'artifact_not_ready'
+        error: "Workload artifact is not ready yet.",
+        code: "artifact_not_ready",
       });
     } else {
       sendJson(res, 404, {
-        error: 'Spec artifact not found.',
-        code: 'artifact_not_found'
+        error: "Spec artifact not found.",
+        code: "artifact_not_found",
       });
     }
     return;
   }
 
   res.statusCode = 200;
-  res.setHeader('content-type', contentType);
-  res.setHeader('content-length', String(stat.size));
-  res.setHeader('content-disposition', 'attachment; filename="' + filename + '"');
+  res.setHeader("content-type", contentType);
+  res.setHeader("content-length", String(stat.size));
+  res.setHeader(
+    "content-disposition",
+    'attachment; filename="' + filename + '"',
+  );
   createReadStream(filePath).pipe(res);
 }
 
 function buildRunLinks(runId, status) {
   const terminal = TERMINAL_STATUSES.has(status);
   return {
-    spec_download_path: '/api/workloads/runs/' + encodeURIComponent(runId) + '/download/spec',
-    workload_download_path: '/api/workloads/runs/' + encodeURIComponent(runId) + '/download/workload',
-    cancel_path: terminal ? null : '/api/workloads/runs/' + encodeURIComponent(runId) + '/cancel'
+    spec_download_path:
+      "/api/workloads/runs/" + encodeURIComponent(runId) + "/download/spec",
+    workload_download_path:
+      "/api/workloads/runs/" + encodeURIComponent(runId) + "/download/workload",
+    cancel_path: terminal
+      ? null
+      : "/api/workloads/runs/" + encodeURIComponent(runId) + "/cancel",
   };
 }
 
@@ -436,33 +474,33 @@ function buildOutputPaths(run) {
     generated_output_path: run.output_path,
     workload_path: run.workload_path,
     latest_spec_path: run.latest_spec_path || LATEST_SPEC_PATH,
-    latest_workload_path: run.latest_workload_path || LATEST_WORKLOAD_PATH
+    latest_workload_path: run.latest_workload_path || LATEST_WORKLOAD_PATH,
   };
 }
 
 async function startTectonicRun(run) {
   run.started_at = Date.now();
-  run.status = 'running';
-  run.progress_text = 'Running tectonic-cli generate...';
+  run.status = "running";
+  run.progress_text = "Running tectonic-cli generate...";
   run.error = null;
 
-  let stderrTail = '';
-  let stdoutTail = '';
+  let stderrTail = "";
+  let stdoutTail = "";
 
-  const args = ['generate', '-w', run.spec_path, '-o', run.output_path];
+  const args = ["generate", "-w", run.spec_path, "-o", run.output_path];
   const child = spawn(TECTONIC_BIN, args, {
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ["ignore", "pipe", "pipe"],
   });
   run.child = child;
 
-  child.stdout.on('data', (chunk) => {
+  child.stdout.on("data", (chunk) => {
     stdoutTail = appendTail(stdoutTail, chunk);
     if (stdoutTail.trim()) {
       run.progress_text = trimLine(stdoutTail);
     }
   });
 
-  child.stderr.on('data', (chunk) => {
+  child.stderr.on("data", (chunk) => {
     stderrTail = appendTail(stderrTail, chunk);
     if (stderrTail.trim()) {
       run.progress_text = trimLine(stderrTail);
@@ -473,14 +511,14 @@ async function startTectonicRun(run) {
     if (!ACTIVE_STATUSES.has(run.status)) {
       return;
     }
-    run.status = 'timed_out';
-    run.progress_text = 'Run timed out.';
+    run.status = "timed_out";
+    run.progress_text = "Run timed out.";
     run.error = {
-      code: 'run_timed_out',
-      message: 'Run exceeded timeout of ' + run.timeout_seconds + ' seconds.'
+      code: "run_timed_out",
+      message: "Run exceeded timeout of " + run.timeout_seconds + " seconds.",
     };
     try {
-      child.kill('SIGTERM');
+      child.kill("SIGTERM");
     } catch {
       // Ignore kill failures during timeout.
     }
@@ -490,75 +528,94 @@ async function startTectonicRun(run) {
   clearRunTimeout(run);
   run.child = null;
 
-  if (run.status === 'cancelled' || run.status === 'timed_out') {
+  if (run.status === "cancelled" || run.status === "timed_out") {
     return;
   }
 
-  if (exit.error && typeof exit.error === 'object' && exit.error.code === 'ENOENT') {
-    run.status = 'failed';
-    run.progress_text = 'tectonic-cli binary not found.';
+  if (
+    exit.error &&
+    typeof exit.error === "object" &&
+    exit.error.code === "ENOENT"
+  ) {
+    run.status = "failed";
+    run.progress_text = "tectonic-cli binary not found.";
     run.error = {
-      code: 'tectonic_cli_not_found',
-      message: buildMissingTectonicCliMessage(TECTONIC_BIN)
+      code: "tectonic_cli_not_found",
+      message: buildMissingTectonicCliMessage(TECTONIC_BIN),
     };
     return;
   }
 
   if (exit.code !== 0) {
     const detail = trimLine(stderrTail || stdoutTail);
-    run.status = 'failed';
-    run.progress_text = 'tectonic-cli generate failed.';
+    run.status = "failed";
+    run.progress_text = "tectonic-cli generate failed.";
     run.error = {
-      code: exit.signal ? 'tectonic_killed' : 'tectonic_failed',
+      code: exit.signal ? "tectonic_killed" : "tectonic_failed",
       message: detail
-        ? 'tectonic-cli failed: ' + detail
-        : 'tectonic-cli exited with code ' + String(exit.code) + '.'
+        ? "tectonic-cli failed: " + detail
+        : "tectonic-cli exited with code " + String(exit.code) + ".",
     };
     return;
   }
 
   const outputStat = await safeStat(run.output_path);
   if (!outputStat) {
-    markRunFailed(run, 'no_output_generated', 'tectonic-cli completed but produced no output file.');
+    markRunFailed(
+      run,
+      "no_output_generated",
+      "tectonic-cli completed but produced no output file.",
+    );
     return;
   }
 
-  run.progress_text = 'Packaging workload artifact...';
-  const tarResult = await createWorkloadArchiveFromPath(run.output_path, run.workload_path);
+  run.progress_text = "Packaging workload artifact...";
+  const tarResult = await createWorkloadArchiveFromPath(
+    run.output_path,
+    run.workload_path,
+  );
   if (!tarResult.ok) {
-    markRunFailed(run, 'archive_failed', tarResult.message);
+    markRunFailed(run, "archive_failed", tarResult.message);
     return;
   }
 
   const workloadStat = await safeStat(run.workload_path);
   if (!workloadStat) {
-    markRunFailed(run, 'artifact_missing', 'Failed to create workload artifact.');
-    return;
-  }
-
-  try {
-    await fs.copyFile(run.workload_path, run.latest_workload_path || LATEST_WORKLOAD_PATH);
-  } catch (error) {
     markRunFailed(
       run,
-      'latest_artifact_write_failed',
-      'Generated workload but failed to write latest artifact file: '
-        + (error && error.message ? error.message : 'unknown error')
+      "artifact_missing",
+      "Failed to create workload artifact.",
     );
     return;
   }
 
-  run.status = 'succeeded';
-  run.progress_text = 'Workload artifact generated at ' + run.workload_path + '.';
+  try {
+    await fs.copyFile(
+      run.workload_path,
+      run.latest_workload_path || LATEST_WORKLOAD_PATH,
+    );
+  } catch (error) {
+    markRunFailed(
+      run,
+      "latest_artifact_write_failed",
+      "Generated workload but failed to write latest artifact file: " +
+        (error && error.message ? error.message : "unknown error"),
+    );
+    return;
+  }
+
+  run.status = "succeeded";
+  run.progress_text =
+    "Workload artifact generated at " + run.workload_path + ".";
   run.error = null;
 }
 
 function markRunFailed(run, code, message) {
-  run.status = 'failed';
-  run.progress_text = 'Workload generation failed.';
+  run.status = "failed";
+  run.progress_text = "Workload generation failed.";
   run.error = {
     code,
-    message
+    message,
   };
 }
 
@@ -567,36 +624,45 @@ async function createWorkloadArchiveFromPath(sourcePath, destinationPath) {
   if (!sourceStat) {
     return {
       ok: false,
-      message: 'Source output path does not exist: ' + sourcePath
+      message: "Source output path does not exist: " + sourcePath,
     };
   }
 
   let args;
   if (sourceStat.isDirectory()) {
-    args = ['-czf', destinationPath, '-C', sourcePath, '.'];
+    args = ["-czf", destinationPath, "-C", sourcePath, "."];
   } else {
-    args = ['-czf', destinationPath, '-C', path.dirname(sourcePath), path.basename(sourcePath)];
+    args = [
+      "-czf",
+      destinationPath,
+      "-C",
+      path.dirname(sourcePath),
+      path.basename(sourcePath),
+    ];
   }
   return await new Promise((resolve) => {
-    const tar = spawn('tar', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stderrTail = '';
-    tar.stderr.on('data', (chunk) => {
+    const tar = spawn("tar", args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stderrTail = "";
+    tar.stderr.on("data", (chunk) => {
       stderrTail = appendTail(stderrTail, chunk);
     });
-    tar.on('error', (error) => {
+    tar.on("error", (error) => {
       resolve({
         ok: false,
-        message: 'Failed to run tar: ' + (error && error.message ? error.message : 'unknown error')
+        message:
+          "Failed to run tar: " +
+          (error && error.message ? error.message : "unknown error"),
       });
     });
-    tar.on('close', (code) => {
+    tar.on("close", (code) => {
       if (code === 0) {
         resolve({ ok: true });
         return;
       }
       resolve({
         ok: false,
-        message: trimLine(stderrTail) || 'tar exited with code ' + String(code) + '.'
+        message:
+          trimLine(stderrTail) || "tar exited with code " + String(code) + ".",
       });
     });
   });
@@ -604,11 +670,14 @@ async function createWorkloadArchiveFromPath(sourcePath, destinationPath) {
 
 async function waitForChild(child) {
   return await new Promise((resolve) => {
-    child.on('error', (error) => {
+    child.on("error", (error) => {
       resolve({ code: 1, signal: null, error });
     });
-    child.on('close', (code, signal) => {
-      resolve({ code: Number.isFinite(code) ? code : 1, signal: signal || null });
+    child.on("close", (code, signal) => {
+      resolve({
+        code: Number.isFinite(code) ? code : 1,
+        signal: signal || null,
+      });
     });
   });
 }
@@ -631,8 +700,8 @@ async function readJsonBody(req) {
       return {
         ok: false,
         status: 413,
-        code: 'request_too_large',
-        error: 'Request body is too large.'
+        code: "request_too_large",
+        error: "Request body is too large.",
       };
     }
   }
@@ -640,19 +709,19 @@ async function readJsonBody(req) {
     return {
       ok: false,
       status: 400,
-      code: 'invalid_json',
-      error: 'Invalid JSON request body.'
+      code: "invalid_json",
+      error: "Invalid JSON request body.",
     };
   }
-  const text = Buffer.concat(chunks).toString('utf8');
+  const text = Buffer.concat(chunks).toString("utf8");
   try {
     return { ok: true, value: JSON.parse(text) };
   } catch {
     return {
       ok: false,
       status: 400,
-      code: 'invalid_json',
-      error: 'Invalid JSON request body.'
+      code: "invalid_json",
+      error: "Invalid JSON request body.",
     };
   }
 }
@@ -661,7 +730,7 @@ function normalizeSpecPayload(rawSpec) {
   if (Array.isArray(rawSpec)) {
     return { sections: rawSpec };
   }
-  if (rawSpec && typeof rawSpec === 'object') {
+  if (rawSpec && typeof rawSpec === "object") {
     try {
       return JSON.parse(JSON.stringify(rawSpec));
     } catch {
@@ -672,7 +741,7 @@ function normalizeSpecPayload(rawSpec) {
 }
 
 function createRunId() {
-  return 'run-' + randomUUID().replace(/-/g, '').slice(0, 20);
+  return "run-" + randomUUID().replace(/-/g, "").slice(0, 20);
 }
 
 function normalizeTimeoutSeconds(rawValue) {
@@ -682,41 +751,55 @@ function normalizeTimeoutSeconds(rawValue) {
 }
 
 function buildListenErrorMessage(error) {
-  const code = error && typeof error.code === 'string' ? error.code : '';
-  const base = 'Local tectonic runner failed to listen on http://' + HOST + ':' + PORT + '.';
-  if (code === 'EADDRINUSE') {
-    return base + ' Address already in use. Stop the existing service or change LOCAL_RUNNER_PORT.';
+  const code = error && typeof error.code === "string" ? error.code : "";
+  const base =
+    "Local tectonic runner failed to listen on http://" +
+    HOST +
+    ":" +
+    PORT +
+    ".";
+  if (code === "EADDRINUSE") {
+    return (
+      base +
+      " Address already in use. Stop the existing service or change LOCAL_RUNNER_PORT."
+    );
   }
-  if (code === 'EACCES' || code === 'EPERM') {
-    return base + ' Permission denied. Check local security/network policy or use a different port.';
+  if (code === "EACCES" || code === "EPERM") {
+    return (
+      base +
+      " Permission denied. Check local security/network policy or use a different port."
+    );
   }
-  const detail = error && error.message ? error.message : 'unknown error';
-  return base + ' ' + detail;
+  const detail = error && error.message ? error.message : "unknown error";
+  return base + " " + detail;
 }
 
 function buildMissingTectonicCliMessage(binaryName) {
-  const bin = String(binaryName || 'tectonic-cli');
+  const bin = String(binaryName || "tectonic-cli");
   return [
     '"' + bin + '" was not found in PATH.',
-    'Build it from ~/src/Tectonic:',
-    '`cd ~/src/Tectonic && cargo build --release --bin tectonic-cli`.',
-    'Then add it to PATH, for example:',
-    '`mkdir -p ~/.cargo/bin && ln -sf ~/src/Tectonic/target/release/tectonic-cli ~/.cargo/bin/tectonic-cli`.',
-    'Ensure ~/.cargo/bin is in PATH and retry.'
-  ].join(' ');
+    "Build it from ~/src/Tectonic:",
+    "`cd ~/src/Tectonic && cargo build --release --bin tectonic-cli`.",
+    "Then add it to PATH, for example:",
+    "`mkdir -p ~/.cargo/bin && ln -sf ~/src/Tectonic/target/release/tectonic-cli ~/.cargo/bin/tectonic-cli`.",
+    "Ensure ~/.cargo/bin is in PATH and retry.",
+  ].join(" ");
 }
 
 function appendTail(current, chunk) {
-  const text = (current || '') + Buffer.from(chunk).toString('utf8');
+  const text = (current || "") + Buffer.from(chunk).toString("utf8");
   return text.slice(-4000);
 }
 
 function trimLine(text) {
-  const cleaned = String(text || '').trim();
+  const cleaned = String(text || "").trim();
   if (!cleaned) {
-    return '';
+    return "";
   }
-  const lines = cleaned.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = cleaned
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
   return lines.length > 0 ? lines[lines.length - 1] : cleaned;
 }
 
@@ -731,22 +814,22 @@ async function safeStat(filePath) {
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload || {});
   res.statusCode = status;
-  res.setHeader('content-type', 'application/json; charset=utf-8');
-  res.setHeader('cache-control', 'no-store');
-  res.setHeader('content-length', Buffer.byteLength(body));
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("content-length", Buffer.byteLength(body));
   res.end(body);
 }
 
 function safeDecodeURIComponent(value) {
   try {
-    return decodeURIComponent(String(value || ''));
+    return decodeURIComponent(String(value || ""));
   } catch {
-    return '';
+    return "";
   }
 }
 
 function parseInteger(rawValue, fallback) {
-  const value = Number.parseInt(String(rawValue ?? ''), 10);
+  const value = Number.parseInt(String(rawValue ?? ""), 10);
   return Number.isFinite(value) ? value : fallback;
 }
 

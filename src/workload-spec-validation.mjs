@@ -1,15 +1,15 @@
-const CHARACTER_SETS = new Set(['alphanumeric', 'alphabetic', 'numeric']);
-const RANGE_FORMATS = new Set(['StartCount', 'StartEnd']);
+const CHARACTER_SETS = new Set(["alphanumeric", "alphabetic", "numeric"]);
+const RANGE_FORMATS = new Set(["StartCount", "StartEnd"]);
 const DISTRIBUTION_REQUIRED_KEYS = {
-  uniform: ['min', 'max'],
-  normal: ['mean', 'std_dev'],
-  beta: ['alpha', 'beta'],
-  zipf: ['n', 's'],
-  exponential: ['lambda'],
-  log_normal: ['mean', 'std_dev'],
-  poisson: ['lambda'],
-  weibull: ['scale', 'shape'],
-  pareto: ['scale', 'shape']
+  uniform: ["min", "max"],
+  normal: ["mean", "std_dev"],
+  beta: ["alpha", "beta"],
+  zipf: ["n", "s"],
+  exponential: ["lambda"],
+  log_normal: ["mean", "std_dev"],
+  poisson: ["lambda"],
+  weibull: ["scale", "shape"],
+  pareto: ["scale", "shape"],
 };
 const OPERATION_VALIDATORS = {
   empty_point_deletes: validateEmptyPointDelete,
@@ -21,54 +21,73 @@ const OPERATION_VALIDATORS = {
   range_deletes: validateRangeDelete,
   range_queries: validateRangeQuery,
   sorted: validateSorted,
-  updates: validateUpdate
+  updates: validateUpdate,
 };
 
 export function validateWorkloadSpec(spec) {
   const errors = [];
   if (!isPlainObject(spec)) {
-    return ['spec_json must be an object.'];
+    return ["spec_json must be an object."];
   }
 
   if (!isNullableCharacterSet(spec.character_set)) {
-    errors.push('spec_json.character_set must be alphanumeric, alphabetic, numeric, null, or omitted.');
+    errors.push(
+      "spec_json.character_set must be alphanumeric, alphabetic, numeric, null, or omitted.",
+    );
   }
   if (!Array.isArray(spec.sections) || spec.sections.length === 0) {
-    errors.push('spec_json.sections must be a non-empty array.');
+    errors.push("spec_json.sections must be a non-empty array.");
     return errors;
   }
 
   spec.sections.forEach((section, sectionIndex) => {
-    const sectionPath = 'sections[' + sectionIndex + ']';
+    const sectionPath = "sections[" + sectionIndex + "]";
     if (!isPlainObject(section)) {
-      errors.push(sectionPath + ' must be an object.');
+      errors.push(sectionPath + " must be an object.");
       return;
     }
     if (!isNullableCharacterSet(section.character_set)) {
-      errors.push(sectionPath + '.character_set must be alphanumeric, alphabetic, numeric, null, or omitted.');
+      errors.push(
+        sectionPath +
+          ".character_set must be alphanumeric, alphabetic, numeric, null, or omitted.",
+      );
     }
-    if (section.skip_key_contains_check !== undefined && typeof section.skip_key_contains_check !== 'boolean') {
-      errors.push(sectionPath + '.skip_key_contains_check must be boolean when provided.');
+    if (
+      section.skip_key_contains_check !== undefined &&
+      typeof section.skip_key_contains_check !== "boolean"
+    ) {
+      errors.push(
+        sectionPath + ".skip_key_contains_check must be boolean when provided.",
+      );
     }
     if (!Array.isArray(section.groups) || section.groups.length === 0) {
-      errors.push(sectionPath + '.groups must be a non-empty array.');
+      errors.push(sectionPath + ".groups must be a non-empty array.");
       return;
     }
 
     section.groups.forEach((group, groupIndex) => {
-      const groupPath = sectionPath + '.groups[' + groupIndex + ']';
+      const groupPath = sectionPath + ".groups[" + groupIndex + "]";
       if (!isPlainObject(group)) {
-        errors.push(groupPath + ' must be an object.');
+        errors.push(groupPath + " must be an object.");
         return;
       }
       if (!isNullableCharacterSet(group.character_set)) {
-        errors.push(groupPath + '.character_set must be alphanumeric, alphabetic, numeric, null, or omitted.');
+        errors.push(
+          groupPath +
+            ".character_set must be alphanumeric, alphabetic, numeric, null, or omitted.",
+        );
       }
 
       const groupKeys = Object.keys(group);
-      const unknownKeys = groupKeys.filter((key) => key !== 'character_set' && !Object.prototype.hasOwnProperty.call(OPERATION_VALIDATORS, key));
+      const unknownKeys = groupKeys.filter(
+        (key) =>
+          key !== "character_set" &&
+          !Object.prototype.hasOwnProperty.call(OPERATION_VALIDATORS, key),
+      );
       unknownKeys.forEach((key) => {
-        errors.push(groupPath + '.' + key + ' is not a supported workload operation.');
+        errors.push(
+          groupPath + "." + key + " is not a supported workload operation.",
+        );
       });
 
       const presentOperations = groupKeys.filter((key) => {
@@ -78,14 +97,18 @@ export function validateWorkloadSpec(spec) {
         return group[key] !== null && group[key] !== undefined;
       });
       if (presentOperations.length === 0) {
-        errors.push(groupPath + ' must include at least one operation object.');
+        errors.push(groupPath + " must include at least one operation object.");
         return;
       }
 
       presentOperations.forEach((operationName) => {
         const validator = OPERATION_VALIDATORS[operationName];
-        if (typeof validator === 'function') {
-          validator(group[operationName], groupPath + '.' + operationName, errors);
+        if (typeof validator === "function") {
+          validator(
+            group[operationName],
+            groupPath + "." + operationName,
+            errors,
+          );
         }
       });
     });
@@ -97,17 +120,17 @@ export function validateWorkloadSpec(spec) {
 function validateInsert(value, path, errors) {
   validateObjectShape(value, path, errors);
   validateNullableCharacterSetField(value, path, errors);
-  validateNumberExprField(value, path, errors, 'op_count', true);
-  validateStringExprField(value, path, errors, 'key', true);
-  validateStringExprField(value, path, errors, 'val', true);
+  validateNumberExprField(value, path, errors, "op_count", true);
+  validateStringExprField(value, path, errors, "key", true);
+  validateStringExprField(value, path, errors, "val", true);
 }
 
 function validateUpdate(value, path, errors) {
   validateObjectShape(value, path, errors);
   validateNullableCharacterSetField(value, path, errors);
-  validateNumberExprField(value, path, errors, 'op_count', true);
-  validateDistributionField(value, path, errors, 'selection', false);
-  validateStringExprField(value, path, errors, 'val', true);
+  validateNumberExprField(value, path, errors, "op_count", true);
+  validateDistributionField(value, path, errors, "selection", false);
+  validateStringExprField(value, path, errors, "val", true);
 }
 
 function validateMerge(value, path, errors) {
@@ -116,8 +139,8 @@ function validateMerge(value, path, errors) {
 
 function validatePointQuery(value, path, errors) {
   validateObjectShape(value, path, errors);
-  validateNumberExprField(value, path, errors, 'op_count', true);
-  validateDistributionField(value, path, errors, 'selection', false);
+  validateNumberExprField(value, path, errors, "op_count", true);
+  validateDistributionField(value, path, errors, "selection", false);
 }
 
 function validatePointDelete(value, path, errors) {
@@ -127,11 +150,16 @@ function validatePointDelete(value, path, errors) {
 function validateRangeQuery(value, path, errors) {
   validateObjectShape(value, path, errors);
   validateNullableCharacterSetField(value, path, errors);
-  validateNumberExprField(value, path, errors, 'op_count', true);
-  validateDistributionField(value, path, errors, 'selection', false);
-  validateNumberExprField(value, path, errors, 'selectivity', true);
-  if (value.range_format !== undefined && !RANGE_FORMATS.has(value.range_format)) {
-    errors.push(path + '.range_format must be StartCount or StartEnd when provided.');
+  validateNumberExprField(value, path, errors, "op_count", true);
+  validateDistributionField(value, path, errors, "selection", false);
+  validateNumberExprField(value, path, errors, "selectivity", true);
+  if (
+    value.range_format !== undefined &&
+    !RANGE_FORMATS.has(value.range_format)
+  ) {
+    errors.push(
+      path + ".range_format must be StartCount or StartEnd when provided.",
+    );
   }
 }
 
@@ -142,8 +170,8 @@ function validateRangeDelete(value, path, errors) {
 function validateEmptyPointQuery(value, path, errors) {
   validateObjectShape(value, path, errors);
   validateNullableCharacterSetField(value, path, errors);
-  validateNumberExprField(value, path, errors, 'op_count', true);
-  validateStringExprField(value, path, errors, 'key', true);
+  validateNumberExprField(value, path, errors, "op_count", true);
+  validateStringExprField(value, path, errors, "key", true);
 }
 
 function validateEmptyPointDelete(value, path, errors) {
@@ -152,55 +180,65 @@ function validateEmptyPointDelete(value, path, errors) {
 
 function validateSorted(value, path, errors) {
   validateObjectShape(value, path, errors);
-  validateNumberExprField(value, path, errors, 'k', true);
-  validateNumberExprField(value, path, errors, 'l', true);
+  validateNumberExprField(value, path, errors, "k", true);
+  validateNumberExprField(value, path, errors, "l", true);
 }
 
 function validateObjectShape(value, path, errors) {
   if (!isPlainObject(value)) {
-    errors.push(path + ' must be an object.');
+    errors.push(path + " must be an object.");
   }
 }
 
 function validateNullableCharacterSetField(value, path, errors) {
-  if (value.character_set !== undefined && !isNullableCharacterSet(value.character_set)) {
-    errors.push(path + '.character_set must be alphanumeric, alphabetic, numeric, null, or omitted.');
+  if (
+    value.character_set !== undefined &&
+    !isNullableCharacterSet(value.character_set)
+  ) {
+    errors.push(
+      path +
+        ".character_set must be alphanumeric, alphabetic, numeric, null, or omitted.",
+    );
   }
 }
 
 function validateNumberExprField(value, path, errors, fieldName, required) {
   if (value[fieldName] === undefined) {
     if (required) {
-      errors.push(path + '.' + fieldName + ' is required.');
+      errors.push(path + "." + fieldName + " is required.");
     }
     return;
   }
   if (!isNumberExpr(value[fieldName])) {
-    errors.push(path + '.' + fieldName + ' must be a number or distribution object.');
+    errors.push(
+      path + "." + fieldName + " must be a number or distribution object.",
+    );
   }
 }
 
 function validateDistributionField(value, path, errors, fieldName, required) {
   if (value[fieldName] === undefined) {
     if (required) {
-      errors.push(path + '.' + fieldName + ' is required.');
+      errors.push(path + "." + fieldName + " is required.");
     }
     return;
   }
   if (!isDistribution(value[fieldName])) {
-    errors.push(path + '.' + fieldName + ' must be a distribution object.');
+    errors.push(path + "." + fieldName + " must be a distribution object.");
   }
 }
 
 function validateStringExprField(value, path, errors, fieldName, required) {
   if (value[fieldName] === undefined) {
     if (required) {
-      errors.push(path + '.' + fieldName + ' is required.');
+      errors.push(path + "." + fieldName + " is required.");
     }
     return;
   }
   if (!isStringExpr(value[fieldName])) {
-    errors.push(path + '.' + fieldName + ' must be a string or StringExpr object.');
+    errors.push(
+      path + "." + fieldName + " must be a string or StringExpr object.",
+    );
   }
 }
 
@@ -227,7 +265,7 @@ function isDistribution(value) {
   }
   return requiredKeys.every((key) => {
     const rawValue = inner[key];
-    if (key === 'n') {
+    if (key === "n") {
       return Number.isInteger(rawValue) && rawValue >= 0;
     }
     return Number.isFinite(rawValue);
@@ -235,7 +273,7 @@ function isDistribution(value) {
 }
 
 function isStringExpr(value) {
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return true;
   }
   if (!isPlainObject(value)) {
@@ -247,30 +285,44 @@ function isStringExpr(value) {
   }
   const variant = keys[0];
   const inner = value[variant];
-  if (variant === 'uniform') {
-    return isPlainObject(inner)
-      && isNumberExpr(inner.len)
-      && (inner.character_set === undefined || isNullableCharacterSet(inner.character_set));
+  if (variant === "uniform") {
+    return (
+      isPlainObject(inner) &&
+      isNumberExpr(inner.len) &&
+      (inner.character_set === undefined ||
+        isNullableCharacterSet(inner.character_set))
+    );
   }
-  if (variant === 'weighted') {
-    return Array.isArray(inner)
-      && inner.length > 0
-      && inner.every((entry) => isPlainObject(entry) && Number.isFinite(entry.weight) && isStringExpr(entry.value));
+  if (variant === "weighted") {
+    return (
+      Array.isArray(inner) &&
+      inner.length > 0 &&
+      inner.every(
+        (entry) =>
+          isPlainObject(entry) &&
+          Number.isFinite(entry.weight) &&
+          isStringExpr(entry.value),
+      )
+    );
   }
-  if (variant === 'segmented') {
-    return isPlainObject(inner)
-      && typeof inner.separator === 'string'
-      && Array.isArray(inner.segments)
-      && inner.segments.length > 0
-      && inner.segments.every((entry) => isStringExpr(entry));
+  if (variant === "segmented") {
+    return (
+      isPlainObject(inner) &&
+      typeof inner.separator === "string" &&
+      Array.isArray(inner.segments) &&
+      inner.segments.length > 0 &&
+      inner.segments.every((entry) => isStringExpr(entry))
+    );
   }
-  if (variant === 'hot_range') {
-    return isPlainObject(inner)
-      && Number.isInteger(inner.len)
-      && inner.len >= 0
-      && Number.isInteger(inner.amount)
-      && inner.amount >= 0
-      && Number.isFinite(inner.probability);
+  if (variant === "hot_range") {
+    return (
+      isPlainObject(inner) &&
+      Number.isInteger(inner.len) &&
+      inner.len >= 0 &&
+      Number.isInteger(inner.amount) &&
+      inner.amount >= 0 &&
+      Number.isFinite(inner.probability)
+    );
   }
   return false;
 }
@@ -280,5 +332,5 @@ function isNullableCharacterSet(value) {
 }
 
 function isPlainObject(value) {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }

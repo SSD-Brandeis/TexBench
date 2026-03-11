@@ -1,28 +1,37 @@
-const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
-const DEFAULT_MODEL = 'gpt-4.1-mini';
+const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_MODEL = "gpt-4.1-mini";
 const DEFAULT_TIMEOUT_MS = 25000;
 
 export function createOpenAiCompatibleBindingFromEnv(envLike = process.env) {
-  const env = envLike && typeof envLike === 'object' ? envLike : {};
+  const env = envLike && typeof envLike === "object" ? envLike : {};
   const apiKey = readString(env.OPENAI_API_KEY);
   if (!apiKey) {
     return null;
   }
 
-  const baseUrl = normalizeBaseUrl(readString(env.OPENAI_BASE_URL) || DEFAULT_BASE_URL);
-  const endpointPath = normalizeEndpointPath(readString(env.OPENAI_CHAT_ENDPOINT) || '/chat/completions');
-  const defaultModel = readString(env.OPENAI_MODEL) || readString(env.AI_NAME) || DEFAULT_MODEL;
-  const timeoutMs = clampInteger(readInteger(env.OPENAI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS), 1000, 120000);
+  const baseUrl = normalizeBaseUrl(
+    readString(env.OPENAI_BASE_URL) || DEFAULT_BASE_URL,
+  );
+  const endpointPath = normalizeEndpointPath(
+    readString(env.OPENAI_CHAT_ENDPOINT) || "/chat/completions",
+  );
+  const defaultModel =
+    readString(env.OPENAI_MODEL) || readString(env.AI_NAME) || DEFAULT_MODEL;
+  const timeoutMs = clampInteger(
+    readInteger(env.OPENAI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
+    1000,
+    120000,
+  );
 
   return {
     async run(modelName, payload) {
-      const body = payload && typeof payload === 'object' ? payload : {};
+      const body = payload && typeof payload === "object" ? payload : {};
       const selectedModel = readString(modelName) || defaultModel;
       const requestPayload = {
         model: selectedModel,
         messages: normalizeMessages(body.messages),
         temperature: normalizeFiniteNumber(body.temperature),
-        max_tokens: normalizePositiveInteger(body.max_tokens)
+        max_tokens: normalizePositiveInteger(body.max_tokens),
       };
 
       if (!Number.isFinite(requestPayload.temperature)) {
@@ -37,31 +46,36 @@ export function createOpenAiCompatibleBindingFromEnv(envLike = process.env) {
       }
 
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(new Error('openai_timeout')), timeoutMs);
+      const timer = setTimeout(
+        () => controller.abort(new Error("openai_timeout")),
+        timeoutMs,
+      );
       try {
         const response = await fetch(baseUrl + endpointPath, {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
-            Authorization: 'Bearer ' + apiKey
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + apiKey,
           },
           body: JSON.stringify(requestPayload),
-          signal: controller.signal
+          signal: controller.signal,
         });
         const json = await safeJson(response);
         if (!response.ok) {
-          const message = extractErrorMessage(json) || ('OpenAI API request failed with HTTP ' + response.status + '.');
+          const message =
+            extractErrorMessage(json) ||
+            "OpenAI API request failed with HTTP " + response.status + ".";
           throw new Error(message);
         }
         const text = extractChatCompletionText(json);
         if (!text) {
-          throw new Error('OpenAI API returned no assistant text.');
+          throw new Error("OpenAI API returned no assistant text.");
         }
         return { response: text };
       } finally {
         clearTimeout(timer);
       }
-    }
+    },
   };
 }
 
@@ -71,11 +85,11 @@ function normalizeMessages(rawMessages) {
   }
   return rawMessages
     .map((entry) => {
-      if (!entry || typeof entry !== 'object') {
+      if (!entry || typeof entry !== "object") {
         return null;
       }
       const role = readString(entry.role);
-      const content = typeof entry.content === 'string' ? entry.content : '';
+      const content = typeof entry.content === "string" ? entry.content : "";
       if (!role || !content.trim()) {
         return null;
       }
@@ -85,61 +99,65 @@ function normalizeMessages(rawMessages) {
 }
 
 function extractChatCompletionText(json) {
-  if (!json || typeof json !== 'object' || !Array.isArray(json.choices)) {
-    return '';
+  if (!json || typeof json !== "object" || !Array.isArray(json.choices)) {
+    return "";
   }
   const parts = [];
   json.choices.forEach((choice) => {
-    if (!choice || typeof choice !== 'object') {
+    if (!choice || typeof choice !== "object") {
       return;
     }
     const message = choice.message;
-    if (!message || typeof message !== 'object') {
+    if (!message || typeof message !== "object") {
       return;
     }
     const content = message.content;
-    if (typeof content === 'string' && content.trim()) {
+    if (typeof content === "string" && content.trim()) {
       parts.push(content.trim());
       return;
     }
     if (Array.isArray(content)) {
       const joined = content
         .map((item) => {
-          if (!item || typeof item !== 'object') {
-            return '';
+          if (!item || typeof item !== "object") {
+            return "";
           }
-          if (typeof item.text === 'string') {
+          if (typeof item.text === "string") {
             return item.text;
           }
-          if (typeof item.content === 'string') {
+          if (typeof item.content === "string") {
             return item.content;
           }
-          return '';
+          return "";
         })
-        .join('\n')
+        .join("\n")
         .trim();
       if (joined) {
         parts.push(joined);
       }
     }
   });
-  return parts.join('\n').trim();
+  return parts.join("\n").trim();
 }
 
 function extractErrorMessage(json) {
-  if (!json || typeof json !== 'object') {
-    return '';
+  if (!json || typeof json !== "object") {
+    return "";
   }
-  if (typeof json.error === 'string' && json.error.trim()) {
+  if (typeof json.error === "string" && json.error.trim()) {
     return json.error.trim();
   }
-  if (json.error && typeof json.error === 'object' && typeof json.error.message === 'string') {
+  if (
+    json.error &&
+    typeof json.error === "object" &&
+    typeof json.error.message === "string"
+  ) {
     const message = json.error.message.trim();
     if (message) {
       return message;
     }
   }
-  return '';
+  return "";
 }
 
 async function safeJson(response) {
@@ -151,11 +169,11 @@ async function safeJson(response) {
 }
 
 function readString(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : '';
+  return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
 function readInteger(value, fallback) {
-  const parsed = Number.parseInt(String(value ?? ''), 10);
+  const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
@@ -173,17 +191,21 @@ function normalizeFiniteNumber(value) {
 }
 
 function normalizeResponseFormat(rawFormat) {
-  if (!rawFormat || typeof rawFormat !== 'object') {
+  if (!rawFormat || typeof rawFormat !== "object") {
     return null;
   }
   const type = readString(rawFormat.type).toLowerCase();
-  if (type === 'json_object') {
-    return { type: 'json_object' };
+  if (type === "json_object") {
+    return { type: "json_object" };
   }
-  if (type === 'json_schema' && rawFormat.json_schema && typeof rawFormat.json_schema === 'object') {
+  if (
+    type === "json_schema" &&
+    rawFormat.json_schema &&
+    typeof rawFormat.json_schema === "object"
+  ) {
     return {
-      type: 'json_schema',
-      json_schema: rawFormat.json_schema
+      type: "json_schema",
+      json_schema: rawFormat.json_schema,
     };
   }
   return null;
@@ -201,13 +223,13 @@ function normalizeBaseUrl(url) {
   if (!trimmed) {
     return DEFAULT_BASE_URL;
   }
-  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
 }
 
 function normalizeEndpointPath(pathValue) {
   const trimmed = readString(pathValue);
   if (!trimmed) {
-    return '/chat/completions';
+    return "/chat/completions";
   }
-  return trimmed.startsWith('/') ? trimmed : ('/' + trimmed);
+  return trimmed.startsWith("/") ? trimmed : "/" + trimmed;
 }

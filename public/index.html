@@ -1,1190 +1,1342 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tectonic Workload Generator</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg: #f6faf8;
-      --surface: #ffffff;
-      --surface-soft: #f7fafc;
-      --border: #dde7ef;
-      --accent: #0f766e;
-      --accent-hover: #0b5f59;
-      --success: #16a34a;
-      --error: #dc2626;
-      --text: #0b1e2d;
-      --text-dim: #5f7284;
-    }
-
-    body {
-      font-family: 'DM Sans', system-ui, sans-serif;
-      background: radial-gradient(circle at 10% 10%, #d8f4f0 0%, transparent 35%),
-        radial-gradient(circle at 90% 0%, #e6f0fb 0%, transparent 30%),
-        linear-gradient(160deg, #f6faf8 0%, #ffffff 45%, #eef7f9 100%);
-      color: var(--text);
-      min-height: 100vh;
-    }
-
-    .app-shell {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 28px 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
-    }
-
-    header {
-      position: relative;
-      text-align: center;
-      padding-top: 6px;
-    }
-
-    .header-actions {
-      position: absolute;
-      right: 0;
-      top: 0;
-      display: flex;
-      gap: 8px;
-    }
-
-    header h1 {
-      font-size: 36px;
-      font-weight: 700;
-      color: var(--text);
-      margin-bottom: 8px;
-    }
-
-    .header-subtitle {
-      color: var(--text-dim);
-      font-size: 15px;
-    }
-
-    main { min-height: 0; }
-
-    .workspace {
-      display: grid;
-      gap: 16px;
-      min-width: 0;
-    }
-
-    .panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      box-shadow: 0 12px 28px rgba(11, 30, 45, 0.08);
-      transition: box-shadow 0.2s ease, transform 0.2s ease;
-    }
-
-    .panel:hover {
-      box-shadow: 0 16px 32px rgba(11, 30, 45, 0.12);
-    }
-
-    .json-panel { min-height: 380px; }
-
-    .panel-header {
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      flex-shrink: 0;
-    }
-
-    .panel-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text);
-    }
-
-    .panel-body {
-      flex: 1;
-      overflow: auto;
-      padding: 16px;
-    }
-
-    textarea {
-      width: 100%;
-      height: 100%;
-      background: transparent;
-      border: none;
-      color: var(--text);
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 13px;
-      line-height: 1.6;
-      resize: none;
-      outline: none;
-    }
-
-    textarea::placeholder { color: var(--text-dim); }
-
-    .btn {
-      padding: 8px 14px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      border: none;
-      font-family: inherit;
-    }
-
-    .btn-ghost {
-      background: #fff;
-      color: var(--text-dim);
-      border: 1px solid var(--border);
-    }
-
-    .btn-ghost:hover {
-      color: #fff;
-      background: var(--accent-hover);
-      border-color: var(--accent-hover);
-    }
-
-    .workload-form {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .builder-hint {
-      font-size: 13px;
-      color: #567082;
-      margin-bottom: 10px;
-    }
-
-    .assistant-panel {
-      border: 1px solid var(--border);
-      background: linear-gradient(164deg, #ffffff 0%, #eff9f7 100%);
-      border-radius: 14px;
-      padding: 14px;
-      margin-bottom: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .assistant-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-    }
-
-    .assistant-title {
-      font-size: 14px;
-      font-weight: 700;
-      color: var(--text);
-    }
-
-    .assistant-status {
-      font-size: 12px;
-      border-radius: 999px;
-      padding: 5px 10px;
-      border: 1px solid #d3e7f7;
-      background: #ecf6fd;
-      color: #245272;
-      white-space: nowrap;
-    }
-
-    .assistant-status.loading {
-      border-color: #c6dfd8;
-      background: #edf9f6;
-      color: #0f6a5f;
-    }
-
-    .assistant-status.error {
-      border-color: #f5c2c2;
-      background: #fff2f2;
-      color: #b92a2a;
-    }
-
-    .assistant-status.warn {
-      border-color: #f1ddb2;
-      background: #fff8e8;
-      color: #8a5d0a;
-    }
-
-    .assistant-timeline {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      max-height: 360px;
-      overflow: auto;
-      padding-right: 2px;
-    }
-
-    .assistant-timeline:empty {
-      display: none;
-    }
-
-    .assistant-turn {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: #ffffff;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      animation: fadeSlide 0.18s ease;
-    }
-
-    .assistant-turn.user {
-      background: #f1f8fd;
-      border-color: #d8e8f5;
-    }
-
-    .assistant-turn-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      font-size: 11px;
-      color: #5f7284;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      font-weight: 700;
-    }
-
-    .assistant-turn-message {
-      font-size: 13px;
-      line-height: 1.42;
-      color: #1a2e40;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-
-    .assistant-turn-summary {
-      font-size: 12px;
-      line-height: 1.4;
-      color: #345066;
-    }
-
-    .assistant-inline-meta {
-      font-size: 11px;
-      color: #5a6e82;
-      line-height: 1.35;
-    }
-
-    .assistant-assumptions {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .assistant-assumption-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin: 0;
-      padding: 0;
-      list-style: none;
-    }
-
-    .assistant-assumption-list li {
-      font-size: 11px;
-      line-height: 1.3;
-      color: #35506b;
-      border: 1px solid #cfe2f4;
-      background: #edf5fc;
-      border-radius: 999px;
-      padding: 4px 8px;
-    }
-
-    .assistant-clarification-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .assistant-clarification {
-      border: 1px solid #d7e5ef;
-      background: #fbfdff;
-      border-radius: 9px;
-      padding: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .assistant-clarification.required {
-      border-color: #e7c39f;
-      background: #fff8ee;
-    }
-
-    .assistant-clarification.resolved {
-      border-color: #9bc9ab;
-      background: #f2fbf5;
-    }
-
-    .assistant-clarification-label {
-      font-size: 12px;
-      color: #2f485d;
-      line-height: 1.4;
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .assistant-required-badge {
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-      color: #8a4d02;
-      background: #fde7cd;
-      border: 1px solid #f3c48d;
-      border-radius: 999px;
-      padding: 2px 6px;
-    }
-
-    .assistant-required-badge.resolved {
-      color: #21623a;
-      background: #ddf3e5;
-      border-color: #a5d3b6;
-    }
-
-    .assistant-clarification-input {
-      width: 100%;
-      min-height: 44px;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 13px;
-      color: var(--text);
-      background: #fff;
-      outline: none;
-      font-family: inherit;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    }
-
-    .assistant-clarification-input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
-    }
-
-    .assistant-clarification-input.invalid {
-      border-color: #d0472f;
-      box-shadow: 0 0 0 3px rgba(220, 56, 44, 0.12);
-    }
-
-    .assistant-clarification-hint {
-      font-size: 11px;
-      color: #5a6e82;
-      line-height: 1.35;
-    }
-
-    .assistant-clarification-error {
-      font-size: 11px;
-      color: #b4371d;
-      line-height: 1.35;
-      min-height: 14px;
-    }
-
-    .assistant-card-footer {
-      border-top: 1px solid #deebf5;
-      padding-top: 6px;
-      font-size: 11px;
-      color: #5a6e82;
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .assistant-composer {
-      border: 1px solid #d5e7e4;
-      border-radius: 10px;
-      background: #ffffff;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .assistant-composer-label {
-      font-size: 12px;
-      color: #486174;
-      font-weight: 600;
-    }
-
-    .assistant-input {
-      width: 100%;
-      min-height: 72px;
-      resize: vertical;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 12px;
-      background: #fff;
-      color: var(--text);
-      font-family: inherit;
-      font-size: 13px;
-      line-height: 1.4;
-      outline: none;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    }
-
-    .assistant-input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
-    }
-
-    .assistant-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .assistant-composer-hint {
-      font-size: 11px;
-      color: #5a6e82;
-      line-height: 1.35;
-      min-height: 16px;
-    }
-
-    .hud {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 8px;
-      margin-bottom: 4px;
-    }
-
-    .hud-card {
-      border: 1px solid var(--border);
-      background: linear-gradient(165deg, #ffffff 0%, #f5fbfa 100%);
-      border-radius: 10px;
-      padding: 7px 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      min-height: 50px;
-      justify-content: center;
-      transition: box-shadow 0.2s ease;
-    }
-
-    .hud-card:hover {
-      box-shadow: 0 8px 20px rgba(11, 30, 45, 0.08);
-    }
-
-    .hud-label {
-      font-size: 10px;
-      line-height: 1.1;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .hud-value {
-      font-size: 16px;
-      line-height: 1.1;
-      font-weight: 700;
-      color: var(--text);
-    }
-
-    .form-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 10px;
-    }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      font-size: 12px;
-      color: var(--text-dim);
-      position: relative;
-    }
-
-    .field-row {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .field input,
-    .field select,
-    .field textarea {
-      width: 100%;
-      padding: 10px 12px;
-      background: #fff;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-family: inherit;
-      font-size: 13px;
-      outline: none;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    }
-
-    .field textarea {
-      min-height: 96px;
-      resize: vertical;
-      font-family: 'JetBrains Mono', monospace;
-      line-height: 1.45;
-    }
-
-    .field input:focus,
-    .field select:focus,
-    .field textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
-    }
-
-    .field-description {
-      font-size: 11px;
-      line-height: 1.35;
-      color: #5f7284;
-      white-space: pre-line;
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: calc(100% + 4px);
-      padding: 6px 8px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #ffffff;
-      box-shadow: 0 8px 20px rgba(11, 30, 45, 0.08);
-      z-index: 30;
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
-      transform: translateY(-2px);
-      transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s ease;
-    }
-
-    .field-description:empty { display: none; }
-
-    .field:hover .field-description,
-    .field:focus-within .field-description,
-    .checkbox-item:hover .field-description,
-    .checkbox-item:focus-within .field-description {
-      opacity: 0.95;
-      visibility: visible;
-      transform: translateY(0);
-    }
-
-    .fieldset {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
-      background: var(--surface-soft);
-      position: relative;
-    }
-
-    .fieldset-title {
-      font-size: 12px;
-      color: var(--text-dim);
-      margin-bottom: 8px;
-      font-weight: 600;
-    }
-
-    .preset-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .preset-btn {
-      border: 1px solid #cae3df;
-      border-radius: 999px;
-      padding: 7px 12px;
-      font-size: 12px;
-      color: #0f4f4a;
-      background: #f4fbfa;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .preset-btn:hover {
-      border-color: var(--accent);
-      color: #fff;
-      background: var(--accent);
-    }
-
-    .checkbox-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 8px;
-    }
-
-    .checkbox-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      font-size: 13px;
-      color: var(--text);
-      border: 1px solid transparent;
-      border-radius: 10px;
-      padding: 8px;
-      background: #ffffff;
-      transition: border-color 0.2s ease, background 0.2s ease;
-      cursor: pointer;
-      position: relative;
-    }
-
-    .checkbox-item:hover {
-      border-color: #d2e5e2;
-      background: #f8fdfc;
-    }
-
-    .checkbox-item input[type="checkbox"] {
-      accent-color: var(--accent);
-      margin-top: 3px;
-    }
-
-    .checkbox-label-text {
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-    }
-
-    .op-config > .field-description {
-      position: static;
-      opacity: 1;
-      visibility: visible;
-      transform: none;
-      border: none;
-      background: transparent;
-      box-shadow: none;
-      padding: 0;
-      pointer-events: auto;
-    }
-
-    .operation-config-container {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .op-config {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: #fff;
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      animation: fadeSlide 0.2s ease;
-    }
-
-    .op-config-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .op-config-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .op-default-btn {
-      border: 1px solid #cae3df;
-      border-radius: 999px;
-      padding: 5px 10px;
-      font-size: 11px;
-      color: #0f4f4a;
-      background: #f4fbfa;
-      cursor: pointer;
-    }
-
-    .op-default-btn:hover {
-      border-color: var(--accent);
-      color: #fff;
-      background: var(--accent);
-    }
-
-    .advanced-summary {
-      border: 1px solid #d8e8f5;
-      border-radius: 10px;
-      background: #f7fbff;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .advanced-summary-title {
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: #4d667d;
-    }
-
-    .advanced-summary-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .advanced-summary-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 10px;
-      border: 1px solid #dbe7f3;
-      border-radius: 8px;
-      background: #ffffff;
-      padding: 8px;
-    }
-
-    .advanced-summary-text {
-      font-size: 12px;
-      line-height: 1.4;
-      color: #2c465b;
-    }
-
-    .advanced-summary-clear {
-      border: 1px solid #cae3df;
-      border-radius: 999px;
-      padding: 4px 8px;
-      font-size: 11px;
-      color: #0f4f4a;
-      background: #f4fbfa;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-
-    .advanced-summary-clear:hover {
-      border-color: var(--accent);
-      color: #fff;
-      background: var(--accent);
-    }
-
-    .hidden { display: none !important; }
-
-    .json-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .validation-result {
-      min-height: 18px;
-      font-size: 12px;
-      color: var(--text-dim);
-      transition: color 0.15s ease;
-    }
-
-    .validation-result.show.valid { color: var(--success); }
-    .validation-result.show.invalid { color: var(--error); }
-
-    .json-output {
-      height: 100%;
-      min-height: 300px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: #fbfdff;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .runs-panel {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: #ffffff;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .runs-panel-title {
-      font-size: 12px;
-      color: #4f6679;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .runs-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .run-card {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px;
-      background: #fbfefe;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .run-card-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      font-size: 11px;
-      color: var(--text-dim);
-    }
-
-    .run-status-badge {
-      border-radius: 999px;
-      padding: 3px 8px;
-      border: 1px solid #d3e7f7;
-      background: #ecf6fd;
-      color: #245272;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-
-    .run-status-badge.running,
-    .run-status-badge.starting {
-      border-color: #c6dfd8;
-      background: #edf9f6;
-      color: #0f6a5f;
-    }
-
-    .run-status-badge.failed,
-    .run-status-badge.timed_out,
-    .run-status-badge.cancelled {
-      border-color: #f5c2c2;
-      background: #fff2f2;
-      color: #b92a2a;
-    }
-
-    .run-status-badge.succeeded {
-      border-color: #c8e7c9;
-      background: #effbf0;
-      color: #1e6f2a;
-    }
-
-    .run-progress {
-      font-size: 12px;
-      color: #506679;
-      line-height: 1.35;
-    }
-
-    .run-location {
-      font-size: 11px;
-      line-height: 1.35;
-      color: #2f5d4d;
-      background: #eefaf3;
-      border: 1px solid #cae8d6;
-      border-radius: 6px;
-      padding: 5px 7px;
-      font-family: 'JetBrains Mono', monospace;
-      word-break: break-all;
-    }
-
-    .run-error {
-      font-size: 11px;
-      color: #b4371d;
-      line-height: 1.35;
-    }
-
-    .run-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .run-action-link {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border: 1px solid #cae3df;
-      border-radius: 999px;
-      padding: 5px 10px;
-      font-size: 11px;
-      color: #0f4f4a;
-      background: #f4fbfa;
-      cursor: pointer;
-      text-decoration: none;
-      line-height: 1.2;
-      font-family: inherit;
-    }
-
-    .run-action-link:hover {
-      border-color: var(--accent);
-      color: #fff;
-      background: var(--accent);
-    }
-
-    .run-action-link.disabled,
-    .run-action-link.disabled:hover {
-      border-color: #d9e6e2;
-      color: #8ea1ad;
-      background: #f8fbfa;
-      cursor: not-allowed;
-    }
-
-    .runs-empty {
-      font-size: 12px;
-      color: #6d8091;
-      line-height: 1.35;
-    }
-
-    .runs-known-location {
-      font-size: 11px;
-      color: #4f6679;
-      line-height: 1.35;
-    }
-
-    .json-stats {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-
-    .json-pill {
-      font-size: 11px;
-      color: #245272;
-      background: #ecf6fd;
-      border: 1px solid #d3e7f7;
-      border-radius: 999px;
-      padding: 3px 8px;
-    }
-
-    .shortcut-hint {
-      font-size: 11px;
-      color: #7a8b9a;
-    }
-
-    .help-dot {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 15px;
-      height: 15px;
-      border-radius: 50%;
-      font-size: 10px;
-      font-weight: 700;
-      color: #3b7f90;
-      border: 1px solid #bfd8df;
-      background: #eef8fb;
-      cursor: help;
-      user-select: none;
-    }
-
-    @keyframes fadeSlide {
-      from {
-        opacity: 0;
-        transform: translateY(6px);
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tectonic Workload Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
       }
-      to {
-        opacity: 1;
+
+      :root {
+        --bg: #f6faf8;
+        --surface: #ffffff;
+        --surface-soft: #f7fafc;
+        --border: #dde7ef;
+        --accent: #0f766e;
+        --accent-hover: #0b5f59;
+        --success: #16a34a;
+        --error: #dc2626;
+        --text: #0b1e2d;
+        --text-dim: #5f7284;
+      }
+
+      body {
+        font-family: "DM Sans", system-ui, sans-serif;
+        background:
+          radial-gradient(circle at 10% 10%, #d8f4f0 0%, transparent 35%),
+          radial-gradient(circle at 90% 0%, #e6f0fb 0%, transparent 30%),
+          linear-gradient(160deg, #f6faf8 0%, #ffffff 45%, #eef7f9 100%);
+        color: var(--text);
+        min-height: 100vh;
+      }
+
+      .app-shell {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 28px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      header {
+        position: relative;
+        text-align: center;
+        padding-top: 6px;
+      }
+
+      .header-actions {
+        position: absolute;
+        right: 0;
+        top: 0;
+        display: flex;
+        gap: 8px;
+      }
+
+      header h1 {
+        font-size: 36px;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 8px;
+      }
+
+      .header-subtitle {
+        color: var(--text-dim);
+        font-size: 15px;
+      }
+
+      main {
+        min-height: 0;
+      }
+
+      .workspace {
+        display: grid;
+        gap: 16px;
+        min-width: 0;
+      }
+
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 12px 28px rgba(11, 30, 45, 0.08);
+        transition:
+          box-shadow 0.2s ease,
+          transform 0.2s ease;
+      }
+
+      .panel:hover {
+        box-shadow: 0 16px 32px rgba(11, 30, 45, 0.12);
+      }
+
+      .json-panel {
+        min-height: 380px;
+      }
+
+      .panel-header {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-shrink: 0;
+      }
+
+      .panel-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      .panel-body {
+        flex: 1;
+        overflow: auto;
+        padding: 16px;
+      }
+
+      textarea {
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        border: none;
+        color: var(--text);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        resize: none;
+        outline: none;
+      }
+
+      textarea::placeholder {
+        color: var(--text-dim);
+      }
+
+      .btn {
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        border: none;
+        font-family: inherit;
+      }
+
+      .btn-ghost {
+        background: #fff;
+        color: var(--text-dim);
+        border: 1px solid var(--border);
+      }
+
+      .btn-ghost:hover {
+        color: #fff;
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+      }
+
+      .workload-form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .builder-hint {
+        font-size: 13px;
+        color: #567082;
+        margin-bottom: 10px;
+      }
+
+      .assistant-panel {
+        border: 1px solid var(--border);
+        background: linear-gradient(164deg, #ffffff 0%, #eff9f7 100%);
+        border-radius: 14px;
+        padding: 14px;
+        margin-bottom: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .assistant-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .assistant-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text);
+      }
+
+      .assistant-status {
+        font-size: 12px;
+        border-radius: 999px;
+        padding: 5px 10px;
+        border: 1px solid #d3e7f7;
+        background: #ecf6fd;
+        color: #245272;
+        white-space: nowrap;
+      }
+
+      .assistant-status.loading {
+        border-color: #c6dfd8;
+        background: #edf9f6;
+        color: #0f6a5f;
+      }
+
+      .assistant-status.error {
+        border-color: #f5c2c2;
+        background: #fff2f2;
+        color: #b92a2a;
+      }
+
+      .assistant-status.warn {
+        border-color: #f1ddb2;
+        background: #fff8e8;
+        color: #8a5d0a;
+      }
+
+      .assistant-timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-height: 360px;
+        overflow: auto;
+        padding-right: 2px;
+      }
+
+      .assistant-timeline:empty {
+        display: none;
+      }
+
+      .assistant-turn {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #ffffff;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        animation: fadeSlide 0.18s ease;
+      }
+
+      .assistant-turn.user {
+        background: #f1f8fd;
+        border-color: #d8e8f5;
+      }
+
+      .assistant-turn-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+        color: #5f7284;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-weight: 700;
+      }
+
+      .assistant-turn-message {
+        font-size: 13px;
+        line-height: 1.42;
+        color: #1a2e40;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .assistant-turn-summary {
+        font-size: 12px;
+        line-height: 1.4;
+        color: #345066;
+      }
+
+      .assistant-inline-meta {
+        font-size: 11px;
+        color: #5a6e82;
+        line-height: 1.35;
+      }
+
+      .assistant-assumptions {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .assistant-assumption-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .assistant-assumption-list li {
+        font-size: 11px;
+        line-height: 1.3;
+        color: #35506b;
+        border: 1px solid #cfe2f4;
+        background: #edf5fc;
+        border-radius: 999px;
+        padding: 4px 8px;
+      }
+
+      .assistant-clarification-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .assistant-clarification {
+        border: 1px solid #d7e5ef;
+        background: #fbfdff;
+        border-radius: 9px;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .assistant-clarification.required {
+        border-color: #e7c39f;
+        background: #fff8ee;
+      }
+
+      .assistant-clarification.resolved {
+        border-color: #9bc9ab;
+        background: #f2fbf5;
+      }
+
+      .assistant-clarification-label {
+        font-size: 12px;
+        color: #2f485d;
+        line-height: 1.4;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .assistant-required-badge {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #8a4d02;
+        background: #fde7cd;
+        border: 1px solid #f3c48d;
+        border-radius: 999px;
+        padding: 2px 6px;
+      }
+
+      .assistant-required-badge.resolved {
+        color: #21623a;
+        background: #ddf3e5;
+        border-color: #a5d3b6;
+      }
+
+      .assistant-clarification-input {
+        width: 100%;
+        min-height: 44px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 13px;
+        color: var(--text);
+        background: #fff;
+        outline: none;
+        font-family: inherit;
+        transition:
+          border-color 0.15s ease,
+          box-shadow 0.15s ease;
+      }
+
+      .assistant-clarification-input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+      }
+
+      .assistant-clarification-input.invalid {
+        border-color: #d0472f;
+        box-shadow: 0 0 0 3px rgba(220, 56, 44, 0.12);
+      }
+
+      .assistant-clarification-hint {
+        font-size: 11px;
+        color: #5a6e82;
+        line-height: 1.35;
+      }
+
+      .assistant-clarification-error {
+        font-size: 11px;
+        color: #b4371d;
+        line-height: 1.35;
+        min-height: 14px;
+      }
+
+      .assistant-card-footer {
+        border-top: 1px solid #deebf5;
+        padding-top: 6px;
+        font-size: 11px;
+        color: #5a6e82;
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .assistant-composer {
+        border: 1px solid #d5e7e4;
+        border-radius: 10px;
+        background: #ffffff;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .assistant-composer-label {
+        font-size: 12px;
+        color: #486174;
+        font-weight: 600;
+      }
+
+      .assistant-input {
+        width: 100%;
+        min-height: 72px;
+        resize: vertical;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: #fff;
+        color: var(--text);
+        font-family: inherit;
+        font-size: 13px;
+        line-height: 1.4;
+        outline: none;
+        transition:
+          border-color 0.15s ease,
+          box-shadow 0.15s ease;
+      }
+
+      .assistant-input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+      }
+
+      .assistant-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .assistant-composer-hint {
+        font-size: 11px;
+        color: #5a6e82;
+        line-height: 1.35;
+        min-height: 16px;
+      }
+
+      .hud {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+
+      .hud-card {
+        border: 1px solid var(--border);
+        background: linear-gradient(165deg, #ffffff 0%, #f5fbfa 100%);
+        border-radius: 10px;
+        padding: 7px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-height: 50px;
+        justify-content: center;
+        transition: box-shadow 0.2s ease;
+      }
+
+      .hud-card:hover {
+        box-shadow: 0 8px 20px rgba(11, 30, 45, 0.08);
+      }
+
+      .hud-label {
+        font-size: 10px;
+        line-height: 1.1;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .hud-value {
+        font-size: 16px;
+        line-height: 1.1;
+        font-weight: 700;
+        color: var(--text);
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-dim);
+        position: relative;
+      }
+
+      .field-row {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .field input,
+      .field select,
+      .field textarea {
+        width: 100%;
+        padding: 10px 12px;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-family: inherit;
+        font-size: 13px;
+        outline: none;
+        transition:
+          border-color 0.15s ease,
+          box-shadow 0.15s ease;
+      }
+
+      .field textarea {
+        min-height: 96px;
+        resize: vertical;
+        font-family: "JetBrains Mono", monospace;
+        line-height: 1.45;
+      }
+
+      .field input:focus,
+      .field select:focus,
+      .field textarea:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+      }
+
+      .field-description {
+        font-size: 11px;
+        line-height: 1.35;
+        color: #5f7284;
+        white-space: pre-line;
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: calc(100% + 4px);
+        padding: 6px 8px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 8px 20px rgba(11, 30, 45, 0.08);
+        z-index: 30;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform: translateY(-2px);
+        transition:
+          opacity 0.14s ease,
+          transform 0.14s ease,
+          visibility 0.14s ease;
+      }
+
+      .field-description:empty {
+        display: none;
+      }
+
+      .field:hover .field-description,
+      .field:focus-within .field-description,
+      .checkbox-item:hover .field-description,
+      .checkbox-item:focus-within .field-description {
+        opacity: 0.95;
+        visibility: visible;
         transform: translateY(0);
       }
-    }
 
-    @media (min-width: 980px) {
-      .workspace {
-        grid-template-columns: 1.2fr 1fr;
-        align-items: start;
+      .fieldset {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px;
+        background: var(--surface-soft);
+        position: relative;
       }
-      .json-panel {
-        position: sticky;
-        top: 18px;
-        height: min(82vh, 860px);
-      }
-    }
 
-    @media (max-width: 768px) {
-      .app-shell {
-        padding: 20px 12px;
+      .fieldset-title {
+        font-size: 12px;
+        color: var(--text-dim);
+        margin-bottom: 8px;
+        font-weight: 600;
       }
-      header {
-        text-align: left;
-        padding-top: 44px;
+
+      .preset-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
       }
-      header h1 {
-        font-size: 28px;
+
+      .preset-btn {
+        border: 1px solid #cae3df;
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-size: 12px;
+        color: #0f4f4a;
+        background: #f4fbfa;
+        cursor: pointer;
+        transition: all 0.2s ease;
       }
-      .header-actions {
-        left: 0;
-        right: auto;
+
+      .preset-btn:hover {
+        border-color: var(--accent);
+        color: #fff;
+        background: var(--accent);
       }
-      .hud {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+
+      .checkbox-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 8px;
       }
-      .assistant-timeline {
-        max-height: 420px;
-      }
-      .assistant-card-footer {
-        position: sticky;
-        bottom: 0;
+
+      .checkbox-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--text);
+        border: 1px solid transparent;
+        border-radius: 10px;
+        padding: 8px;
         background: #ffffff;
-        padding-bottom: 6px;
+        transition:
+          border-color 0.2s ease,
+          background 0.2s ease;
+        cursor: pointer;
+        position: relative;
       }
-      .assistant-actions .btn {
-        min-height: 44px;
+
+      .checkbox-item:hover {
+        border-color: #d2e5e2;
+        background: #f8fdfc;
       }
-    }
-  </style>
-</head>
-<body>
-  <div class="app-shell">
-    <header>
-      <div class="header-actions">
-        <button class="btn btn-ghost" id="newWorkloadBtn">Clear Form</button>
-      </div>
-      <h1>Workload Spec Generator</h1>
-      <p class="header-subtitle">Generate JSON configurations for your workload specifications</p>
-    </header>
-    <main>
-      <div class="workspace">
-        <div class="panel" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
-          <div class="panel-header">
-            <span class="panel-title">Workload Form</span>
-          </div>
-          <div class="panel-body">
-            <div class="assistant-panel">
-              <div class="assistant-head">
-                <span class="assistant-title">Describe Workload</span>
-                <span class="assistant-status" id="assistantStatus" aria-live="polite">Ready</span>
-              </div>
-              <div class="assistant-timeline" id="assistantTimeline" aria-live="polite"></div>
-              <div class="assistant-composer">
-                <label for="assistantInput" class="assistant-composer-label">Describe or refine your workload</label>
-                <textarea
-                  id="assistantInput"
-                  class="assistant-input"
-                  placeholder="Example: Generate an insert-only workload with 1 KB key value size. The number of inserts is 100K."
-                ></textarea>
-                <div class="assistant-actions">
-                  <button type="button" class="btn btn-ghost" id="assistantApplyBtn">Apply</button>
-                  <button type="button" class="btn btn-ghost" id="assistantClearBtn">Clear</button>
+
+      .checkbox-item input[type="checkbox"] {
+        accent-color: var(--accent);
+        margin-top: 3px;
+      }
+
+      .checkbox-label-text {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .op-config > .field-description {
+        position: static;
+        opacity: 1;
+        visibility: visible;
+        transform: none;
+        border: none;
+        background: transparent;
+        box-shadow: none;
+        padding: 0;
+        pointer-events: auto;
+      }
+
+      .operation-config-container {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .op-config {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        animation: fadeSlide 0.2s ease;
+      }
+
+      .op-config-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .op-config-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .op-default-btn {
+        border: 1px solid #cae3df;
+        border-radius: 999px;
+        padding: 5px 10px;
+        font-size: 11px;
+        color: #0f4f4a;
+        background: #f4fbfa;
+        cursor: pointer;
+      }
+
+      .op-default-btn:hover {
+        border-color: var(--accent);
+        color: #fff;
+        background: var(--accent);
+      }
+
+      .advanced-summary {
+        border: 1px solid #d8e8f5;
+        border-radius: 10px;
+        background: #f7fbff;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .advanced-summary-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #4d667d;
+      }
+
+      .advanced-summary-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .advanced-summary-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+        border: 1px solid #dbe7f3;
+        border-radius: 8px;
+        background: #ffffff;
+        padding: 8px;
+      }
+
+      .advanced-summary-text {
+        font-size: 12px;
+        line-height: 1.4;
+        color: #2c465b;
+      }
+
+      .advanced-summary-clear {
+        border: 1px solid #cae3df;
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 11px;
+        color: #0f4f4a;
+        background: #f4fbfa;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      .advanced-summary-clear:hover {
+        border-color: var(--accent);
+        color: #fff;
+        background: var(--accent);
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .json-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .validation-result {
+        min-height: 18px;
+        font-size: 12px;
+        color: var(--text-dim);
+        transition: color 0.15s ease;
+      }
+
+      .validation-result.show.valid {
+        color: var(--success);
+      }
+      .validation-result.show.invalid {
+        color: var(--error);
+      }
+
+      .json-output {
+        height: 100%;
+        min-height: 300px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fbfdff;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .runs-panel {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #ffffff;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .runs-panel-title {
+        font-size: 12px;
+        color: #4f6679;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .runs-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .run-card {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px;
+        background: #fbfefe;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .run-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--text-dim);
+      }
+
+      .run-status-badge {
+        border-radius: 999px;
+        padding: 3px 8px;
+        border: 1px solid #d3e7f7;
+        background: #ecf6fd;
+        color: #245272;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .run-status-badge.running,
+      .run-status-badge.starting {
+        border-color: #c6dfd8;
+        background: #edf9f6;
+        color: #0f6a5f;
+      }
+
+      .run-status-badge.failed,
+      .run-status-badge.timed_out,
+      .run-status-badge.cancelled {
+        border-color: #f5c2c2;
+        background: #fff2f2;
+        color: #b92a2a;
+      }
+
+      .run-status-badge.succeeded {
+        border-color: #c8e7c9;
+        background: #effbf0;
+        color: #1e6f2a;
+      }
+
+      .run-progress {
+        font-size: 12px;
+        color: #506679;
+        line-height: 1.35;
+      }
+
+      .run-location {
+        font-size: 11px;
+        line-height: 1.35;
+        color: #2f5d4d;
+        background: #eefaf3;
+        border: 1px solid #cae8d6;
+        border-radius: 6px;
+        padding: 5px 7px;
+        font-family: "JetBrains Mono", monospace;
+        word-break: break-all;
+      }
+
+      .run-error {
+        font-size: 11px;
+        color: #b4371d;
+        line-height: 1.35;
+      }
+
+      .run-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .run-action-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #cae3df;
+        border-radius: 999px;
+        padding: 5px 10px;
+        font-size: 11px;
+        color: #0f4f4a;
+        background: #f4fbfa;
+        cursor: pointer;
+        text-decoration: none;
+        line-height: 1.2;
+        font-family: inherit;
+      }
+
+      .run-action-link:hover {
+        border-color: var(--accent);
+        color: #fff;
+        background: var(--accent);
+      }
+
+      .run-action-link.disabled,
+      .run-action-link.disabled:hover {
+        border-color: #d9e6e2;
+        color: #8ea1ad;
+        background: #f8fbfa;
+        cursor: not-allowed;
+      }
+
+      .runs-empty {
+        font-size: 12px;
+        color: #6d8091;
+        line-height: 1.35;
+      }
+
+      .runs-known-location {
+        font-size: 11px;
+        color: #4f6679;
+        line-height: 1.35;
+      }
+
+      .json-stats {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .json-pill {
+        font-size: 11px;
+        color: #245272;
+        background: #ecf6fd;
+        border: 1px solid #d3e7f7;
+        border-radius: 999px;
+        padding: 3px 8px;
+      }
+
+      .shortcut-hint {
+        font-size: 11px;
+        color: #7a8b9a;
+      }
+
+      .help-dot {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        font-size: 10px;
+        font-weight: 700;
+        color: #3b7f90;
+        border: 1px solid #bfd8df;
+        background: #eef8fb;
+        cursor: help;
+        user-select: none;
+      }
+
+      @keyframes fadeSlide {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (min-width: 980px) {
+        .workspace {
+          grid-template-columns: 1.2fr 1fr;
+          align-items: start;
+        }
+        .json-panel {
+          position: sticky;
+          top: 18px;
+          height: min(82vh, 860px);
+        }
+      }
+
+      @media (max-width: 768px) {
+        .app-shell {
+          padding: 20px 12px;
+        }
+        header {
+          text-align: left;
+          padding-top: 44px;
+        }
+        header h1 {
+          font-size: 28px;
+        }
+        .header-actions {
+          left: 0;
+          right: auto;
+        }
+        .hud {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .assistant-timeline {
+          max-height: 420px;
+        }
+        .assistant-card-footer {
+          position: sticky;
+          bottom: 0;
+          background: #ffffff;
+          padding-bottom: 6px;
+        }
+        .assistant-actions .btn {
+          min-height: 44px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header>
+        <div class="header-actions">
+          <button class="btn btn-ghost" id="newWorkloadBtn">Clear Form</button>
+        </div>
+        <h1>Workload Spec Generator</h1>
+        <p class="header-subtitle">
+          Generate JSON configurations for your workload specifications
+        </p>
+      </header>
+      <main>
+        <div class="workspace">
+          <div
+            class="panel"
+            style="
+              flex: 1;
+              display: flex;
+              flex-direction: column;
+              min-height: 0;
+            "
+          >
+            <div class="panel-header">
+              <span class="panel-title">Workload Form</span>
+            </div>
+            <div class="panel-body">
+              <div class="assistant-panel">
+                <div class="assistant-head">
+                  <span class="assistant-title">Describe Workload</span>
+                  <span
+                    class="assistant-status"
+                    id="assistantStatus"
+                    aria-live="polite"
+                    >Ready</span
+                  >
                 </div>
-                <p class="assistant-composer-hint" id="assistantComposerHint">Answer required clarifications to continue the thread.</p>
+                <div
+                  class="assistant-timeline"
+                  id="assistantTimeline"
+                  aria-live="polite"
+                ></div>
+                <div class="assistant-composer">
+                  <label for="assistantInput" class="assistant-composer-label"
+                    >Describe or refine your workload</label
+                  >
+                  <textarea
+                    id="assistantInput"
+                    class="assistant-input"
+                    placeholder="Example: Generate an insert-only workload with 1 KB key value size. The number of inserts is 100K."
+                  ></textarea>
+                  <div class="assistant-actions">
+                    <button
+                      type="button"
+                      class="btn btn-ghost"
+                      id="assistantApplyBtn"
+                    >
+                      Apply
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost"
+                      id="assistantClearBtn"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <p class="assistant-composer-hint" id="assistantComposerHint">
+                    Answer required clarifications to continue the thread.
+                  </p>
+                </div>
               </div>
-            </div>
-            <p class="builder-hint">Start with a preset or configure fields manually. The JSON preview updates live as you edit.</p>
-            <div class="hud">
-              <div class="hud-card">
-                <span class="hud-label">Sections</span>
-                <span class="hud-value" id="hudSections">0</span>
+              <p class="builder-hint">
+                Start with a preset or configure fields manually. The JSON
+                preview updates live as you edit.
+              </p>
+              <div class="hud">
+                <div class="hud-card">
+                  <span class="hud-label">Sections</span>
+                  <span class="hud-value" id="hudSections">0</span>
+                </div>
+                <div class="hud-card">
+                  <span class="hud-label">Groups/Section</span>
+                  <span class="hud-value" id="hudGroups">0</span>
+                </div>
+                <div class="hud-card">
+                  <span class="hud-label">Operations</span>
+                  <span class="hud-value" id="hudOps">0</span>
+                </div>
+                <div class="hud-card">
+                  <span class="hud-label">JSON Lines</span>
+                  <span class="hud-value" id="hudLines">1</span>
+                </div>
               </div>
-              <div class="hud-card">
-                <span class="hud-label">Groups/Section</span>
-                <span class="hud-value" id="hudGroups">0</span>
-              </div>
-              <div class="hud-card">
-                <span class="hud-label">Operations</span>
-                <span class="hud-value" id="hudOps">0</span>
-              </div>
-              <div class="hud-card">
-                <span class="hud-label">JSON Lines</span>
-                <span class="hud-value" id="hudLines">1</span>
-              </div>
-            </div>
-            <form id="workloadForm" class="workload-form">
-              <div class="form-grid">
-                <label class="field">
-                  <span id="formCharacterSetLabel">Character Set</span>
-                  <select id="formCharacterSet">
-                    <option value="">(unset)</option>
-                    <option value="alphanumeric">alphanumeric</option>
-                    <option value="alphabetic">alphabetic</option>
-                    <option value="numeric">numeric</option>
-                  </select>
-                  <small class="field-description" id="characterSetDescription"></small>
-                </label>
-                <label class="field">
-                  <span id="formSectionsLabel">Sections</span>
-                  <input type="number" id="formSections" min="1" step="1" placeholder="1">
-                  <small class="field-description" id="sectionsDescription"></small>
-                </label>
-                <label class="field">
-                  <span id="formGroupsLabel">Groups / Section</span>
-                  <input type="number" id="formGroups" min="1" step="1" placeholder="1">
-                  <small class="field-description" id="groupsDescription"></small>
-                </label>
-                <div class="field">
-                  <span id="skipKeyContainsCheckLabel">Skip Key Contains Check</span>
-                  <label class="checkbox-item">
-                    <input type="checkbox" id="formSkipKeyContainsCheck">
-                    <span>Enable across sections</span>
+              <form id="workloadForm" class="workload-form">
+                <div class="form-grid">
+                  <label class="field">
+                    <span id="formCharacterSetLabel">Character Set</span>
+                    <select id="formCharacterSet">
+                      <option value="">(unset)</option>
+                      <option value="alphanumeric">alphanumeric</option>
+                      <option value="alphabetic">alphabetic</option>
+                      <option value="numeric">numeric</option>
+                    </select>
+                    <small
+                      class="field-description"
+                      id="characterSetDescription"
+                    ></small>
                   </label>
-                  <small class="field-description" id="skipKeyContainsCheckDescription"></small>
+                  <label class="field">
+                    <span id="formSectionsLabel">Sections</span>
+                    <input
+                      type="number"
+                      id="formSections"
+                      min="1"
+                      step="1"
+                      placeholder="1"
+                    />
+                    <small
+                      class="field-description"
+                      id="sectionsDescription"
+                    ></small>
+                  </label>
+                  <label class="field">
+                    <span id="formGroupsLabel">Groups / Section</span>
+                    <input
+                      type="number"
+                      id="formGroups"
+                      min="1"
+                      step="1"
+                      placeholder="1"
+                    />
+                    <small
+                      class="field-description"
+                      id="groupsDescription"
+                    ></small>
+                  </label>
+                  <div class="field">
+                    <span id="skipKeyContainsCheckLabel"
+                      >Skip Key Contains Check</span
+                    >
+                    <label class="checkbox-item">
+                      <input type="checkbox" id="formSkipKeyContainsCheck" />
+                      <span>Enable across sections</span>
+                    </label>
+                    <small
+                      class="field-description"
+                      id="skipKeyContainsCheckDescription"
+                    ></small>
+                  </div>
+                </div>
+
+                <div class="preset-row">
+                  <button
+                    type="button"
+                    class="preset-btn"
+                    data-preset="insert_only"
+                  >
+                    Insert Only
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-btn"
+                    data-preset="read_heavy"
+                  >
+                    Read Heavy
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-btn"
+                    data-preset="mixed_crud"
+                  >
+                    Mixed CRUD
+                  </button>
+                  <button
+                    type="button"
+                    class="preset-btn"
+                    data-preset="baseline"
+                  >
+                    Baseline
+                  </button>
+                </div>
+
+                <div class="fieldset">
+                  <p class="fieldset-title" id="operationsTitle">Operations</p>
+                  <div class="checkbox-grid" id="operationToggles"></div>
+                </div>
+
+                <div
+                  id="operationConfigContainer"
+                  class="operation-config-container"
+                ></div>
+              </form>
+            </div>
+          </div>
+          <div class="panel json-panel" style="flex-shrink: 0">
+            <div class="panel-header">
+              <span class="panel-title">Generated JSON</span>
+              <div class="json-actions">
+                <div class="validation-result" id="validationResult"></div>
+                <button class="btn btn-ghost" id="validateBtn">Validate</button>
+                <button class="btn btn-ghost" id="runWorkloadBtn">
+                  Run Workload
+                </button>
+                <button class="btn btn-ghost" id="downloadJsonBtn">
+                  Download Spec JSON
+                </button>
+                <button class="btn btn-ghost" id="copyBtn">Copy</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="json-output">
+                <div class="json-stats">
+                  <span class="json-pill" id="jsonSectionsPill"
+                    >sections: 0</span
+                  >
+                  <span class="json-pill" id="jsonOpsPill">ops: 0</span>
+                  <span class="json-pill" id="jsonBytesPill">bytes: 2</span>
+                </div>
+                <p class="shortcut-hint">
+                  Shortcuts: Ctrl/Cmd + Enter to validate, Ctrl/Cmd + Shift + C
+                  to copy.
+                </p>
+                <textarea
+                  id="jsonOutput"
+                  readonly
+                  placeholder="Generated JSON will appear here..."
+                >
+{}</textarea
+                >
+              </div>
+              <div class="runs-panel" id="runsPanel">
+                <p class="runs-panel-title">Workload Runs (Session)</p>
+                <p class="runs-known-location">
+                  Known output file:
+                  <code>generated-workloads/latest-workload.tar.gz</code>
+                </p>
+                <p class="runs-known-location">
+                  Start app with <code>npm run dev</code>. Workload generation
+                  runs in this same process.
+                </p>
+                <div class="runs-list" id="runsList">
+                  <p class="runs-empty">
+                    No runs yet. Click "Run Workload" to generate a workload
+                    artifact.
+                  </p>
                 </div>
               </div>
-
-              <div class="preset-row">
-                <button type="button" class="preset-btn" data-preset="insert_only">Insert Only</button>
-                <button type="button" class="preset-btn" data-preset="read_heavy">Read Heavy</button>
-                <button type="button" class="preset-btn" data-preset="mixed_crud">Mixed CRUD</button>
-                <button type="button" class="preset-btn" data-preset="baseline">Baseline</button>
-              </div>
-
-              <div class="fieldset">
-                <p class="fieldset-title" id="operationsTitle">Operations</p>
-                <div class="checkbox-grid" id="operationToggles"></div>
-              </div>
-
-              <div id="operationConfigContainer" class="operation-config-container"></div>
-            </form>
-          </div>
-        </div>
-        <div class="panel json-panel" style="flex-shrink: 0;">
-          <div class="panel-header">
-            <span class="panel-title">Generated JSON</span>
-            <div class="json-actions">
-              <div class="validation-result" id="validationResult"></div>
-              <button class="btn btn-ghost" id="validateBtn">Validate</button>
-              <button class="btn btn-ghost" id="runWorkloadBtn">Run Workload</button>
-              <button class="btn btn-ghost" id="downloadJsonBtn">Download Spec JSON</button>
-              <button class="btn btn-ghost" id="copyBtn">Copy</button>
-            </div>
-          </div>
-          <div class="panel-body">
-            <div class="json-output">
-              <div class="json-stats">
-                <span class="json-pill" id="jsonSectionsPill">sections: 0</span>
-                <span class="json-pill" id="jsonOpsPill">ops: 0</span>
-                <span class="json-pill" id="jsonBytesPill">bytes: 2</span>
-              </div>
-              <p class="shortcut-hint">Shortcuts: Ctrl/Cmd + Enter to validate, Ctrl/Cmd + Shift + C to copy.</p>
-              <textarea id="jsonOutput" readonly placeholder="Generated JSON will appear here...">{}</textarea>
-            </div>
-            <div class="runs-panel" id="runsPanel">
-              <p class="runs-panel-title">Workload Runs (Session)</p>
-              <p class="runs-known-location">Known output file: <code>generated-workloads/latest-workload.tar.gz</code></p>
-              <p class="runs-known-location">Start app with <code>npm run dev</code>. Workload generation runs in this same process.</p>
-              <div class="runs-list" id="runsList">
-                <p class="runs-empty">No runs yet. Click "Run Workload" to generate a workload artifact.</p>
-              </div>
             </div>
           </div>
         </div>
-      </div>
-    </main>
-  </div>
+      </main>
+    </div>
 
-  <script src="/workload-runs.js"></script>
-  <script src="/app.js"></script>
-</body>
+    <script src="/workload-runs.js"></script>
+    <script src="/app.js"></script>
+  </body>
 </html>
