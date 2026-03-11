@@ -1,0 +1,154 @@
+[
+  {
+    "id": "kvbench-i",
+    "family": "kvbench",
+    "label": "i.spec.json",
+    "path": "/presets/kvbench/i.spec.json",
+    "source": "example-specs/kvbench/i.spec.json",
+    "description": "Insert phase followed by point and empty-point reads."
+  },
+  {
+    "id": "kvbench-ii",
+    "family": "kvbench",
+    "label": "ii.spec.json",
+    "path": "/presets/kvbench/ii.spec.json",
+    "source": "example-specs/kvbench/ii.spec.json",
+    "description": "Insert-heavy kvbench workload with deletes, empty reads, and updates."
+  },
+  {
+    "id": "kvbench-iii",
+    "family": "kvbench",
+    "label": "iii.spec.json",
+    "path": "/presets/kvbench/iii.spec.json",
+    "source": "example-specs/kvbench/iii.spec.json",
+    "description": "Kvbench mix with updates, point queries, and empty-point queries."
+  },
+  {
+    "id": "kvbench-iv",
+    "family": "kvbench",
+    "label": "iv.spec.json",
+    "path": "/presets/kvbench/iv.spec.json",
+    "source": "example-specs/kvbench/iv.spec.json",
+    "description": "Kvbench workload combining updates with range deletes."
+  },
+  {
+    "id": "kvbench-v",
+    "family": "kvbench",
+    "label": "v.spec.json",
+    "path": "/presets/kvbench/v.spec.json",
+    "source": "example-specs/kvbench/v.spec.json",
+    "description": "Single-group kvbench workload with inserts and point queries."
+  },
+  {
+    "id": "scale-001m",
+    "family": "scale",
+    "label": "001m.spec.json",
+    "path": "/presets/scale/001m.spec.json",
+    "source": "example-specs/scale/001m.spec.json",
+    "description": "One-million row scale workload with inserts, updates, and point queries."
+  },
+  {
+    "id": "scale-001m-complex",
+    "family": "scale",
+    "label": "001m-complex.spec.json",
+    "path": "/presets/scale/001m-complex.spec.json",
+    "source": "example-specs/scale/001m-complex.spec.json",
+    "description": "One-million row mixed workload with reads and deletes."
+  },
+  {
+    "id": "scale-005m",
+    "family": "scale",
+    "label": "005m.spec.json",
+    "path": "/presets/scale/005m.spec.json",
+    "source": "example-specs/scale/005m.spec.json",
+    "description": "Five-million row scale workload with inserts, updates, and point queries."
+  },
+  {
+    "id": "scale-005m-complex",
+    "family": "scale",
+    "label": "005m-complex.spec.json",
+    "path": "/presets/scale/005m-complex.spec.json",
+    "source": "example-specs/scale/005m-complex.spec.json",
+    "description": "Five-million row mixed workload with reads and deletes."
+  },
+  {
+    "id": "scale-010m",
+    "family": "scale",
+    "label": "010m.spec.json",
+    "path": "/presets/scale/010m.spec.json",
+    "source": "example-specs/scale/010m.spec.json",
+    "description": "Ten-million row scale workload with inserts, updates, and point queries."
+  },
+  {
+    "id": "scale-010m-complex",
+    "family": "scale",
+    "label": "010m-complex.spec.json",
+    "path": "/presets/scale/010m-complex.spec.json",
+    "source": "example-specs/scale/010m-complex.spec.json",
+    "description": "Ten-million row mixed workload with reads and deletes."
+  },
+  {
+    "id": "scale-050m",
+    "family": "scale",
+    "label": "050m.spec.json",
+    "path": "/presets/scale/050m.spec.json",
+    "source": "example-specs/scale/050m.spec.json",
+    "description": "Fifty-million row scale workload with inserts, updates, and point queries."
+  },
+  {
+    "id": "scale-050m-complex",
+    "family": "scale",
+    "label": "050m-complex.spec.json",
+    "path": "/presets/scale/050m-complex.spec.json",
+    "source": "example-specs/scale/050m-complex.spec.json",
+    "description": "Fifty-million row mixed workload with reads and deletes."
+  },
+  {
+    "id": "ycsb-a",
+    "family": "ycsb",
+    "label": "a.spec.json",
+    "path": "/presets/ycsb/a.spec.json",
+    "source": "example-specs/ycsb/a.spec.json",
+    "description": "Balanced read and update workload with an initial insert phase."
+  },
+  {
+    "id": "ycsb-b",
+    "family": "ycsb",
+    "label": "b.spec.json",
+    "path": "/presets/ycsb/b.spec.json",
+    "source": "example-specs/ycsb/b.spec.json",
+    "description": "Read-heavy workload with a small update slice."
+  },
+  {
+    "id": "ycsb-c",
+    "family": "ycsb",
+    "label": "c.spec.json",
+    "path": "/presets/ycsb/c.spec.json",
+    "source": "example-specs/ycsb/c.spec.json",
+    "description": "Read-only YCSB workload after the initial insert phase."
+  },
+  {
+    "id": "ycsb-d",
+    "family": "ycsb",
+    "label": "d.spec.json",
+    "path": "/presets/ycsb/d.spec.json",
+    "source": "example-specs/ycsb/d.spec.json",
+    "description": "Read-latest YCSB workload with inserts and point queries."
+  },
+  {
+    "id": "ycsb-e",
+    "family": "ycsb",
+    "label": "e.spec.json",
+    "path": "/presets/ycsb/e.spec.json",
+    "source": "example-specs/ycsb/e.spec.json",
+    "description": "Scan-heavy YCSB workload with inserts and range queries."
+  },
+  {
+    "id": "ycsb-f",
+    "family": "ycsb",
+    "label": "f.spec.json",
+    "path": "/presets/ycsb/f.spec.json",
+    "source": "example-specs/ycsb/f.spec.json",
+    "description": "Read-modify-write YCSB workload with point queries and merges."
+  }
+]

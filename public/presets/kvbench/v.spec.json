@@ -1,0 +1,31 @@
+{
+  "$schema": "../workload_schema.json",
+  "sections": [
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 950000,
+            "key": {
+              "segmented": {
+                "separator": "",
+                "segments": [
+                  {
+                    "hot_range": {
+                      "len": 2,
+                      "probability": 0.7,
+                      "amount": 10
+                    }
+                  },
+                  { "uniform": { "len": 510 } }
+                ]
+              }
+            },
+            "val": { "uniform": { "len": 512 } }
+          },
+          "point_queries": { "op_count": 50000 }
+        }
+      ]
+    }
+  ]
+}

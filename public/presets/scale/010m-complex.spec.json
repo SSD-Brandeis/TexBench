@@ -1,0 +1,64 @@
+{
+  "$schema": "../workload_schema.json",
+  "sections": [
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 10000000,
+            "key": {
+              "uniform": {
+                "len": 32,
+                "character_set": "numeric"
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 992
+              }
+            }
+          }
+        },
+        {
+          "inserts": {
+            "op_count": 3500000,
+            "key": {
+              "uniform": {
+                "len": 32,
+                "character_set": "numeric"
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 992
+              }
+            }
+          },
+          "point_queries": {
+            "op_count": 4000000
+          },
+          "empty_point_queries": {
+            "op_count": 1000000,
+            "key": {
+              "uniform": {
+                "len": 32,
+                "character_set": "numeric"
+              }
+            }
+          },
+          "range_queries": {
+            "op_count": 1000000,
+            "selectivity": 0.1
+          },
+          "point_deletes": {
+            "op_count": 100000
+          },
+          "range_deletes": {
+            "op_count": 400000,
+            "selectivity": 0.01
+          }
+        }
+      ]
+    }
+  ]
+}

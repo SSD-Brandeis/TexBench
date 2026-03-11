@@ -625,27 +625,51 @@
         font-weight: 600;
       }
 
-      .preset-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
+      .welcome-panel {
+        border: 1px solid #d8ebe7;
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 14px;
+        background:
+          linear-gradient(
+            135deg,
+            rgba(15, 79, 74, 0.05),
+            rgba(40, 145, 128, 0.02)
+          ),
+          #f9fcfb;
       }
 
-      .preset-btn {
-        border: 1px solid #cae3df;
-        border-radius: 999px;
-        padding: 7px 12px;
+      .welcome-panel h2 {
+        margin: 0 0 6px;
+        font-size: 18px;
+        color: #113d39;
+      }
+
+      .welcome-panel p {
+        margin: 0;
+        color: var(--text-dim);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .preset-picker-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .welcome-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 14px;
+        flex-wrap: wrap;
+      }
+
+      .preset-note {
+        margin-top: 10px;
         font-size: 12px;
         color: #0f4f4a;
-        background: #f4fbfa;
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
-
-      .preset-btn:hover {
-        border-color: var(--accent);
-        color: #fff;
-        background: var(--accent);
       }
 
       .checkbox-grid {
@@ -1095,7 +1119,35 @@
         </p>
       </header>
       <main>
-        <div class="workspace">
+        <div class="welcome-panel" id="welcomePanel">
+          <h2>Welcome</h2>
+          <p>
+            Start from a copied Tectonic example workload or switch into custom
+            generation. Pick a workload family first, then choose the file you
+            want to load.
+          </p>
+          <div class="preset-picker-grid">
+            <label class="field">
+              <span>Workload family</span>
+              <select id="presetFamilySelect">
+                <option value="">Choose a family...</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Preset file</span>
+              <select id="presetFileSelect" disabled>
+                <option value="">Choose a file...</option>
+              </select>
+            </label>
+          </div>
+          <div class="welcome-actions">
+            <button type="button" class="btn btn-ghost" id="customWorkloadBtn">
+              Generate Custom Workload
+            </button>
+          </div>
+          <p class="preset-note" id="presetSelectionNote" hidden></p>
+        </div>
+        <div class="workspace" hidden>
           <div
             class="panel"
             style="
@@ -1155,8 +1207,8 @@
                 </div>
               </div>
               <p class="builder-hint">
-                Start with a preset or configure fields manually. The JSON
-                preview updates live as you edit.
+                Configure fields manually below. The JSON preview updates live
+                as you edit, and manual edits clear any loaded preset.
               </p>
               <div class="hud">
                 <div class="hud-card">
@@ -1234,37 +1286,6 @@
                   </div>
                 </div>
 
-                <div class="preset-row">
-                  <button
-                    type="button"
-                    class="preset-btn"
-                    data-preset="insert_only"
-                  >
-                    Insert Only
-                  </button>
-                  <button
-                    type="button"
-                    class="preset-btn"
-                    data-preset="read_heavy"
-                  >
-                    Read Heavy
-                  </button>
-                  <button
-                    type="button"
-                    class="preset-btn"
-                    data-preset="mixed_crud"
-                  >
-                    Mixed CRUD
-                  </button>
-                  <button
-                    type="button"
-                    class="preset-btn"
-                    data-preset="baseline"
-                  >
-                    Baseline
-                  </button>
-                </div>
-
                 <div class="fieldset">
                   <p class="fieldset-title" id="operationsTitle">Operations</p>
                   <div class="checkbox-grid" id="operationToggles"></div>
@@ -1282,7 +1303,6 @@
               <span class="panel-title">Generated JSON</span>
               <div class="json-actions">
                 <div class="validation-result" id="validationResult"></div>
-                <button class="btn btn-ghost" id="validateBtn">Validate</button>
                 <button class="btn btn-ghost" id="runWorkloadBtn">
                   Run Workload
                 </button>
@@ -1302,7 +1322,7 @@
                   <span class="json-pill" id="jsonBytesPill">bytes: 2</span>
                 </div>
                 <p class="shortcut-hint">
-                  Shortcuts: Ctrl/Cmd + Enter to validate, Ctrl/Cmd + Shift + C
+                  JSON validates automatically. Shortcut: Ctrl/Cmd + Shift + C
                   to copy.
                 </p>
                 <textarea

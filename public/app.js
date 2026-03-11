@@ -12,7 +12,9 @@ const skipKeyContainsCheckLabel = document.getElementById(
   "skipKeyContainsCheckLabel",
 );
 const operationsTitle = document.getElementById("operationsTitle");
-const presetButtons = document.querySelectorAll(".preset-btn");
+const presetFamilySelect = document.getElementById("presetFamilySelect");
+const presetFileSelect = document.getElementById("presetFileSelect");
+const presetSelectionNote = document.getElementById("presetSelectionNote");
 const operationToggles = document.getElementById("operationToggles");
 const operationConfigContainer = document.getElementById(
   "operationConfigContainer",
@@ -33,7 +35,6 @@ const groupsDescription = document.getElementById("groupsDescription");
 const skipKeyContainsCheckDescription = document.getElementById(
   "skipKeyContainsCheckDescription",
 );
-const validateBtn = document.getElementById("validateBtn");
 const downloadJsonBtn = document.getElementById("downloadJsonBtn");
 const runWorkloadBtn = document.getElementById("runWorkloadBtn");
 const copyBtn = document.getElementById("copyBtn");
@@ -46,8 +47,15 @@ const assistantClearBtn = document.getElementById("assistantClearBtn");
 const assistantStatus = document.getElementById("assistantStatus");
 const assistantTimeline = document.getElementById("assistantTimeline");
 const assistantComposerHint = document.getElementById("assistantComposerHint");
+const welcomePanel = document.getElementById("welcomePanel");
+const customWorkloadBtn = document.getElementById("customWorkloadBtn");
+const workspace = document.querySelector(".workspace");
+const workspacePanels = workspace ? Array.from(workspace.children || []) : [];
+const builderPanel = workspacePanels.length > 0 ? workspacePanels[0] : null;
+const previewPanel = workspacePanels.length > 1 ? workspacePanels[1] : null;
 
 const INITIAL_JSON_TEXT = "{}";
+const PRESET_INDEX_PATH = "/presets/index.json";
 const PROMPT_OPERATION_MATCHER_SOURCES = {
   inserts: "insert(?:s|ion)?",
   updates: "update(?:s)?",
@@ -291,6 +299,11 @@ const operationAdvancedState = new Map();
 let assistantGateMessage = "";
 const lockedTopFields = new Set();
 const lockedOperationFields = new Map();
+let presetCatalog = [];
+let activePresetJson = null;
+let customWorkloadMode = false;
+let schemaValidatorPromise = null;
+let latestValidationToken = 0;
 
 let schema = null;
 let workloadRunsController = null;
@@ -569,6 +582,12 @@ async function initApp() {
   } catch (e) {
     reportUiIssue("Failed to reset form interface", e);
   }
+  try {
+    await loadPresetCatalog();
+  } catch (e) {
+    reportUiIssue("Failed to load preset catalog", e);
+  }
+  syncLandingUi();
 
   if (typeof window.createWorkloadRunsController === "function" && runsList) {
     workloadRunsController = window.createWorkloadRunsController({
@@ -615,21 +634,17 @@ async function initApp() {
       }
     });
   }
-  Array.prototype.forEach.call(presetButtons || [], (btn) => {
-    if (btn) {
-      btn.addEventListener("click", () =>
-        applyPreset(btn.dataset.preset || ""),
-      );
-    }
-  });
+  if (presetFamilySelect) {
+    presetFamilySelect.addEventListener("change", handlePresetFamilyChange);
+  }
+  if (presetFileSelect) {
+    presetFileSelect.addEventListener("change", handlePresetFileChange);
+  }
+  if (customWorkloadBtn) {
+    customWorkloadBtn.addEventListener("click", enableCustomWorkloadMode);
+  }
   document.addEventListener("keydown", (event) => {
     const isMeta = event.metaKey || event.ctrlKey;
-    if (isMeta && event.key === "Enter") {
-      event.preventDefault();
-      if (validateBtn) {
-        validateBtn.click();
-      }
-    }
     if (isMeta && event.shiftKey && (event.key === "c" || event.key === "C")) {
       event.preventDefault();
       if (copyBtn) {
@@ -666,40 +681,6 @@ async function initApp() {
     });
   }
 
-  if (validateBtn) {
-    validateBtn.addEventListener("click", async () => {
-      const jsonText = jsonOutput ? jsonOutput.value.trim() : "";
-      if (!jsonText || !schema) {
-        setValidationStatus("No JSON or schema to validate", "invalid");
-        return;
-      }
-      try {
-        const json = JSON.parse(jsonText);
-        const { default: Ajv2020 } =
-          await import("https://esm.sh/ajv@8.17.1/dist/2020?bundle");
-        const ajv = new Ajv2020({
-          allErrors: true,
-          strict: false,
-          validateFormats: false,
-        });
-        const validate = ajv.compile(schema);
-        const valid = validate(toSchemaValidationShape(json, schema));
-        if (valid) {
-          setValidationStatus("Valid! JSON conforms to schema.", "valid");
-        } else {
-          const errors = (validate.errors || [])
-            .map((e) => {
-              const path = e.instancePath || "/";
-              return (path + " " + e.message).trim();
-            })
-            .join(", ");
-          setValidationStatus("Invalid: " + errors, "invalid");
-        }
-      } catch (e) {
-        setValidationStatus("Parse error: " + e.message, "invalid");
-      }
-    });
-  }
 }
 
 window.addEventListener("error", (event) => {
@@ -727,6 +708,9 @@ initApp().catch((initError) => {
 });
 
 function onFormChange(event) {
+  if (activePresetJson) {
+    clearLoadedPresetState();
+  }
   const eventTarget = event && event.target ? event.target : null;
   markFieldAsUserLocked(eventTarget);
   clearAdvancedStateForFormEdit(eventTarget);
@@ -982,53 +966,195 @@ function ensureOperationDefaultsIfEmpty(op) {
   refreshStringPatternVisibility(op);
 }
 
-function applyPreset(presetName) {
-  resetFormInterface();
-  formCharacterSet.value = getDefaultCharacterSetValue();
-  formSections.value = "1";
-  formGroups.value = "1";
-  lockTopField("character_set");
-  lockTopField("sections_count");
-  lockTopField("groups_per_section");
+function cloneJsonValue(value) {
+  return JSON.parse(JSON.stringify(value));
+}
 
-  const presets = {
-    insert_only: ["inserts"],
-    read_heavy: ["point_queries", "range_queries"],
-    mixed_crud: ["inserts", "updates", "point_queries", "point_deletes"],
-    baseline: ["inserts", "point_queries"],
-  };
-  const ops = presets[presetName] || presets.baseline;
-
-  operationOrder.forEach((op) => {
-    const enabled = ops.includes(op);
-    setOperationChecked(op, enabled);
-    lockOperationField(op, "enabled");
-    if (enabled) {
-      applyDefaultsToOperation(op);
-      Object.keys(OPERATION_DEFAULTS[op] || {}).forEach((fieldName) => {
-        lockOperationField(op, fieldName);
-      });
-    }
-  });
-
-  if (presetName === "read_heavy") {
-    setOperationInputValue("point_queries", "op_count", 700000);
-    setOperationInputValue("range_queries", "op_count", 150000);
-    lockOperationField("point_queries", "op_count");
-    lockOperationField("range_queries", "op_count");
+function setPresetSelectionNote(message) {
+  if (!presetSelectionNote) {
+    return;
   }
-  if (presetName === "mixed_crud") {
-    setOperationInputValue("inserts", "op_count", 400000);
-    setOperationInputValue("updates", "op_count", 300000);
-    setOperationInputValue("point_queries", "op_count", 350000);
-    setOperationInputValue("point_deletes", "op_count", 80000);
-    lockOperationField("inserts", "op_count");
-    lockOperationField("updates", "op_count");
-    lockOperationField("point_queries", "op_count");
-    lockOperationField("point_deletes", "op_count");
-  }
+  const text = typeof message === "string" ? message.trim() : "";
+  presetSelectionNote.textContent = text;
+  presetSelectionNote.hidden = text === "";
+}
 
+function clearLoadedPresetState() {
+  activePresetJson = null;
+  if (presetFamilySelect) {
+    presetFamilySelect.value = "";
+  }
+  if (presetFileSelect) {
+    presetFileSelect.innerHTML = '<option value="">Choose a file...</option>';
+    presetFileSelect.value = "";
+    presetFileSelect.disabled = true;
+  }
+  setPresetSelectionNote("");
+}
+
+function syncLandingUi() {
+  const showPreview = customWorkloadMode || !!activePresetJson;
+  if (workspace) {
+    workspace.hidden = !showPreview;
+  }
+  if (builderPanel) {
+    builderPanel.hidden = !customWorkloadMode;
+  }
+  if (previewPanel) {
+    previewPanel.hidden = !showPreview;
+  }
+  if (welcomePanel) {
+    welcomePanel.hidden = false;
+  }
+}
+
+function enableCustomWorkloadMode() {
+  customWorkloadMode = true;
+  clearLoadedPresetState();
   updateJsonFromForm();
+  syncLandingUi();
+  if (assistantInput) {
+    assistantInput.focus();
+  }
+}
+
+function renderPresetFamilyOptions() {
+  if (!presetFamilySelect) {
+    return;
+  }
+  const families = Array.from(
+    new Set(
+      presetCatalog
+        .map((preset) =>
+          typeof preset.family === "string" ? preset.family : "",
+        )
+        .filter(Boolean),
+    ),
+  ).sort();
+  presetFamilySelect.innerHTML = "";
+  const defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = "Choose a family...";
+  presetFamilySelect.appendChild(defaultOption);
+  families.forEach((family) => {
+    const option = document.createElement("option");
+    option.value = family;
+    option.textContent = family;
+    presetFamilySelect.appendChild(option);
+  });
+}
+
+function renderPresetFileOptions(family) {
+  if (!presetFileSelect) {
+    return;
+  }
+  const normalizedFamily = typeof family === "string" ? family.trim() : "";
+  const matchingPresets = presetCatalog.filter(
+    (preset) => preset.family === normalizedFamily,
+  );
+  presetFileSelect.innerHTML = "";
+  const defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = "Choose a file...";
+  presetFileSelect.appendChild(defaultOption);
+  matchingPresets.forEach((preset) => {
+    const option = document.createElement("option");
+    option.value = preset.id;
+    option.textContent = preset.label;
+    presetFileSelect.appendChild(option);
+  });
+  presetFileSelect.value = "";
+  presetFileSelect.disabled = matchingPresets.length === 0;
+}
+
+async function loadPresetCatalog() {
+  const response = await fetch(PRESET_INDEX_PATH, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error("Failed to load preset catalog.");
+  }
+  const data = await response.json();
+  presetCatalog = Array.isArray(data)
+    ? data.filter(
+        (preset) =>
+          preset &&
+          typeof preset === "object" &&
+          typeof preset.id === "string" &&
+          typeof preset.family === "string" &&
+          typeof preset.label === "string" &&
+          typeof preset.path === "string",
+      )
+    : [];
+  renderPresetFamilyOptions();
+  renderPresetFileOptions("");
+}
+
+function handlePresetFamilyChange(event) {
+  const family =
+    event && event.target && typeof event.target.value === "string"
+      ? event.target.value
+      : "";
+  customWorkloadMode = false;
+  activePresetJson = null;
+  setPresetSelectionNote("");
+  renderPresetFileOptions(family);
+  updateJsonFromForm();
+  syncLandingUi();
+}
+
+async function handlePresetFileChange(event) {
+  const presetId =
+    event && event.target && typeof event.target.value === "string"
+      ? event.target.value
+      : "";
+  customWorkloadMode = false;
+  if (!presetId) {
+    activePresetJson = null;
+    setPresetSelectionNote("");
+    updateJsonFromForm();
+    syncLandingUi();
+    return;
+  }
+  const preset = presetCatalog.find((entry) => entry.id === presetId);
+  if (!preset) {
+    activePresetJson = null;
+    setPresetSelectionNote("");
+    updateJsonFromForm();
+    syncLandingUi();
+    return;
+  }
+  try {
+    const response = await fetch(preset.path, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error("Failed to load preset JSON.");
+    }
+    const loadedJson = await response.json();
+    resetFormInterface();
+    if (presetFamilySelect) {
+      presetFamilySelect.value = preset.family;
+    }
+    renderPresetFileOptions(preset.family);
+    if (presetFileSelect) {
+      presetFileSelect.value = preset.id;
+      presetFileSelect.disabled = false;
+    }
+    activePresetJson = cloneJsonValue(loadedJson);
+    renderGeneratedJson(activePresetJson);
+    updateInteractiveStats(activePresetJson);
+    void validateGeneratedJson(activePresetJson);
+    setPresetSelectionNote(
+      `${preset.family}/${preset.label} loaded from ${preset.source}. ${preset.description}`,
+    );
+    syncLandingUi();
+  } catch (error) {
+    activePresetJson = null;
+    setPresetSelectionNote("");
+    updateJsonFromForm();
+    setValidationStatus(
+      error && error.message ? error.message : "Failed to load preset JSON.",
+      "invalid",
+    );
+    syncLandingUi();
+  }
 }
 
 function normalizeDescription(text) {
@@ -2612,6 +2738,89 @@ function renderGeneratedJson(json) {
   jsonOutput.style.display = "block";
 }
 
+function shouldAutoValidateJson(json) {
+  if (!json || typeof json !== "object") {
+    return false;
+  }
+  if (Array.isArray(json.sections)) {
+    return json.sections.length > 0;
+  }
+  return Object.keys(json).length > 0;
+}
+
+function stripValidationMetadata(json) {
+  const cloned = cloneJsonValue(json);
+  if (
+    cloned &&
+    typeof cloned === "object" &&
+    !Array.isArray(cloned) &&
+    Object.prototype.hasOwnProperty.call(cloned, "$schema")
+  ) {
+    delete cloned.$schema;
+  }
+  return cloned;
+}
+
+async function getSchemaValidator() {
+  if (!schema) {
+    throw new Error("Schema not loaded.");
+  }
+  if (!schemaValidatorPromise) {
+    schemaValidatorPromise = import("https://esm.sh/ajv@8.17.1/dist/2020?bundle")
+      .then(({ default: Ajv2020 }) => {
+        const ajv = new Ajv2020({
+          allErrors: true,
+          strict: false,
+          validateFormats: false,
+        });
+        return ajv.compile(schema);
+      })
+      .catch((error) => {
+        schemaValidatorPromise = null;
+        throw error;
+      });
+  }
+  return schemaValidatorPromise;
+}
+
+async function validateGeneratedJson(json) {
+  const validationToken = ++latestValidationToken;
+  if (!shouldAutoValidateJson(json)) {
+    validationResult.className = "validation-result";
+    validationResult.textContent = "";
+    return;
+  }
+
+  setValidationStatus("Validating...", "default");
+  try {
+    const validate = await getSchemaValidator();
+    const valid = validate(toSchemaValidationShape(stripValidationMetadata(json), schema));
+    if (validationToken !== latestValidationToken) {
+      return;
+    }
+    if (valid) {
+      setValidationStatus("Valid ✓", "valid");
+      return;
+    }
+    const errors = (validate.errors || [])
+      .map((error) => {
+        const path = error.instancePath || "/";
+        return (path + " " + error.message).trim();
+      })
+      .join(", ");
+    setValidationStatus("Warning: " + errors, "invalid");
+  } catch (error) {
+    if (validationToken !== latestValidationToken) {
+      return;
+    }
+    setValidationStatus(
+      "Warning: validation failed: " +
+        (error && error.message ? error.message : String(error)),
+      "invalid",
+    );
+  }
+}
+
 function safeTextSizeBytes(text) {
   return new Blob([text]).size;
 }
@@ -2631,7 +2840,20 @@ function updateInteractiveStats(json) {
     firstSection && Array.isArray(firstSection.groups)
       ? firstSection.groups.length
       : 0;
-  const selectedOps = getSelectedOperations();
+  const selectedOps = operationOrder.filter((op) =>
+    hasSections
+      ? json.sections.some(
+          (section) =>
+            Array.isArray(section.groups) &&
+            section.groups.some(
+              (group) =>
+                group &&
+                typeof group === "object" &&
+                Object.prototype.hasOwnProperty.call(group, op),
+            ),
+        )
+      : false,
+  );
   const lines = jsonOutput.value ? jsonOutput.value.split("\n").length : 1;
   const bytes = safeTextSizeBytes(jsonOutput.value || "{}");
 
@@ -2649,8 +2871,14 @@ function updateJsonFromForm() {
   const generated = buildJsonFromForm();
   renderGeneratedJson(generated);
   updateInteractiveStats(generated);
-  validationResult.className = "validation-result";
-  validationResult.textContent = "";
+  void validateGeneratedJson(generated);
+}
+
+function getCurrentWorkloadJson() {
+  if (!activePresetJson) {
+    return buildJsonFromForm();
+  }
+  return stripValidationMetadata(activePresetJson);
 }
 
 function clearAssistantThread() {
@@ -4187,7 +4415,7 @@ async function handleRunWorkload() {
     return;
   }
 
-  const specJson = buildJsonFromForm();
+  const specJson = getCurrentWorkloadJson();
   if (
     !specJson ||
     typeof specJson !== "object" ||
@@ -4205,7 +4433,7 @@ async function handleRunWorkload() {
 }
 
 async function requestAssistantPatch(promptText) {
-  const currentJson = buildJsonFromForm();
+  const currentJson = getCurrentWorkloadJson();
   const response = await fetch(ASSIST_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -4244,6 +4472,13 @@ async function requestAssistantPatch(promptText) {
 }
 
 async function handleAssistantApply() {
+  if (activePresetJson) {
+    setAssistantStatus("Preset loaded", "warn");
+    setAssistantComposerHint(
+      "Clear Form before editing the loaded preset with chat.",
+    );
+    return;
+  }
   const promptText = assistantInput ? assistantInput.value.trim() : "";
   if (!promptText) {
     setAssistantStatus("Enter details to apply", "warn");
@@ -4341,6 +4576,7 @@ async function handleAssistantApply() {
 
 function resetFormInterface() {
   workloadForm.reset();
+  clearLoadedPresetState();
   clearFieldLocks();
   operationAdvancedState.clear();
   operationOrder.forEach((op) => setOperationCardVisibility(op, false));
@@ -4356,8 +4592,8 @@ function resetFormInterface() {
   const initial = JSON.parse(INITIAL_JSON_TEXT);
   renderGeneratedJson(initial);
   updateInteractiveStats(initial);
-  validationResult.className = "validation-result";
-  validationResult.textContent = "";
+  void validateGeneratedJson(initial);
+  syncLandingUi();
 }
 
 function downloadGeneratedJson() {
