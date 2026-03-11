@@ -415,7 +415,7 @@ async function handleLocalWorkloadProxy(request, env, requestUrl) {
         runner_url: runnerOrigin,
         hint: [
           "Start it with `node src/local-tectonic-runner.mjs` (or `npm run dev:runner`) in a separate terminal.",
-          "If it runs on another host/port, set LOCAL_TECTONIC_RUNNER_URL and restart `wrangler dev`.",
+          "If it runs on another host/port, set LOCAL_TECTONIC_RUNNER_URL and restart the local dev server.",
         ].join(" "),
         details: sanitizeErrorForClient(error),
       },
