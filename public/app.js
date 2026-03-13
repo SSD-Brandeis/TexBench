@@ -5,6 +5,14 @@ const formGroups = document.getElementById("formGroups");
 const formSkipKeyContainsCheck = document.getElementById(
   "formSkipKeyContainsCheck",
 );
+const addSectionBtn = document.getElementById("addSectionBtn");
+const removeSectionBtn = document.getElementById("removeSectionBtn");
+const addGroupBtn = document.getElementById("addGroupBtn");
+const removeGroupBtn = document.getElementById("removeGroupBtn");
+const structureTree = document.getElementById("structureTree");
+const structureSelectionLabel = document.getElementById(
+  "structureSelectionLabel",
+);
 const formCharacterSetLabel = document.getElementById("formCharacterSetLabel");
 const formSectionsLabel = document.getElementById("formSectionsLabel");
 const formGroupsLabel = document.getElementById("formGroupsLabel");
@@ -306,6 +314,9 @@ let activePresetJson = null;
 let customWorkloadMode = false;
 let schemaValidatorPromise = null;
 let latestValidationToken = 0;
+let workloadStructureState = [];
+let activeSectionIndex = 0;
+let activeGroupIndex = 0;
 
 let schema = null;
 let workloadRunsController = null;
@@ -645,6 +656,58 @@ async function initApp() {
   if (customWorkloadBtn) {
     customWorkloadBtn.addEventListener("click", enableCustomWorkloadMode);
   }
+  if (addSectionBtn) {
+    addSectionBtn.addEventListener("click", () => {
+      persistActiveStructureFromForm();
+      ensureWorkloadStructureState();
+      workloadStructureState.push(createEmptySectionState());
+      activeSectionIndex = workloadStructureState.length - 1;
+      activeGroupIndex = 0;
+      loadActiveStructureIntoForm();
+      updateJsonFromForm();
+    });
+  }
+  if (removeSectionBtn) {
+    removeSectionBtn.addEventListener("click", () => {
+      ensureWorkloadStructureState();
+      if (workloadStructureState.length <= 1) {
+        return;
+      }
+      persistActiveStructureFromForm();
+      workloadStructureState.splice(activeSectionIndex, 1);
+      if (activeSectionIndex >= workloadStructureState.length) {
+        activeSectionIndex = workloadStructureState.length - 1;
+      }
+      activeGroupIndex = 0;
+      loadActiveStructureIntoForm();
+      updateJsonFromForm();
+    });
+  }
+  if (addGroupBtn) {
+    addGroupBtn.addEventListener("click", () => {
+      persistActiveStructureFromForm();
+      const section = getActiveSectionState();
+      section.groups.push(createEmptyGroupSpec());
+      activeGroupIndex = section.groups.length - 1;
+      loadActiveStructureIntoForm();
+      updateJsonFromForm();
+    });
+  }
+  if (removeGroupBtn) {
+    removeGroupBtn.addEventListener("click", () => {
+      const section = getActiveSectionState();
+      if (section.groups.length <= 1) {
+        return;
+      }
+      persistActiveStructureFromForm();
+      section.groups.splice(activeGroupIndex, 1);
+      if (activeGroupIndex >= section.groups.length) {
+        activeGroupIndex = section.groups.length - 1;
+      }
+      loadActiveStructureIntoForm();
+      updateJsonFromForm();
+    });
+  }
   document.addEventListener("keydown", (event) => {
     const isMeta = event.metaKey || event.ctrlKey;
     if (isMeta && event.shiftKey && (event.key === "c" || event.key === "C")) {
@@ -714,6 +777,27 @@ function onFormChange(event) {
     clearLoadedPresetState();
   }
   const eventTarget = event && event.target ? event.target : null;
+  if (eventTarget === formSections) {
+    persistActiveStructureFromForm();
+    activeSectionIndex = Math.max(
+      0,
+      (parsePositiveInt(formSections ? formSections.value : "") || 1) - 1,
+    );
+    activeGroupIndex = 0;
+    loadActiveStructureIntoForm();
+    updateJsonFromForm();
+    return;
+  }
+  if (eventTarget === formGroups) {
+    persistActiveStructureFromForm();
+    activeGroupIndex = Math.max(
+      0,
+      (parsePositiveInt(formGroups ? formGroups.value : "") || 1) - 1,
+    );
+    loadActiveStructureIntoForm();
+    updateJsonFromForm();
+    return;
+  }
   markFieldAsUserLocked(eventTarget);
   clearAdvancedStateForFormEdit(eventTarget);
   if (
@@ -896,11 +980,9 @@ function markFieldAsUserLocked(eventTarget) {
     return;
   }
   if (eventTarget === formSections) {
-    lockTopField("sections_count");
     return;
   }
   if (eventTarget === formGroups) {
-    lockTopField("groups_per_section");
     return;
   }
   if (eventTarget === formSkipKeyContainsCheck) {
@@ -972,6 +1054,57 @@ function cloneJsonValue(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function createEmptyGroupSpec() {
+  return {};
+}
+
+function createEmptySectionState() {
+  return {
+    skip_key_contains_check: false,
+    groups: [createEmptyGroupSpec()],
+  };
+}
+
+function ensureWorkloadStructureState() {
+  if (!Array.isArray(workloadStructureState) || workloadStructureState.length === 0) {
+    workloadStructureState = [createEmptySectionState()];
+  }
+  if (activeSectionIndex < 0) {
+    activeSectionIndex = 0;
+  }
+  if (activeSectionIndex >= workloadStructureState.length) {
+    activeSectionIndex = workloadStructureState.length - 1;
+  }
+  const activeSection = workloadStructureState[activeSectionIndex];
+  if (!activeSection || !Array.isArray(activeSection.groups) || activeSection.groups.length === 0) {
+    workloadStructureState[activeSectionIndex] = createEmptySectionState();
+  }
+  const section = workloadStructureState[activeSectionIndex];
+  if (activeGroupIndex < 0) {
+    activeGroupIndex = 0;
+  }
+  if (activeGroupIndex >= section.groups.length) {
+    activeGroupIndex = section.groups.length - 1;
+  }
+}
+
+function resetWorkloadStructureState() {
+  workloadStructureState = [createEmptySectionState()];
+  activeSectionIndex = 0;
+  activeGroupIndex = 0;
+  renderStructureSelectors();
+}
+
+function getActiveSectionState() {
+  ensureWorkloadStructureState();
+  return workloadStructureState[activeSectionIndex];
+}
+
+function getActiveGroupState() {
+  const section = getActiveSectionState();
+  return section.groups[activeGroupIndex];
+}
+
 function setPresetSelectionNote(message) {
   if (!presetSelectionNote) {
     return;
@@ -992,6 +1125,351 @@ function clearLoadedPresetState() {
     presetFileSelect.disabled = true;
   }
   setPresetSelectionNote("");
+}
+
+function renderStructureSelectors() {
+  ensureWorkloadStructureState();
+
+  if (formSections) {
+    formSections.innerHTML = "";
+    workloadStructureState.forEach((_, index) => {
+      const option = document.createElement("option");
+      option.value = String(index + 1);
+      option.textContent = "Section " + (index + 1);
+      formSections.appendChild(option);
+    });
+    formSections.value = String(activeSectionIndex + 1);
+  }
+
+  const activeSection = getActiveSectionState();
+  if (formGroups) {
+    formGroups.innerHTML = "";
+    activeSection.groups.forEach((_, index) => {
+      const option = document.createElement("option");
+      option.value = String(index + 1);
+      option.textContent = "Group " + (index + 1);
+      formGroups.appendChild(option);
+    });
+    formGroups.value = String(activeGroupIndex + 1);
+  }
+
+  if (removeSectionBtn) {
+    removeSectionBtn.disabled = workloadStructureState.length <= 1;
+  }
+  if (removeGroupBtn) {
+    removeGroupBtn.disabled = activeSection.groups.length <= 1;
+  }
+  renderStructureTree();
+}
+
+function countConfiguredGroupOperations(group) {
+  if (!group || typeof group !== "object") {
+    return 0;
+  }
+  return operationOrder.filter((op) =>
+    Object.prototype.hasOwnProperty.call(group, op),
+  ).length;
+}
+
+function renderStructureTree() {
+  if (!structureTree) {
+    return;
+  }
+  ensureWorkloadStructureState();
+  structureTree.innerHTML = "";
+
+  if (structureSelectionLabel) {
+    structureSelectionLabel.textContent =
+      "Editing Section " +
+      (activeSectionIndex + 1) +
+      " / Group " +
+      (activeGroupIndex + 1);
+  }
+
+  workloadStructureState.forEach((section, sectionIndex) => {
+    const sectionCard = document.createElement("div");
+    sectionCard.className = "structure-section-card";
+
+    const head = document.createElement("div");
+    head.className = "structure-section-head";
+
+    const title = document.createElement("div");
+    title.className = "structure-section-title";
+
+    const sectionBtn = document.createElement("button");
+    sectionBtn.type = "button";
+    sectionBtn.className = "structure-section-btn";
+    if (sectionIndex === activeSectionIndex) {
+      sectionBtn.classList.add("active");
+    }
+    sectionBtn.textContent = "Section " + (sectionIndex + 1);
+    sectionBtn.addEventListener("click", () => {
+      persistActiveStructureFromForm();
+      activeSectionIndex = sectionIndex;
+      if (activeGroupIndex >= section.groups.length) {
+        activeGroupIndex = section.groups.length - 1;
+      }
+      loadActiveStructureIntoForm();
+      updateJsonFromForm();
+    });
+    title.appendChild(sectionBtn);
+
+    const chip = document.createElement("span");
+    chip.className = "structure-chip";
+    chip.textContent = section.skip_key_contains_check
+      ? "skip contains check"
+      : section.groups.length + " group(s)";
+    title.appendChild(chip);
+    head.appendChild(title);
+
+    const actions = document.createElement("div");
+    actions.className = "structure-actions";
+
+    const addGroupButton = document.createElement("button");
+    addGroupButton.type = "button";
+    addGroupButton.className = "structure-mini-btn";
+    addGroupButton.textContent = "Add Group";
+    addGroupButton.addEventListener("click", () => {
+      persistActiveStructureFromForm();
+      section.groups.push(createEmptyGroupSpec());
+      activeSectionIndex = sectionIndex;
+      activeGroupIndex = section.groups.length - 1;
+      loadActiveStructureIntoForm();
+      updateJsonFromForm();
+    });
+    actions.appendChild(addGroupButton);
+
+    const removeSectionButton = document.createElement("button");
+    removeSectionButton.type = "button";
+    removeSectionButton.className = "structure-mini-btn";
+    removeSectionButton.textContent = "Remove Section";
+    removeSectionButton.disabled = workloadStructureState.length <= 1;
+    removeSectionButton.addEventListener("click", () => {
+      if (workloadStructureState.length <= 1) {
+        return;
+      }
+      persistActiveStructureFromForm();
+      workloadStructureState.splice(sectionIndex, 1);
+      if (activeSectionIndex >= workloadStructureState.length) {
+        activeSectionIndex = workloadStructureState.length - 1;
+      }
+      activeGroupIndex = 0;
+      loadActiveStructureIntoForm();
+      updateJsonFromForm();
+    });
+    actions.appendChild(removeSectionButton);
+    head.appendChild(actions);
+    sectionCard.appendChild(head);
+
+    const groupList = document.createElement("div");
+    groupList.className = "structure-group-list";
+
+    section.groups.forEach((group, groupIndex) => {
+      const row = document.createElement("div");
+      row.className = "structure-group-row";
+
+      const groupBtn = document.createElement("button");
+      groupBtn.type = "button";
+      groupBtn.className = "structure-group-btn";
+      if (
+        sectionIndex === activeSectionIndex &&
+        groupIndex === activeGroupIndex
+      ) {
+        groupBtn.classList.add("active");
+      }
+      const opCount = countConfiguredGroupOperations(group);
+      groupBtn.textContent =
+        "Group " +
+        (groupIndex + 1) +
+        (opCount > 0 ? " • " + opCount + " op(s)" : " • empty");
+      groupBtn.addEventListener("click", () => {
+        persistActiveStructureFromForm();
+        activeSectionIndex = sectionIndex;
+        activeGroupIndex = groupIndex;
+        loadActiveStructureIntoForm();
+        updateJsonFromForm();
+      });
+      row.appendChild(groupBtn);
+
+      const removeGroupButton = document.createElement("button");
+      removeGroupButton.type = "button";
+      removeGroupButton.className = "structure-mini-btn";
+      removeGroupButton.textContent = "Remove";
+      removeGroupButton.disabled = section.groups.length <= 1;
+      removeGroupButton.addEventListener("click", () => {
+        if (section.groups.length <= 1) {
+          return;
+        }
+        persistActiveStructureFromForm();
+        section.groups.splice(groupIndex, 1);
+        activeSectionIndex = sectionIndex;
+        if (activeGroupIndex >= section.groups.length) {
+          activeGroupIndex = section.groups.length - 1;
+        }
+        loadActiveStructureIntoForm();
+        updateJsonFromForm();
+      });
+      row.appendChild(removeGroupButton);
+
+      groupList.appendChild(row);
+    });
+
+    sectionCard.appendChild(groupList);
+    structureTree.appendChild(sectionCard);
+  });
+}
+
+function clearOperationFormState() {
+  operationAdvancedState.clear();
+  operationOrder.forEach((op) => {
+    setOperationChecked(op, false);
+    refreshAdvancedExpressionSummary(op);
+  });
+}
+
+function applyOperationSpecToForm(op, spec) {
+  applyDefaultsToOperation(op);
+
+  if (spec && typeof spec === "object") {
+    if (typeof spec.character_set === "string") {
+      setOperationInputValue(op, "character_set", spec.character_set);
+    }
+    if (Object.prototype.hasOwnProperty.call(spec, "op_count")) {
+      const value = spec.op_count;
+      if (Number.isFinite(value)) {
+        clearAdvancedFieldValue(op, "op_count");
+        setOperationInputValue(op, "op_count", value);
+      } else {
+        setAdvancedFieldValue(op, "op_count", value);
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(spec, "k")) {
+      const value = spec.k;
+      if (Number.isFinite(value)) {
+        clearAdvancedFieldValue(op, "k");
+        setOperationInputValue(op, "k", value);
+      } else {
+        setAdvancedFieldValue(op, "k", value);
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(spec, "l")) {
+      const value = spec.l;
+      if (Number.isFinite(value)) {
+        clearAdvancedFieldValue(op, "l");
+        setOperationInputValue(op, "l", value);
+      } else {
+        setAdvancedFieldValue(op, "l", value);
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(spec, "selectivity")) {
+      const value = spec.selectivity;
+      if (Number.isFinite(value)) {
+        clearAdvancedFieldValue(op, "selectivity");
+        setOperationInputValue(op, "selectivity", value);
+      } else {
+        setAdvancedFieldValue(op, "selectivity", value);
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(spec, "key")) {
+      setAdvancedFieldValue(op, "key", spec.key);
+    }
+    if (Object.prototype.hasOwnProperty.call(spec, "val")) {
+      setAdvancedFieldValue(op, "val", spec.val);
+    }
+    if (Object.prototype.hasOwnProperty.call(spec, "selection")) {
+      setAdvancedFieldValue(op, "selection", spec.selection);
+    }
+    if (typeof spec.range_format === "string") {
+      setOperationInputValue(op, "range_format", spec.range_format);
+    }
+  }
+
+  refreshSelectionParamVisibility(op);
+  refreshStringPatternVisibility(op);
+  refreshAdvancedExpressionSummary(op);
+}
+
+function loadActiveStructureIntoForm() {
+  ensureWorkloadStructureState();
+  renderStructureSelectors();
+  clearOperationFormState();
+
+  const activeSection = getActiveSectionState();
+  const activeGroup = getActiveGroupState();
+
+  if (formSkipKeyContainsCheck) {
+    formSkipKeyContainsCheck.checked = !!activeSection.skip_key_contains_check;
+  }
+
+  operationOrder.forEach((op) => {
+    const spec =
+      activeGroup &&
+      typeof activeGroup === "object" &&
+      Object.prototype.hasOwnProperty.call(activeGroup, op)
+        ? activeGroup[op]
+        : null;
+    if (!spec || typeof spec !== "object") {
+      refreshAdvancedExpressionSummary(op);
+      return;
+    }
+    setOperationChecked(op, true);
+    applyOperationSpecToForm(op, spec);
+  });
+}
+
+function buildActiveGroupSpecFromForm(characterSet) {
+  const selectedOps = getSelectedOperations();
+  const group = {};
+  selectedOps.forEach((op) => {
+    group[op] = buildOperationSpec(op, characterSet);
+  });
+  return group;
+}
+
+function persistActiveStructureFromForm() {
+  if (!customWorkloadMode) {
+    return;
+  }
+  ensureWorkloadStructureState();
+  const activeSection = getActiveSectionState();
+  activeSection.skip_key_contains_check = !!(
+    formSkipKeyContainsCheck && formSkipKeyContainsCheck.checked
+  );
+  activeSection.groups[activeGroupIndex] = buildActiveGroupSpecFromForm(
+    formCharacterSet ? formCharacterSet.value.trim() : "",
+  );
+}
+
+function resizeSections(nextCount) {
+  const count = Math.max(1, Math.floor(Number(nextCount) || 1));
+  persistActiveStructureFromForm();
+  ensureWorkloadStructureState();
+  while (workloadStructureState.length < count) {
+    workloadStructureState.push(createEmptySectionState());
+  }
+  workloadStructureState = workloadStructureState.slice(0, count);
+  if (activeSectionIndex >= workloadStructureState.length) {
+    activeSectionIndex = workloadStructureState.length - 1;
+  }
+  activeGroupIndex = 0;
+  loadActiveStructureIntoForm();
+}
+
+function resizeGroupsPerSection(nextCount) {
+  const count = Math.max(1, Math.floor(Number(nextCount) || 1));
+  persistActiveStructureFromForm();
+  ensureWorkloadStructureState();
+  workloadStructureState.forEach((section) => {
+    while (section.groups.length < count) {
+      section.groups.push(createEmptyGroupSpec());
+    }
+    section.groups = section.groups.slice(0, count);
+  });
+  const activeSection = getActiveSectionState();
+  if (activeGroupIndex >= activeSection.groups.length) {
+    activeGroupIndex = activeSection.groups.length - 1;
+  }
+  loadActiveStructureIntoForm();
 }
 
 function syncLandingUi() {
@@ -1035,6 +1513,8 @@ function syncLandingUi() {
 function enableCustomWorkloadMode() {
   customWorkloadMode = true;
   clearLoadedPresetState();
+  ensureWorkloadStructureState();
+  loadActiveStructureIntoForm();
   updateJsonFromForm();
   syncLandingUi();
   if (assistantInput) {
@@ -1559,8 +2039,14 @@ function appendTitleWithHelp(container, text, description) {
 
 function applySchemaDescriptions() {
   const characterSetHelp = getTopLevelDescription("character_set");
-  const sectionsHelp = getTopLevelDescription("sections");
-  const groupsHelp = getSectionDescription("groups");
+  const sectionsHelp = combineDescriptions([
+    "Sections do not share valid keys. Use different sections for independent keyspaces or phases that should not share inserted keys.",
+    getTopLevelDescription("sections"),
+  ]);
+  const groupsHelp = combineDescriptions([
+    "Groups inside a section share valid keys. Use different groups when operations share keys but are not interleaved; put interleaved operations in the same group.",
+    getSectionDescription("groups"),
+  ]);
   const skipKeyContainsHelp = getSectionDescription("skip_key_contains_check");
 
   setInlineLabelWithHelp(
@@ -1568,17 +2054,23 @@ function applySchemaDescriptions() {
     "Character Set",
     characterSetHelp,
   );
-  setInlineLabelWithHelp(formSectionsLabel, "Sections", sectionsHelp);
-  setInlineLabelWithHelp(formGroupsLabel, "Groups / Section", groupsHelp);
+  setInlineLabelWithHelp(formSectionsLabel, "Active Section", sectionsHelp);
+  setInlineLabelWithHelp(formGroupsLabel, "Active Group", groupsHelp);
   setInlineLabelWithHelp(
     skipKeyContainsCheckLabel,
     "Skip Key Contains Check",
-    skipKeyContainsHelp,
+    combineDescriptions([
+      "Applies to the active section only.",
+      skipKeyContainsHelp,
+    ]),
   );
   setInlineLabelWithHelp(
     operationsTitle,
     "Operations",
-    combineDescriptions([groupsHelp, "Select one or more operation blocks."]),
+    combineDescriptions([
+      "Configure the operations that belong to the active group.",
+      groupsHelp,
+    ]),
   );
 
   setDescriptionText(characterSetDescription, characterSetHelp);
@@ -2711,46 +3203,45 @@ function buildOperationSpec(op, characterSet) {
 function buildJsonFromForm() {
   const json = {};
   const characterSet = formCharacterSet.value.trim();
-  const skipKeyContainsCheck = !!(
-    formSkipKeyContainsCheck && formSkipKeyContainsCheck.checked
-  );
   if (characterSet) {
     json.character_set = characterSet;
   }
 
-  const selectedOps = getSelectedOperations();
-  const hasSectionInput =
-    formSections.value.trim() !== "" || formGroups.value.trim() !== "";
-  if (!selectedOps.length && !hasSectionInput) {
-    return json;
+  if (customWorkloadMode) {
+    persistActiveStructureFromForm();
   }
+  ensureWorkloadStructureState();
 
-  const sectionsCount = parsePositiveInt(formSections.value) || 1;
-  const groupsCount = parsePositiveInt(formGroups.value) || 1;
-  const sections = [];
-
-  for (let i = 0; i < sectionsCount; i += 1) {
-    const section = { groups: [] };
+  const sections = workloadStructureState.map((sectionState) => {
+    const section = {
+      groups: Array.isArray(sectionState.groups)
+        ? sectionState.groups.map((group) => cloneJsonValue(group))
+        : [],
+    };
     if (characterSet) {
       section.character_set = characterSet;
     }
-    if (skipKeyContainsCheck) {
+    if (sectionState.skip_key_contains_check === true) {
       section.skip_key_contains_check = true;
     }
+    return section;
+  });
 
-    for (let g = 0; g < groupsCount; g += 1) {
-      const group = {};
-      if (characterSet) {
-        group.character_set = characterSet;
-      }
-
-      selectedOps.forEach((op) => {
-        group[op] = buildOperationSpec(op, characterSet);
-      });
-
-      section.groups.push(group);
-    }
-    sections.push(section);
+  const hasConfiguredGroups = sections.some(
+    (section) =>
+      Array.isArray(section.groups) &&
+      section.groups.some(
+        (group) =>
+          group &&
+          typeof group === "object" &&
+          Object.keys(group).length > 0,
+      ),
+  );
+  const hasSectionFlags = sections.some(
+    (section) => section.skip_key_contains_check === true,
+  );
+  if (!hasConfiguredGroups && !hasSectionFlags && !characterSet) {
+    return json;
   }
 
   json.sections = sections;
@@ -2858,12 +3349,14 @@ function formatCount(value) {
 function updateInteractiveStats(json) {
   const hasSections = json && Array.isArray(json.sections);
   const sectionsCount = hasSections ? json.sections.length : 0;
-  const firstSection =
-    hasSections && sectionsCount > 0 ? json.sections[0] : null;
-  const groupsCount =
-    firstSection && Array.isArray(firstSection.groups)
-      ? firstSection.groups.length
-      : 0;
+  const groupsCount = hasSections
+    ? json.sections.reduce((total, section) => {
+        const count = Array.isArray(section && section.groups)
+          ? section.groups.length
+          : 0;
+        return total + count;
+      }, 0)
+    : 0;
   const selectedOps = operationOrder.filter((op) =>
     hasSections
       ? json.sections.some(
@@ -3205,10 +3698,13 @@ function getClarificationCurrentValue(clarification) {
       return formCharacterSet ? formCharacterSet.value : "";
     }
     if (binding.field === "sections_count") {
-      return formSections ? formSections.value : "";
+      return Array.isArray(workloadStructureState)
+        ? workloadStructureState.length
+        : 0;
     }
     if (binding.field === "groups_per_section") {
-      return formGroups ? formGroups.value : "";
+      const section = getActiveSectionState();
+      return Array.isArray(section.groups) ? section.groups.length : 0;
     }
     if (binding.field === "skip_key_contains_check") {
       return !!(formSkipKeyContainsCheck && formSkipKeyContainsCheck.checked);
@@ -3377,13 +3873,13 @@ function applyClarificationAnswerToForm(clarification, value) {
     } else if (binding.field === "sections_count" && formSections) {
       const numeric = Math.floor(Number(value));
       if (Number.isFinite(numeric) && numeric > 0) {
-        formSections.value = String(numeric);
+        resizeSections(numeric);
         lockTopField("sections_count");
       }
     } else if (binding.field === "groups_per_section" && formGroups) {
       const numeric = Math.floor(Number(value));
       if (Number.isFinite(numeric) && numeric > 0) {
-        formGroups.value = String(numeric);
+        resizeGroupsPerSection(numeric);
         lockTopField("groups_per_section");
       }
     } else if (
@@ -4064,10 +4560,12 @@ function getCurrentFormState() {
       formCharacterSet && formCharacterSet.value
         ? formCharacterSet.value
         : null,
-    sections_count:
-      parsePositiveInt(formSections ? formSections.value : "") || null,
-    groups_per_section:
-      parsePositiveInt(formGroups ? formGroups.value : "") || null,
+    sections_count: Array.isArray(workloadStructureState)
+      ? workloadStructureState.length
+      : null,
+    groups_per_section: Array.isArray(getActiveSectionState().groups)
+      ? getActiveSectionState().groups.length
+      : null,
     skip_key_contains_check: !!(
       formSkipKeyContainsCheck && formSkipKeyContainsCheck.checked
     ),
@@ -4136,7 +4634,7 @@ function applyAssistantPatch(patch) {
     formSections &&
     !isTopFieldLocked("sections_count")
   ) {
-    formSections.value = String(Math.floor(patch.sections_count));
+    resizeSections(patch.sections_count);
   }
 
   if (
@@ -4145,7 +4643,7 @@ function applyAssistantPatch(patch) {
     formGroups &&
     !isTopFieldLocked("groups_per_section")
   ) {
-    formGroups.value = String(Math.floor(patch.groups_per_section));
+    resizeGroupsPerSection(patch.groups_per_section);
   }
 
   if (
@@ -4602,12 +5100,11 @@ function resetFormInterface() {
   workloadForm.reset();
   customWorkloadMode = false;
   clearLoadedPresetState();
+  resetWorkloadStructureState();
   clearFieldLocks();
   operationAdvancedState.clear();
   operationOrder.forEach((op) => setOperationCardVisibility(op, false));
   operationOrder.forEach((op) => refreshAdvancedExpressionSummary(op));
-  formSections.value = "";
-  formGroups.value = "";
   if (formSkipKeyContainsCheck) {
     formSkipKeyContainsCheck.checked = false;
   }

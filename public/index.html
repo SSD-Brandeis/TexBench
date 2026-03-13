@@ -729,6 +729,147 @@
         color: #0f4f4a;
       }
 
+      .structure-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .structure-actions .btn {
+        min-height: 38px;
+      }
+
+      .structure-panel {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: #ffffff;
+        padding: 14px;
+        margin-bottom: 14px;
+      }
+
+      .structure-panel-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .structure-panel-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #123b37;
+        margin: 0;
+      }
+
+      .structure-help {
+        margin: 6px 0 0;
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--text-dim);
+      }
+
+      .structure-selection {
+        margin: 12px 0 0;
+        font-size: 12px;
+        font-weight: 600;
+        color: #0f4f4a;
+      }
+
+      .structure-tree {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .structure-section-card {
+        border: 1px solid #dbe8e5;
+        border-radius: 12px;
+        background: #fbfdfd;
+        padding: 12px;
+      }
+
+      .structure-section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .structure-section-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .structure-section-btn,
+      .structure-group-btn,
+      .structure-mini-btn {
+        border: 1px solid #d3e4e0;
+        background: #ffffff;
+        color: #173a37;
+        border-radius: 10px;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .structure-section-btn {
+        padding: 8px 12px;
+        font-weight: 700;
+      }
+
+      .structure-group-btn {
+        padding: 8px 10px;
+        text-align: left;
+        flex: 1;
+      }
+
+      .structure-mini-btn {
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+
+      .structure-section-btn.active,
+      .structure-group-btn.active {
+        border-color: var(--accent);
+        background: #edf9f6;
+        color: #0f4f4a;
+      }
+
+      .structure-mini-btn:hover,
+      .structure-section-btn:hover,
+      .structure-group-btn:hover {
+        border-color: var(--accent);
+      }
+
+      .structure-chip {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        background: #eef8fb;
+        border: 1px solid #d3e7f7;
+        color: #245272;
+        padding: 3px 8px;
+        font-size: 11px;
+      }
+
+      .structure-group-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .structure-group-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
       @media (max-width: 860px) {
         .welcome-panel {
           padding: 20px;
@@ -1306,16 +1447,39 @@
                 </div>
               </div>
               <p class="builder-hint">
-                Configure fields manually below. The JSON preview updates live
-                as you edit, and manual edits clear any loaded preset.
+                Sections do not share valid keys. Groups inside a section share
+                valid keys, and operations in the same group are interleaved.
+                Use the controls below to edit the active section and group.
               </p>
+              <div class="structure-panel">
+                <div class="structure-panel-head">
+                  <div>
+                    <p class="structure-panel-title">Workload Structure</p>
+                    <p class="structure-help">
+                      Same group = interleaved operations. Different groups in
+                      the same section share valid keys but run separately.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-ghost"
+                    id="addSectionBtn"
+                  >
+                    Add Section
+                  </button>
+                </div>
+                <p class="structure-selection" id="structureSelectionLabel">
+                  Editing Section 1 / Group 1
+                </p>
+                <div class="structure-tree" id="structureTree"></div>
+              </div>
               <div class="hud">
                 <div class="hud-card">
                   <span class="hud-label">Sections</span>
                   <span class="hud-value" id="hudSections">0</span>
                 </div>
                 <div class="hud-card">
-                  <span class="hud-label">Groups/Section</span>
+                  <span class="hud-label">Groups</span>
                   <span class="hud-value" id="hudGroups">0</span>
                 </div>
                 <div class="hud-card">
@@ -1342,29 +1506,17 @@
                       id="characterSetDescription"
                     ></small>
                   </label>
-                  <label class="field">
-                    <span id="formSectionsLabel">Sections</span>
-                    <input
-                      type="number"
-                      id="formSections"
-                      min="1"
-                      step="1"
-                      placeholder="1"
-                    />
+                  <label class="field hidden" aria-hidden="true">
+                    <span id="formSectionsLabel">Active Section</span>
+                    <select id="formSections"></select>
                     <small
                       class="field-description"
                       id="sectionsDescription"
                     ></small>
                   </label>
-                  <label class="field">
-                    <span id="formGroupsLabel">Groups / Section</span>
-                    <input
-                      type="number"
-                      id="formGroups"
-                      min="1"
-                      step="1"
-                      placeholder="1"
-                    />
+                  <label class="field hidden" aria-hidden="true">
+                    <span id="formGroupsLabel">Active Group</span>
+                    <select id="formGroups"></select>
                     <small
                       class="field-description"
                       id="groupsDescription"
