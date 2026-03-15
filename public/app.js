@@ -6,9 +6,6 @@ const formSkipKeyContainsCheck = document.getElementById(
   "formSkipKeyContainsCheck",
 );
 const addSectionBtn = document.getElementById("addSectionBtn");
-const removeSectionBtn = document.getElementById("removeSectionBtn");
-const addGroupBtn = document.getElementById("addGroupBtn");
-const removeGroupBtn = document.getElementById("removeGroupBtn");
 const structureTree = document.getElementById("structureTree");
 const structureSelectionLabel = document.getElementById(
   "structureSelectionLabel",
@@ -28,6 +25,7 @@ const operationConfigContainer = document.getElementById(
   "operationConfigContainer",
 );
 const jsonOutput = document.getElementById("jsonOutput");
+const jsonTree = document.getElementById("jsonTree");
 const hudSections = document.getElementById("hudSections");
 const hudGroups = document.getElementById("hudGroups");
 const hudOps = document.getElementById("hudOps");
@@ -59,15 +57,12 @@ const appShell = document.getElementById("appShell");
 const appHeader = document.getElementById("appHeader");
 const welcomePanel = document.getElementById("welcomePanel");
 const customWorkloadBtn = document.getElementById("customWorkloadBtn");
-const workspace = document.querySelector(".workspace");
 const builderPanel = document.getElementById("builderPanel");
 const previewPanel = document.getElementById("previewPanel");
 let pendingJsonFocusTarget = null;
 const runsPanel = document.getElementById("runsPanel");
 const structuredUiNormalizer =
   globalThis.TectonicUiStructuredNormalization || null;
-
-relocateRunsPanel();
 
 const INITIAL_JSON_TEXT = "{}";
 const PRESET_INDEX_PATH = "/presets/index.json";
@@ -96,18 +91,6 @@ const PROMPT_OPERATION_BLOCKED_PREFIXES = {
   ],
 };
 
-function relocateRunsPanel() {
-  if (!previewPanel || !runsPanel) {
-    return;
-  }
-  if (
-    runsPanel.parentElement === previewPanel.parentElement &&
-    runsPanel.previousElementSibling === previewPanel
-  ) {
-    return;
-  }
-  previewPanel.insertAdjacentElement("afterend", runsPanel);
-}
 // Fallback ordering used only if schema-derived operation metadata is unavailable.
 const DEFAULT_OPERATION_ORDER = [
   "inserts",
@@ -685,47 +668,6 @@ async function initApp() {
       updateJsonFromForm();
     });
   }
-  if (removeSectionBtn) {
-    removeSectionBtn.addEventListener("click", () => {
-      ensureWorkloadStructureState();
-      if (workloadStructureState.length <= 1) {
-        return;
-      }
-      persistActiveStructureFromForm();
-      workloadStructureState.splice(activeSectionIndex, 1);
-      if (activeSectionIndex >= workloadStructureState.length) {
-        activeSectionIndex = workloadStructureState.length - 1;
-      }
-      activeGroupIndex = 0;
-      loadActiveStructureIntoForm();
-      updateJsonFromForm();
-    });
-  }
-  if (addGroupBtn) {
-    addGroupBtn.addEventListener("click", () => {
-      persistActiveStructureFromForm();
-      const section = getActiveSectionState();
-      section.groups.push(createEmptyGroupSpec());
-      activeGroupIndex = section.groups.length - 1;
-      loadActiveStructureIntoForm();
-      updateJsonFromForm();
-    });
-  }
-  if (removeGroupBtn) {
-    removeGroupBtn.addEventListener("click", () => {
-      const section = getActiveSectionState();
-      if (section.groups.length <= 1) {
-        return;
-      }
-      persistActiveStructureFromForm();
-      section.groups.splice(activeGroupIndex, 1);
-      if (activeGroupIndex >= section.groups.length) {
-        activeGroupIndex = section.groups.length - 1;
-      }
-      loadActiveStructureIntoForm();
-      updateJsonFromForm();
-    });
-  }
   document.addEventListener("keydown", (event) => {
     const isMeta = event.metaKey || event.ctrlKey;
     if (isMeta && event.shiftKey && (event.key === "c" || event.key === "C")) {
@@ -1215,13 +1157,6 @@ function renderStructureSelectors() {
       formGroups.appendChild(option);
     });
     formGroups.value = String(activeGroupIndex + 1);
-  }
-
-  if (removeSectionBtn) {
-    removeSectionBtn.disabled = workloadStructureState.length <= 1;
-  }
-  if (removeGroupBtn) {
-    removeGroupBtn.disabled = activeSection.groups.length <= 1;
   }
   renderStructureTree();
 }
@@ -4069,10 +4004,179 @@ function buildJsonFromForm() {
 
 function renderGeneratedJson(json) {
   jsonOutput.value = JSON.stringify(json, null, 2);
-  jsonOutput.style.display = "block";
+  renderJsonTree(json);
+}
+
+function renderJsonTree(json) {
+  if (!jsonTree) {
+    return;
+  }
+  jsonTree.innerHTML = "";
+  jsonTree.appendChild(
+    createJsonTreeNode(null, json, {
+      isRoot: true,
+      sectionIndex: null,
+      groupIndex: null,
+      parentKey: null,
+    }),
+  );
+}
+
+function createJsonTreeNode(key, value, context) {
+  if (Array.isArray(value)) {
+    return createJsonTreeCollectionNode(key, value, context, "[", "]");
+  }
+  if (value && typeof value === "object") {
+    return createJsonTreeCollectionNode(key, value, context, "{", "}");
+  }
+  return createJsonTreePrimitiveNode(key, value);
+}
+
+function createJsonTreeCollectionNode(key, value, context, openChar, closeChar) {
+  const isArray = Array.isArray(value);
+  const details = document.createElement("details");
+  details.open = true;
+
+  if (Number.isInteger(context.sectionIndex)) {
+    details.dataset.sectionIndex = String(context.sectionIndex);
+  }
+  if (Number.isInteger(context.groupIndex)) {
+    details.dataset.groupIndex = String(context.groupIndex);
+    details.dataset.jsonNode = "group";
+  } else if (
+    Number.isInteger(context.sectionIndex) &&
+    context.parentKey === "sections"
+  ) {
+    details.dataset.jsonNode = "section";
+  }
+
+  const summary = document.createElement("summary");
+  const summaryRow = document.createElement("div");
+  summaryRow.className = "json-tree-summary";
+  summaryRow.title = isArray
+    ? value.length + " item" + (value.length === 1 ? "" : "s")
+    : Object.keys(value).length +
+      " key" +
+      (Object.keys(value).length === 1 ? "" : "s");
+
+  const marker = document.createElement("span");
+  marker.className = "json-tree-marker";
+  marker.textContent = "▸";
+  summaryRow.appendChild(marker);
+
+  const line = document.createElement("span");
+  line.className = "json-tree-line";
+  appendJsonEntryPrefix(line, key);
+  const opener = document.createElement("span");
+  opener.textContent = openChar;
+  line.appendChild(opener);
+  const collapsedPreview = document.createElement("span");
+  collapsedPreview.className = "json-tree-collapsed-preview";
+  collapsedPreview.textContent = closeChar;
+  line.appendChild(collapsedPreview);
+  summaryRow.appendChild(line);
+  summary.appendChild(summaryRow);
+  details.appendChild(summary);
+
+  const children = document.createElement("div");
+  children.className = "json-tree-children";
+
+  if (isArray) {
+    value.forEach((item, index) => {
+      children.appendChild(
+        createJsonTreeNode(null, item, {
+          isRoot: false,
+          sectionIndex:
+            context.parentKey === "sections" ? index : context.sectionIndex,
+          groupIndex:
+            context.parentKey === "groups" ? index : context.groupIndex,
+          parentKey: context.parentKey,
+        }),
+      );
+    });
+  } else {
+    Object.entries(value).forEach(([childKey, childValue]) => {
+      children.appendChild(
+        createJsonTreeNode(childKey, childValue, {
+          isRoot: false,
+          sectionIndex: context.sectionIndex,
+          groupIndex: context.groupIndex,
+          parentKey: childKey,
+        }),
+      );
+    });
+  }
+
+  const closing = document.createElement("div");
+  closing.className = "json-tree-line json-tree-closing";
+  closing.textContent = closeChar;
+  children.appendChild(closing);
+  details.appendChild(children);
+  return details;
+}
+
+function createJsonTreePrimitiveNode(key, value) {
+  const line = document.createElement("div");
+  line.className = "json-tree-line";
+  appendJsonEntryPrefix(line, key);
+  line.appendChild(formatJsonPrimitiveNode(value));
+  return line;
+}
+
+function appendJsonEntryPrefix(container, key) {
+  if (key === null || key === undefined || key === "") {
+    return;
+  }
+  const keyNode = document.createElement("span");
+  keyNode.className = "json-tree-key";
+  keyNode.textContent = '"' + key + '"';
+  container.appendChild(keyNode);
+  container.appendChild(document.createTextNode(": "));
+}
+
+function formatJsonPrimitiveNode(value) {
+  const node = document.createElement("span");
+  if (typeof value === "string") {
+    node.className = "json-tree-string";
+    node.textContent = '"' + value + '"';
+    return node;
+  }
+  if (typeof value === "number") {
+    node.className = "json-tree-number";
+    node.textContent = String(value);
+    return node;
+  }
+  if (typeof value === "boolean") {
+    node.className = "json-tree-boolean";
+    node.textContent = String(value);
+    return node;
+  }
+  node.className = "json-tree-null";
+  node.textContent = value === null ? "null" : String(value);
+  return node;
 }
 
 function scrollJsonOutputToGroupFocus(target) {
+  if (
+    jsonTree &&
+    target &&
+    Number.isInteger(target.sectionIndex) &&
+    Number.isInteger(target.groupIndex)
+  ) {
+    const groupNode = jsonTree.querySelector(
+      '[data-json-node="group"][data-section-index="' +
+        target.sectionIndex +
+        '"][data-group-index="' +
+        target.groupIndex +
+        '"]',
+    );
+    if (groupNode) {
+      expandJsonTreeAncestors(groupNode);
+      highlightJsonTreeNode(groupNode);
+      groupNode.scrollIntoView({ block: "center", inline: "nearest" });
+      return;
+    }
+  }
   if (
     !jsonOutput ||
     !target ||
@@ -4095,6 +4199,28 @@ function scrollJsonOutputToGroupFocus(target) {
     Number.parseFloat(style.fontSize || "13") * 1.6 ||
     20;
   jsonOutput.scrollTop = Math.max(0, lineIndex * lineHeight - lineHeight * 2);
+}
+
+function expandJsonTreeAncestors(node) {
+  let current = node;
+  while (current) {
+    if (current.tagName === "DETAILS") {
+      current.open = true;
+    }
+    current = current.parentElement;
+  }
+}
+
+function highlightJsonTreeNode(node) {
+  if (!jsonTree || !node) {
+    return;
+  }
+  jsonTree
+    .querySelectorAll(".json-tree-focus")
+    .forEach((item) => item.classList.remove("json-tree-focus"));
+  const summary = node.querySelector(":scope > summary > .json-tree-summary");
+  const highlightTarget = summary || node;
+  highlightTarget.classList.add("json-tree-focus");
 }
 
 function findJsonGroupLineIndex(jsonText, targetSectionIndex, targetGroupIndex) {

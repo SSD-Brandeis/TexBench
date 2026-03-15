@@ -1152,6 +1152,108 @@
         min-width: 0;
       }
 
+      .json-tree {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 13px;
+        line-height: 1.65;
+        color: #163146;
+        padding-right: 4px;
+      }
+
+      .json-tree details {
+        display: block;
+      }
+
+      .json-tree summary {
+        list-style: none;
+        cursor: pointer;
+      }
+
+      .json-tree summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .json-tree details[open] > summary .json-tree-collapsed-preview {
+        display: none;
+      }
+
+      .json-tree-summary {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        border-radius: 8px;
+        padding: 2px 6px 2px 0;
+      }
+
+      .json-tree-summary:hover {
+        background: rgba(15, 118, 110, 0.06);
+      }
+
+      .json-tree-marker {
+        flex: 0 0 auto;
+        width: 14px;
+        text-align: center;
+        color: #0f766e;
+        font-size: 11px;
+        line-height: 1.8;
+        margin-top: 1px;
+      }
+
+      .json-tree details[open] > summary .json-tree-marker {
+        transform: rotate(90deg);
+      }
+
+      .json-tree-line {
+        display: block;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .json-tree-collapsed-preview {
+        color: #8ea1b1;
+        letter-spacing: 0.02em;
+      }
+
+      .json-tree-children {
+        margin-left: 15px;
+        padding-left: 12px;
+        border-left: 1px solid #dbe8f3;
+      }
+
+      .json-tree-closing {
+        color: #5c6f82;
+        padding-left: 23px;
+      }
+
+      .json-tree-key {
+        color: #174b6e;
+      }
+
+      .json-tree-string {
+        color: #0c7a63;
+      }
+
+      .json-tree-number {
+        color: #8b4c19;
+      }
+
+      .json-tree-boolean {
+        color: #7a2ed6;
+      }
+
+      .json-tree-null {
+        color: #7a8b9a;
+        font-style: italic;
+      }
+
+      .json-tree-focus {
+        background: rgba(15, 118, 110, 0.12);
+        box-shadow: 0 0 0 1px rgba(15, 118, 110, 0.12);
+      }
+
       .runs-panel {
         padding: 16px 18px 18px;
         display: flex;
@@ -1350,8 +1452,8 @@
           min-height: calc(100vh - 120px);
         }
         .workspace:has(#previewPanel:not([hidden])) {
-          grid-template-columns: minmax(0, 1.14fr) minmax(420px, 0.96fr);
-          grid-template-rows: minmax(0, 1fr) auto;
+          grid-template-columns: minmax(0, 1.12fr) minmax(420px, 0.94fr);
+          grid-template-rows: minmax(620px, calc(100vh - 250px)) auto;
           gap: 20px;
         }
         .workspace:has(#previewPanel[hidden]) {
@@ -1360,8 +1462,9 @@
         .workspace:has(#previewPanel:not([hidden])) #welcomePanel,
         .workspace:has(#previewPanel:not([hidden])) #builderPanel {
           grid-column: 1;
-          grid-row: 1 / span 2;
-          min-height: calc(100vh - 120px);
+          grid-row: 1;
+          height: 100%;
+          min-height: 0;
         }
         .workspace:has(#previewPanel[hidden]) #welcomePanel {
           min-height: calc(100vh - 120px);
@@ -1371,14 +1474,13 @@
           grid-row: 1;
           position: sticky;
           top: 18px;
-          height: calc(100vh - 300px);
-          min-height: 460px;
-          max-height: 780px;
+          height: 100%;
+          min-height: 0;
         }
         .workspace:has(#runsPanel:not([hidden])) #runsPanel {
-          grid-column: 2;
+          grid-column: 1 / -1;
           grid-row: 2;
-          align-self: start;
+          align-self: stretch;
         }
       }
 
@@ -1673,31 +1775,34 @@
                   JSON validates automatically. Shortcut: Ctrl/Cmd + Shift + C
                   to copy.
                 </p>
+                <div id="jsonTree" class="json-tree" aria-live="polite"></div>
                 <textarea
                   id="jsonOutput"
                   readonly
+                  hidden
+                  aria-hidden="true"
                   placeholder="Generated JSON will appear here..."
                 >
 {}</textarea
                 >
               </div>
-              <div class="panel runs-panel" id="runsPanel" hidden>
-                <p class="runs-panel-title">Workload Runs (Session)</p>
-                <p class="runs-known-location">
-                  Known output file:
-                  <code>generated-workloads/latest-workload.tar.gz</code>
-                </p>
-                <p class="runs-known-location">
-                  Start app with <code>npm run dev</code>. Workload generation
-                  runs in this same process.
-                </p>
-                <div class="runs-list" id="runsList">
-                  <p class="runs-empty">
-                    No runs yet. Click "Run Workload" to generate a workload
-                    artifact.
-                  </p>
-                </div>
-              </div>
+            </div>
+          </div>
+          <div class="panel runs-panel" id="runsPanel" hidden>
+            <p class="runs-panel-title">Workload Runs (Session)</p>
+            <p class="runs-known-location">
+              Known output file:
+              <code>generated-workloads/latest-workload.tar.gz</code>
+            </p>
+            <p class="runs-known-location">
+              Start app with <code>npm run dev</code>. Workload generation runs
+              in this same process.
+            </p>
+            <div class="runs-list" id="runsList">
+              <p class="runs-empty">
+                No runs yet. Click "Run Workload" to generate a workload
+                artifact.
+              </p>
             </div>
           </div>
         </div>
