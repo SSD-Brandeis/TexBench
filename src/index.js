@@ -617,7 +617,6 @@ export const __test = {
   normalizeFormState,
   normalizeAssistPayload,
   buildEffectiveState,
-  buildDeterministicStructuredAssistFallback,
 };
 
 async function handleAssistRequest(request, env) {
@@ -676,16 +675,6 @@ async function handleAssistRequest(request, env) {
       aiConfig,
     );
   } catch (error) {
-    const fallback = buildDeterministicStructuredAssistFallback(
-      prompt,
-      schemaHints,
-      formState,
-      "ai_request_failed",
-    );
-    if (fallback) {
-      fallback.source = "deterministic_fallback";
-      return jsonResponse(fallback, 200);
-    }
     console.error("Assist AI call failed:", error);
     logAssistFailureAiOutput("assist-error.exception", error, null);
     return jsonResponse(
@@ -699,46 +688,6 @@ async function handleAssistRequest(request, env) {
   }
 
   if (!outcome || !outcome.payload || typeof outcome.payload !== "object") {
-    const fallback = buildDeterministicStructuredAssistFallback(
-      prompt,
-      schemaHints,
-      formState,
-      "ai_invalid_output",
-    );
-    if (fallback) {
-      fallback.source = "deterministic_fallback";
-      const aiTiming = buildAiTimingFromOutcome(outcome);
-      if (aiTiming) {
-        fallback.ai_timing = aiTiming;
-      }
-      const aiOutput = normalizeAiOutput(
-        outcome && outcome.last_ai_output ? outcome.last_ai_output : null,
-      );
-      if (aiOutput) {
-        fallback.ai_output = aiOutput;
-      }
-      return jsonResponse(fallback, 200);
-    }
-    const clarificationFallback = buildDeterministicClarificationAssistFallback(
-      prompt,
-      schemaHints,
-      formState,
-      "ai_request_failed",
-    );
-    if (clarificationFallback) {
-      clarificationFallback.source = "deterministic_fallback";
-      const aiTiming = buildAiTimingFromOutcome(outcome);
-      if (aiTiming) {
-        clarificationFallback.ai_timing = aiTiming;
-      }
-      const aiOutput = normalizeAiOutput(
-        outcome && outcome.last_ai_output ? outcome.last_ai_output : null,
-      );
-      if (aiOutput) {
-        clarificationFallback.ai_output = aiOutput;
-      }
-      return jsonResponse(clarificationFallback, 200);
-    }
     logAssistFailureAiOutput("assist-error.ai_invalid_output", null, outcome);
     return jsonResponse(
       {
@@ -769,101 +718,6 @@ async function handleAssistRequest(request, env) {
     normalized.ai_timing = aiTiming;
   }
   return jsonResponse(normalized, 200);
-}
-
-function buildDeterministicStructuredAssistFallback(
-  prompt,
-  schemaHints,
-  formState,
-  reason,
-) {
-  if (!STRUCTURED_WORKLOAD_PATTERN.test(String(prompt || ""))) {
-    return null;
-  }
-  const normalized = normalizeAssistPayload(
-    {
-      summary: "Generated the workload structure directly from the prompt.",
-      patch: {
-        clear_operations: false,
-        operations: {},
-      },
-      clarifications: [],
-      assumptions: [],
-    },
-    schemaHints,
-    formState,
-    prompt,
-  );
-  if (
-    !normalized ||
-    !normalized.patch ||
-    !Array.isArray(normalized.patch.sections) ||
-    normalized.patch.sections.length === 0
-  ) {
-    return null;
-  }
-  normalized.assumptions = [
-    ...normalized.assumptions,
-    {
-      id: "assume.deterministic_structured_fallback",
-      text:
-        reason === "ai_request_failed"
-          ? "Generated the phased workload directly from the prompt because the AI request failed."
-          : "Generated the phased workload directly from the prompt because the AI response was incomplete.",
-    },
-  ];
-  normalized.assumption_texts = normalized.assumptions.map(
-    (entry) => entry.text,
-  );
-  normalized.questions = normalized.clarifications.map((entry) => entry.text);
-  return normalized;
-}
-
-function buildDeterministicClarificationAssistFallback(
-  prompt,
-  schemaHints,
-  formState,
-  reason,
-) {
-  const normalized = normalizeAssistPayload(
-    {
-      summary: "Asked for clarification.",
-      patch: {
-        clear_operations: false,
-        operations: {},
-      },
-      clarifications: [],
-      assumptions: [],
-    },
-    schemaHints,
-    formState,
-    prompt,
-    {
-      allowDeterministicStructureFallback: false,
-    },
-  );
-  if (
-    !normalized ||
-    !Array.isArray(normalized.clarifications) ||
-    normalized.clarifications.length === 0
-  ) {
-    return null;
-  }
-  normalized.assumptions = [
-    ...normalized.assumptions,
-    {
-      id: "assume.deterministic_clarification_fallback",
-      text:
-        reason === "ai_request_failed"
-          ? "Asked for clarification directly because the AI request failed."
-          : "Asked for clarification directly because the AI response was incomplete.",
-    },
-  ];
-  normalized.assumption_texts = normalized.assumptions.map(
-    (entry) => entry.text,
-  );
-  normalized.questions = normalized.clarifications.map((entry) => entry.text);
-  return normalized;
 }
 
 async function handleLocalWorkloadProxy(request, env, requestUrl) {
