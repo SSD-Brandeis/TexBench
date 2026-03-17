@@ -74,13 +74,41 @@
 
     let presetCatalog = [];
 
-    function setPresetSelectionNote(message) {
+    function clearPresetSelectionNote() {
       if (!refs.presetSelectionNote) {
         return;
       }
-      const text = typeof message === "string" ? message.trim() : "";
-      refs.presetSelectionNote.textContent = text;
-      refs.presetSelectionNote.hidden = text === "";
+      refs.presetSelectionNote.replaceChildren();
+      refs.presetSelectionNote.hidden = true;
+    }
+
+    function renderPresetSelectionNote(family, activePresetId) {
+      if (!refs.presetSelectionNote) {
+        return;
+      }
+      refs.presetSelectionNote.replaceChildren();
+      if (typeof activePresetId !== "string" || activePresetId.trim() === "") {
+        refs.presetSelectionNote.hidden = true;
+        return;
+      }
+
+      const preset = presetCatalog.find(function findPreset(entry) {
+        return entry && entry.id === activePresetId;
+      });
+      if (!preset) {
+        refs.presetSelectionNote.hidden = true;
+        return;
+      }
+
+      const description = document.createElement("div");
+      description.className = "preset-note-description";
+      description.textContent =
+        typeof preset.description === "string" && preset.description.trim()
+          ? preset.description.trim()
+          : "No description available.";
+      refs.presetSelectionNote.appendChild(description);
+
+      refs.presetSelectionNote.hidden = false;
     }
 
     function clearLoadedPresetState() {
@@ -94,7 +122,7 @@
         refs.presetFileSelect.value = "";
         refs.presetFileSelect.disabled = true;
       }
-      setPresetSelectionNote("");
+      clearPresetSelectionNote();
     }
 
     function syncLandingUi() {
@@ -228,8 +256,9 @@
           : "";
       setCustomWorkloadMode(false);
       setActivePresetJson(null);
-      setPresetSelectionNote("");
+      clearPresetSelectionNote();
       renderPresetFileOptions(family);
+      clearPresetSelectionNote();
       updateJsonFromForm();
       syncLandingUi();
     }
@@ -242,7 +271,10 @@
       setCustomWorkloadMode(false);
       if (!presetId) {
         setActivePresetJson(null);
-        setPresetSelectionNote("");
+        renderPresetSelectionNote(
+          refs.presetFamilySelect ? refs.presetFamilySelect.value : "",
+          "",
+        );
         updateJsonFromForm();
         syncLandingUi();
         return;
@@ -253,7 +285,7 @@
       });
       if (!preset) {
         setActivePresetJson(null);
-        setPresetSelectionNote("");
+        clearPresetSelectionNote();
         updateJsonFromForm();
         syncLandingUi();
         return;
@@ -278,19 +310,11 @@
         renderGeneratedJson(loadedJson);
         updateInteractiveStats(loadedJson);
         void validateGeneratedJson(loadedJson);
-        setPresetSelectionNote(
-          preset.family +
-            "/" +
-            preset.label +
-            " loaded from " +
-            preset.source +
-            ". " +
-            preset.description,
-        );
+        renderPresetSelectionNote(preset.family, preset.id);
         syncLandingUi();
       } catch (error) {
         setActivePresetJson(null);
-        setPresetSelectionNote("");
+        clearPresetSelectionNote();
         updateJsonFromForm();
         setValidationStatus(
           error && error.message ? error.message : "Failed to load preset JSON.",
@@ -328,7 +352,8 @@
       handlePresetFamilyChange: handlePresetFamilyChange,
       handlePresetFileChange: handlePresetFileChange,
       loadPresetCatalog: loadPresetCatalog,
-      setPresetSelectionNote: setPresetSelectionNote,
+      clearPresetSelectionNote: clearPresetSelectionNote,
+      renderPresetSelectionNote: renderPresetSelectionNote,
       syncLandingUi: syncLandingUi,
     };
   }

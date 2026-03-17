@@ -94,6 +94,197 @@
     return text ? text.replace(/_/g, " ") : "running";
   }
 
+  function normalizeMetricsList(value) {
+    return Array.isArray(value)
+      ? value.filter((entry) => {
+          return (
+            entry &&
+            typeof entry === "object" &&
+            typeof entry.label === "string" &&
+            typeof entry.value === "string"
+          );
+        })
+      : [];
+  }
+
+  function formatMetricLabel(label) {
+    const normalized = String(label || "").trim();
+    const replacements = {
+      Count: "Operations",
+      "Successful Operations Count": "Successful Ops",
+      "Total Latency": "Total Latency",
+      "Average Latency": "Avg Latency",
+      "Minimum Latency": "Min Latency",
+      "Maximum Latency": "Max Latency",
+      "95th Percentile Latency": "P95 Latency",
+      "99th Percentile Latency": "P99 Latency",
+      "Total Operations": "Total Ops",
+      "Throughput (using start and end time) (ops/ms)": "Throughput",
+      "Throughput (using aggregate operation times) (ops/ms)":
+        "Throughput (CPU time)",
+      "Total Time Spent (using start and end time)": "Wall Time",
+      "Aggregate Operation Time": "Aggregate Op Time",
+    };
+    return replacements[normalized] || normalized;
+  }
+
+  function formatNumericString(value, fractionDigits) {
+    const parsed = Number.parseFloat(value);
+    if (!Number.isFinite(parsed)) {
+      return value;
+    }
+    return parsed.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: fractionDigits,
+    });
+  }
+
+  function formatMetricValue(metric) {
+    const label = String(metric && metric.label ? metric.label : "").trim();
+    const rawValue = String(metric && metric.value ? metric.value : "").trim();
+    if (!rawValue) {
+      return rawValue;
+    }
+
+    if (/^-?\d+$/.test(rawValue)) {
+      return Number.parseInt(rawValue, 10).toLocaleString();
+    }
+
+    if (rawValue.endsWith("us")) {
+      const numberPart = rawValue.slice(0, -2).trim();
+      return formatNumericString(numberPart, 2) + " us";
+    }
+
+    if (rawValue.endsWith("ms")) {
+      const numberPart = rawValue.slice(0, -2).trim();
+      return formatNumericString(numberPart, 2) + " ms";
+    }
+
+    if (label.indexOf("Throughput") !== -1 && rawValue.indexOf("ops/ms") === -1) {
+      return formatNumericString(rawValue, 2) + " ops/ms";
+    }
+
+    if (/^-?\d+(?:\.\d+)?$/.test(rawValue)) {
+      return formatNumericString(rawValue, 2);
+    }
+
+    return rawValue;
+  }
+
+  function metricPriority(metric) {
+    const key = metric && typeof metric.key === "string" ? metric.key : "";
+    const order = {
+      total_operations: 1,
+      count: 1,
+      successful_operations_count: 2,
+      throughput_using_start_and_end_time_ops_ms: 3,
+      throughput_using_aggregate_operation_times_ops_ms: 4,
+      average_latency: 5,
+      total_latency: 6,
+      total_time_spent_using_start_and_end_time: 7,
+      aggregate_operation_time: 8,
+      minimum_latency: 9,
+      maximum_latency: 10,
+      percentile_95_latency: 11,
+      percentile_99_latency: 12,
+      p95_latency: 11,
+      p99_latency: 12,
+    };
+    return order[key] || 100;
+  }
+
+  function sortMetrics(metrics) {
+    return normalizeMetricsList(metrics)
+      .slice()
+      .sort((left, right) => {
+        const priorityDelta = metricPriority(left) - metricPriority(right);
+        if (priorityDelta !== 0) {
+          return priorityDelta;
+        }
+        return formatMetricLabel(left.label).localeCompare(
+          formatMetricLabel(right.label),
+        );
+      });
+  }
+
+  function buildMetricGrid(metrics) {
+    const grid = document.createElement("div");
+    grid.className = "benchmark-metric-grid";
+    sortMetrics(metrics).forEach((metric) => {
+      const item = document.createElement("div");
+      item.className = "benchmark-metric";
+
+      const label = document.createElement("div");
+      label.className = "benchmark-metric-label";
+      label.textContent = formatMetricLabel(metric.label);
+      item.appendChild(label);
+
+      const value = document.createElement("div");
+      value.className = "benchmark-metric-value";
+      value.textContent = formatMetricValue(metric);
+      item.appendChild(value);
+
+      grid.appendChild(item);
+    });
+    return grid;
+  }
+
+  function buildBenchmarkStats(stats) {
+    if (!stats || typeof stats !== "object") {
+      return null;
+    }
+
+    const overallMetrics = normalizeMetricsList(stats.overall);
+    const operations = Array.isArray(stats.operations)
+      ? stats.operations.filter((entry) => {
+          return (
+            entry &&
+            typeof entry === "object" &&
+            typeof entry.name === "string" &&
+            normalizeMetricsList(entry.metrics).length > 0
+          );
+        })
+      : [];
+
+    if (overallMetrics.length === 0 && operations.length === 0) {
+      return null;
+    }
+
+    const container = document.createElement("div");
+    container.className = "benchmark-stats";
+
+    if (overallMetrics.length > 0) {
+      const section = document.createElement("section");
+      section.className = "benchmark-section benchmark-section-overall";
+
+      const title = document.createElement("div");
+      title.className = "benchmark-section-title";
+      title.textContent = "Overall";
+      section.appendChild(title);
+      section.appendChild(buildMetricGrid(overallMetrics));
+      container.appendChild(section);
+    }
+
+    if (operations.length > 0) {
+      const operationsWrap = document.createElement("div");
+      operationsWrap.className = "benchmark-operations";
+      operations.forEach((operation) => {
+        const section = document.createElement("section");
+        section.className = "benchmark-section";
+
+        const title = document.createElement("div");
+        title.className = "benchmark-section-title";
+        title.textContent = operation.name.replace(/_/g, " ");
+        section.appendChild(title);
+        section.appendChild(buildMetricGrid(normalizeMetricsList(operation.metrics)));
+        operationsWrap.appendChild(section);
+      });
+      container.appendChild(operationsWrap);
+    }
+
+    return container;
+  }
+
   function buildRunCard(run, actions) {
     const card = document.createElement("article");
     card.className = "run-card";
@@ -116,13 +307,19 @@
 
     if (
       run.output_paths &&
-      typeof run.output_paths.latest_workload_path === "string" &&
-      run.output_paths.latest_workload_path.trim()
+      ((typeof run.output_paths.latest_output_path === "string" &&
+        run.output_paths.latest_output_path.trim()) ||
+        (typeof run.output_paths.latest_workload_path === "string" &&
+          run.output_paths.latest_workload_path.trim()))
     ) {
       const locationEl = document.createElement("p");
       locationEl.className = "run-location";
       locationEl.textContent =
-        "Known output: " + run.output_paths.latest_workload_path.trim();
+        "Known output: " +
+        (
+          run.output_paths.latest_output_path ||
+          run.output_paths.latest_workload_path
+        ).trim();
       card.appendChild(locationEl);
     }
 
@@ -135,6 +332,11 @@
       errorEl.className = "run-error";
       errorEl.textContent = run.error.message.trim();
       card.appendChild(errorEl);
+    }
+
+    const statsEl = buildBenchmarkStats(run.benchmark_stats);
+    if (statsEl) {
+      card.appendChild(statsEl);
     }
 
     const runActions = document.createElement("div");
@@ -157,16 +359,24 @@
 
     const workloadLink = document.createElement("a");
     workloadLink.className = "run-action-link";
-    workloadLink.textContent = "Download Workload";
+    workloadLink.textContent = "Download Benchmark Log";
     workloadLink.target = "_blank";
     workloadLink.rel = "noopener noreferrer";
     const workloadReady = Array.isArray(run.artifacts)
       ? run.artifacts.some(
-          (entry) => entry && entry.kind === "workload" && entry.ready === true,
+          (entry) =>
+            entry &&
+            (entry.kind === "output" || entry.kind === "workload") &&
+            entry.ready === true,
         )
       : run.status === "succeeded";
-    if (run.links && run.links.workload_download_path && workloadReady) {
-      workloadLink.href = run.links.workload_download_path;
+    const outputDownloadPath =
+      run.links &&
+      (run.links.output_download_path || run.links.workload_download_path)
+        ? run.links.output_download_path || run.links.workload_download_path
+        : "";
+    if (outputDownloadPath && workloadReady) {
+      workloadLink.href = outputDownloadPath;
     } else {
       workloadLink.classList.add("disabled");
       workloadLink.removeAttribute("href");
@@ -211,6 +421,10 @@
         input.output_paths && typeof input.output_paths === "object"
           ? input.output_paths
           : null,
+      benchmark_stats:
+        input.benchmark_stats && typeof input.benchmark_stats === "object"
+          ? input.benchmark_stats
+          : null,
       links:
         input.links && typeof input.links === "object"
           ? input.links
@@ -219,9 +433,11 @@
                 input.downloads && input.downloads.spec_download_path
                   ? input.downloads.spec_download_path
                   : "",
-              workload_download_path:
-                input.downloads && input.downloads.workload_download_path
-                  ? input.downloads.workload_download_path
+              output_download_path:
+                input.downloads && input.downloads.output_download_path
+                  ? input.downloads.output_download_path
+                  : input.downloads && input.downloads.workload_download_path
+                    ? input.downloads.workload_download_path
                   : "",
               cancel_path: "",
             },
@@ -348,7 +564,7 @@
         const empty = document.createElement("p");
         empty.className = "runs-empty";
         empty.textContent =
-          'No runs yet. Click "Run Workload" to generate a workload artifact.';
+          'No runs yet. Click "Run Workload" to execute a tectonic benchmark.';
         runsListEl.appendChild(empty);
         return;
       }

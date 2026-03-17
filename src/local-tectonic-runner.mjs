@@ -19,10 +19,12 @@ const RUNS_DIR =
 const LATEST_SPEC_PATH = path.join(KNOWN_OUTPUT_DIR, "latest-spec.json");
 const LATEST_WORKLOAD_PATH = path.join(
   KNOWN_OUTPUT_DIR,
-  "latest-workload.tar.gz",
+  "latest-benchmark-output.txt",
 );
 const TECTONIC_BIN =
   (process.env.TECTONIC_BIN || "tectonic-cli").trim() || "tectonic-cli";
+const DEFAULT_DATABASE =
+  (process.env.RUN_BENCHMARK_DATABASE || "rocksdb").trim() || "rocksdb";
 const MAX_SPEC_BYTES = parseInteger(process.env.RUN_MAX_SPEC_BYTES, 512 * 1024);
 const MAX_TIMEOUT_SECONDS = parseInteger(
   process.env.RUN_MAX_TIMEOUT_SECONDS,
@@ -30,7 +32,7 @@ const MAX_TIMEOUT_SECONDS = parseInteger(
 );
 const DEFAULT_TIMEOUT_SECONDS = 1800;
 const MIN_TIMEOUT_SECONDS = 30;
-const WORKLOAD_FILENAME = "workload.tar.gz";
+const WORKLOAD_FILENAME = "benchmark-output.txt";
 const SPEC_FILENAME = "spec.json";
 const ACTIVE_STATUSES = new Set(["starting", "running"]);
 const TERMINAL_STATUSES = new Set([
@@ -52,6 +54,7 @@ export function getLocalRunnerConfig() {
     known_output_dir: KNOWN_OUTPUT_DIR,
     runs_dir: RUNS_DIR,
     tectonic_bin: TECTONIC_BIN,
+    benchmark_database: DEFAULT_DATABASE,
   };
 }
 
@@ -169,7 +172,7 @@ async function routeRequest(req, res) {
   }
 
   const runMatch = pathname.match(
-    /^\/api\/workloads\/runs\/([^/]+)(?:\/(cancel|download\/spec|download\/workload))?$/,
+    /^\/api\/workloads\/runs\/([^/]+)(?:\/(cancel|download\/spec|download\/output|download\/workload))?$/,
   );
   if (!runMatch) {
     sendJson(res, 404, {
@@ -216,12 +219,12 @@ async function routeRequest(req, res) {
     return;
   }
 
-  if (action === "download/workload") {
+  if (action === "download/output" || action === "download/workload") {
     if (method !== "GET") {
       sendJson(res, 405, { error: "Method not allowed" });
       return;
     }
-    await handleDownloadArtifact(res, runId, "workload");
+    await handleDownloadArtifact(res, runId, "output");
     return;
   }
 
@@ -280,12 +283,17 @@ async function handleStartRun(req, res) {
       body.value.run_options &&
       body.value.run_options.timeout_seconds,
   );
+  const database = normalizeDatabaseName(
+    body.value &&
+      body.value.run_options &&
+      body.value.run_options.database,
+  );
   const createdAt = new Date().toISOString();
   const runId = createRunId();
   const runDir = path.join(RUNS_DIR, runId);
   const specPath = path.join(runDir, SPEC_FILENAME);
-  const outputPath = path.join(runDir, "workload-output");
-  const workloadPath = path.join(runDir, WORKLOAD_FILENAME);
+  const outputPath = path.join(runDir, WORKLOAD_FILENAME);
+  const workloadPath = outputPath;
 
   await fs.mkdir(runDir, { recursive: true });
   await fs.writeFile(specPath, specText, "utf8");
@@ -294,7 +302,7 @@ async function handleStartRun(req, res) {
     run_id: runId,
     created_at: createdAt,
     status: "starting",
-    progress_text: "Queued local workload generation.",
+    progress_text: "Queued local benchmark run.",
     error: null,
     spec_path: specPath,
     workload_path: workloadPath,
@@ -303,6 +311,8 @@ async function handleStartRun(req, res) {
     latest_spec_path: LATEST_SPEC_PATH,
     latest_workload_path: LATEST_WORKLOAD_PATH,
     timeout_seconds: timeoutSeconds,
+    database,
+    benchmark_stats: null,
     child: null,
     timeout_timer: null,
     started_at: null,
@@ -327,10 +337,8 @@ async function handleStartRun(req, res) {
     downloads: {
       spec_download_path:
         "/api/workloads/runs/" + encodeURIComponent(runId) + "/download/spec",
-      workload_download_path:
-        "/api/workloads/runs/" +
-        encodeURIComponent(runId) +
-        "/download/workload",
+      output_download_path:
+        "/api/workloads/runs/" + encodeURIComponent(runId) + "/download/output",
     },
   });
 }
@@ -362,7 +370,7 @@ async function handleRunStatus(res, runId) {
         bytes: specStat ? specStat.size : null,
       },
       {
-        kind: "workload",
+        kind: "output",
         filename: WORKLOAD_FILENAME,
         ready: !!workloadStat,
         bytes: workloadStat ? workloadStat.size : null,
@@ -370,6 +378,10 @@ async function handleRunStatus(res, runId) {
     ],
     links: buildRunLinks(run.run_id, run.status),
     created_at: run.created_at,
+    benchmark_stats:
+      run.benchmark_stats && typeof run.benchmark_stats === "object"
+        ? run.benchmark_stats
+        : null,
   });
 }
 
@@ -425,13 +437,13 @@ async function handleDownloadArtifact(res, runId, kind) {
   const filePath = kind === "spec" ? run.spec_path : run.workload_path;
   const filename = kind === "spec" ? SPEC_FILENAME : WORKLOAD_FILENAME;
   const contentType =
-    kind === "spec" ? "application/json; charset=utf-8" : "application/gzip";
+    kind === "spec" ? "application/json; charset=utf-8" : "text/plain; charset=utf-8";
   const stat = await safeStat(filePath);
 
   if (!stat) {
-    if (kind === "workload") {
+    if (kind === "output") {
       sendJson(res, 409, {
-        error: "Workload artifact is not ready yet.",
+        error: "Benchmark output is not ready yet.",
         code: "artifact_not_ready",
       });
     } else {
@@ -458,8 +470,8 @@ function buildRunLinks(runId, status) {
   return {
     spec_download_path:
       "/api/workloads/runs/" + encodeURIComponent(runId) + "/download/spec",
-    workload_download_path:
-      "/api/workloads/runs/" + encodeURIComponent(runId) + "/download/workload",
+    output_download_path:
+      "/api/workloads/runs/" + encodeURIComponent(runId) + "/download/output",
     cancel_path: terminal
       ? null
       : "/api/workloads/runs/" + encodeURIComponent(runId) + "/cancel",
@@ -471,23 +483,26 @@ function buildOutputPaths(run) {
     known_output_dir: KNOWN_OUTPUT_DIR,
     run_dir: run.run_dir,
     spec_path: run.spec_path,
-    generated_output_path: run.output_path,
+    benchmark_output_path: run.output_path,
     workload_path: run.workload_path,
     latest_spec_path: run.latest_spec_path || LATEST_SPEC_PATH,
-    latest_workload_path: run.latest_workload_path || LATEST_WORKLOAD_PATH,
+    latest_output_path: run.latest_workload_path || LATEST_WORKLOAD_PATH,
   };
 }
 
 async function startTectonicRun(run) {
   run.started_at = Date.now();
   run.status = "running";
-  run.progress_text = "Running tectonic-cli generate...";
+  run.progress_text = "Running tectonic-cli benchmark...";
   run.error = null;
+  run.benchmark_stats = null;
 
   let stderrTail = "";
   let stdoutTail = "";
+  let stderrText = "";
+  let stdoutText = "";
 
-  const args = ["generate", "-w", run.spec_path, "-o", run.output_path];
+  const args = ["benchmark", "-w", run.spec_path, "-d", run.database];
   const child = spawn(TECTONIC_BIN, args, {
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -495,6 +510,7 @@ async function startTectonicRun(run) {
 
   child.stdout.on("data", (chunk) => {
     stdoutTail = appendTail(stdoutTail, chunk);
+    stdoutText = appendOutputText(stdoutText, chunk);
     if (stdoutTail.trim()) {
       run.progress_text = trimLine(stdoutTail);
     }
@@ -502,6 +518,7 @@ async function startTectonicRun(run) {
 
   child.stderr.on("data", (chunk) => {
     stderrTail = appendTail(stderrTail, chunk);
+    stderrText = appendOutputText(stderrText, chunk);
     if (stderrTail.trim()) {
       run.progress_text = trimLine(stderrTail);
     }
@@ -549,7 +566,7 @@ async function startTectonicRun(run) {
   if (exit.code !== 0) {
     const detail = trimLine(stderrTail || stdoutTail);
     run.status = "failed";
-    run.progress_text = "tectonic-cli generate failed.";
+    run.progress_text = "tectonic-cli benchmark failed.";
     run.error = {
       code: exit.signal ? "tectonic_killed" : "tectonic_failed",
       message: detail
@@ -559,23 +576,27 @@ async function startTectonicRun(run) {
     return;
   }
 
-  const outputStat = await safeStat(run.output_path);
-  if (!outputStat) {
+  const combinedOutput = [stdoutText.trim(), stderrText.trim()]
+    .filter(Boolean)
+    .join("\n");
+  if (!combinedOutput.trim()) {
     markRunFailed(
       run,
-      "no_output_generated",
-      "tectonic-cli completed but produced no output file.",
+      "no_benchmark_output",
+      "tectonic-cli completed but produced no benchmark output.",
     );
     return;
   }
 
-  run.progress_text = "Packaging workload artifact...";
-  const tarResult = await createWorkloadArchiveFromPath(
-    run.output_path,
-    run.workload_path,
-  );
-  if (!tarResult.ok) {
-    markRunFailed(run, "archive_failed", tarResult.message);
+  try {
+    await fs.writeFile(run.workload_path, combinedOutput, "utf8");
+  } catch (error) {
+    markRunFailed(
+      run,
+      "output_write_failed",
+      "Failed to write benchmark output file: " +
+        (error && error.message ? error.message : "unknown error"),
+    );
     return;
   }
 
@@ -584,7 +605,7 @@ async function startTectonicRun(run) {
     markRunFailed(
       run,
       "artifact_missing",
-      "Failed to create workload artifact.",
+      "Failed to write benchmark output artifact.",
     );
     return;
   }
@@ -598,74 +619,25 @@ async function startTectonicRun(run) {
     markRunFailed(
       run,
       "latest_artifact_write_failed",
-      "Generated workload but failed to write latest artifact file: " +
+      "Benchmark completed but failed to write latest output file: " +
         (error && error.message ? error.message : "unknown error"),
     );
     return;
   }
 
+  run.benchmark_stats = parseBenchmarkStats(combinedOutput);
   run.status = "succeeded";
-  run.progress_text =
-    "Workload artifact generated at " + run.workload_path + ".";
+  run.progress_text = buildBenchmarkCompletionText(run.benchmark_stats);
   run.error = null;
 }
 
 function markRunFailed(run, code, message) {
   run.status = "failed";
-  run.progress_text = "Workload generation failed.";
+  run.progress_text = "Benchmark run failed.";
   run.error = {
     code,
     message,
   };
-}
-
-async function createWorkloadArchiveFromPath(sourcePath, destinationPath) {
-  const sourceStat = await safeStat(sourcePath);
-  if (!sourceStat) {
-    return {
-      ok: false,
-      message: "Source output path does not exist: " + sourcePath,
-    };
-  }
-
-  let args;
-  if (sourceStat.isDirectory()) {
-    args = ["-czf", destinationPath, "-C", sourcePath, "."];
-  } else {
-    args = [
-      "-czf",
-      destinationPath,
-      "-C",
-      path.dirname(sourcePath),
-      path.basename(sourcePath),
-    ];
-  }
-  return await new Promise((resolve) => {
-    const tar = spawn("tar", args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stderrTail = "";
-    tar.stderr.on("data", (chunk) => {
-      stderrTail = appendTail(stderrTail, chunk);
-    });
-    tar.on("error", (error) => {
-      resolve({
-        ok: false,
-        message:
-          "Failed to run tar: " +
-          (error && error.message ? error.message : "unknown error"),
-      });
-    });
-    tar.on("close", (code) => {
-      if (code === 0) {
-        resolve({ ok: true });
-        return;
-      }
-      resolve({
-        ok: false,
-        message:
-          trimLine(stderrTail) || "tar exited with code " + String(code) + ".",
-      });
-    });
-  });
 }
 
 async function waitForChild(child) {
@@ -786,9 +758,78 @@ function buildMissingTectonicCliMessage(binaryName) {
   ].join(" ");
 }
 
+function parseBenchmarkStats(outputText) {
+  const text = String(outputText || "");
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const overall = [];
+  const operations = [];
+  const operationMap = new Map();
+
+  lines.forEach((line) => {
+    const match = line.match(/^\[([^\]]+)\]\s+([^:]+):\s+(.+)$/);
+    if (!match) {
+      return;
+    }
+    const sectionLabel = match[1].trim();
+    const metricLabel = match[2].trim();
+    const metricValue = match[3].trim();
+    const metric = {
+      key: toMetricKey(metricLabel),
+      label: metricLabel,
+      value: metricValue,
+    };
+
+    if (sectionLabel.toLowerCase() === "overall") {
+      overall.push(metric);
+      return;
+    }
+
+    const sectionKey = toMetricKey(sectionLabel);
+    let bucket = operationMap.get(sectionKey);
+    if (!bucket) {
+      bucket = {
+        key: sectionKey,
+        name: sectionLabel,
+        metrics: [],
+      };
+      operationMap.set(sectionKey, bucket);
+      operations.push(bucket);
+    }
+    bucket.metrics.push(metric);
+  });
+
+  return {
+    overall,
+    operations,
+  };
+}
+
+function buildBenchmarkCompletionText(stats) {
+  const overall = stats && Array.isArray(stats.overall) ? stats.overall : [];
+  const throughput = overall.find((entry) => {
+    return (
+      entry &&
+      typeof entry.key === "string" &&
+      entry.key === "throughput_using_start_and_end_time_ops_ms"
+    );
+  });
+  if (throughput && typeof throughput.value === "string" && throughput.value) {
+    return "Benchmark completed. Throughput: " + throughput.value + " ops/ms.";
+  }
+  return "Benchmark completed. Stats are available below.";
+}
+
 function appendTail(current, chunk) {
   const text = (current || "") + Buffer.from(chunk).toString("utf8");
   return text.slice(-4000);
+}
+
+function appendOutputText(current, chunk) {
+  const text = (current || "") + Buffer.from(chunk).toString("utf8");
+  return text.slice(-1024 * 1024);
 }
 
 function trimLine(text) {
@@ -835,4 +876,17 @@ function parseInteger(rawValue, fallback) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeDatabaseName(rawValue) {
+  const value = String(rawValue || "").trim();
+  return value || DEFAULT_DATABASE;
+}
+
+function toMetricKey(label) {
+  return String(label || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
