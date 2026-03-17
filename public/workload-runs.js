@@ -573,11 +573,18 @@
       });
     }
 
-    async function startRun(specJson) {
+    async function startRun(specJson, options) {
       if (!specJson || typeof specJson !== "object") {
         onError("Cannot start run without a valid spec JSON object.");
         return null;
       }
+      const database =
+        options &&
+        typeof options === "object" &&
+        typeof options.database === "string" &&
+        options.database.trim()
+          ? options.database.trim()
+          : "rocksdb";
       onBusyChange(true);
       try {
         const response = await fetch(START_ENDPOINT, {
@@ -587,6 +594,9 @@
           },
           body: JSON.stringify({
             spec_json: specJson,
+            run_options: {
+              database: database,
+            },
           }),
         });
         const body = await parseJsonResponse(response);

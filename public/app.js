@@ -33,6 +33,9 @@ const hudLines = document.getElementById("hudLines");
 const jsonSectionsPill = document.getElementById("jsonSectionsPill");
 const jsonOpsPill = document.getElementById("jsonOpsPill");
 const jsonBytesPill = document.getElementById("jsonBytesPill");
+const benchmarkDatabaseSelect = document.getElementById(
+  "benchmarkDatabaseSelect",
+);
 const characterSetDescription = document.getElementById(
   "characterSetDescription",
 );
@@ -1342,6 +1345,16 @@ function getWorkloadRunsPanelController() {
         runsList,
       },
       getCurrentWorkloadJson,
+      getSelectedDatabase() {
+        if (
+          benchmarkDatabaseSelect &&
+          typeof benchmarkDatabaseSelect.value === "string" &&
+          benchmarkDatabaseSelect.value.trim()
+        ) {
+          return benchmarkDatabaseSelect.value.trim();
+        }
+        return "rocksdb";
+      },
       setValidationStatus,
     });
   return workloadRunsPanelController;

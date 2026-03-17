@@ -13,6 +13,12 @@
         : function getCurrentWorkloadJsonFallback() {
             return null;
           };
+    const getSelectedDatabase =
+      typeof config.getSelectedDatabase === "function"
+        ? config.getSelectedDatabase
+        : function getSelectedDatabaseFallback() {
+            return "rocksdb";
+          };
     const setValidationStatus =
       typeof config.setValidationStatus === "function"
         ? config.setValidationStatus
@@ -70,7 +76,9 @@
         return;
       }
 
-      await runsController.startRun(specJson);
+      await runsController.startRun(specJson, {
+        database: getSelectedDatabase(),
+      });
     }
 
     function bindEvents() {

@@ -1342,6 +1342,35 @@
         line-height: 1.35;
       }
 
+      .run-db-picker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border: 1px solid #d6e7ef;
+        border-radius: 999px;
+        background: #f7fbfd;
+      }
+
+      .run-db-picker label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #688091;
+      }
+
+      .run-db-select {
+        min-width: 120px;
+        border: none;
+        background: transparent;
+        color: #16364d;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        outline: none;
+      }
+
       .run-location {
         font-size: 11px;
         line-height: 1.35;
@@ -1834,6 +1863,12 @@
               <span class="panel-title">Generated JSON</span>
               <div class="json-actions">
                 <div class="validation-result" id="validationResult"></div>
+                <div class="run-db-picker">
+                  <label for="benchmarkDatabaseSelect">DB</label>
+                  <select id="benchmarkDatabaseSelect" class="run-db-select">
+                    <option value="rocksdb">rocksdb</option>
+                  </select>
+                </div>
                 <button class="btn btn-ghost" id="runWorkloadBtn">
                   Run Workload
                 </button>
