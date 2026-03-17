@@ -159,6 +159,9 @@
       if (refs.newWorkloadBtn) {
         refs.newWorkloadBtn.hidden = !getCustomWorkloadMode();
       }
+      if (refs.presetBrowserBtn) {
+        refs.presetBrowserBtn.hidden = !getCustomWorkloadMode();
+      }
       if (refs.welcomePanel) {
         refs.welcomePanel.hidden = getCustomWorkloadMode();
       }
@@ -174,6 +177,12 @@
       if (refs.assistantInput) {
         refs.assistantInput.focus();
       }
+    }
+
+    function enablePresetBrowserMode() {
+      setCustomWorkloadMode(false);
+      clearLoadedPresetState();
+      syncLandingUi();
     }
 
     function renderPresetFamilyOptions() {
@@ -343,12 +352,19 @@
           enableCustomWorkloadMode,
         );
       }
+      if (refs.presetBrowserBtn) {
+        refs.presetBrowserBtn.addEventListener(
+          "click",
+          enablePresetBrowserMode,
+        );
+      }
     }
 
     return {
       bindEvents: bindEvents,
       clearLoadedPresetState: clearLoadedPresetState,
       enableCustomWorkloadMode: enableCustomWorkloadMode,
+      enablePresetBrowserMode: enablePresetBrowserMode,
       handlePresetFamilyChange: handlePresetFamilyChange,
       handlePresetFileChange: handlePresetFileChange,
       loadPresetCatalog: loadPresetCatalog,

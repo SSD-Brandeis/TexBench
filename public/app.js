@@ -47,6 +47,7 @@ const copyBtn = document.getElementById("copyBtn");
 const validationResult = document.getElementById("validationResult");
 const runsList = document.getElementById("runsList");
 const newWorkloadBtn = document.getElementById("newWorkloadBtn");
+const presetBrowserBtn = document.getElementById("presetBrowserBtn");
 const assistantInput = document.getElementById("assistantInput");
 const assistantApplyBtn = document.getElementById("assistantApplyBtn");
 const assistantClearBtn = document.getElementById("assistantClearBtn");
@@ -1240,6 +1241,7 @@ function getPresetFlowController() {
       customWorkloadBtn,
       downloadJsonBtn,
       newWorkloadBtn,
+      presetBrowserBtn,
       presetFamilySelect,
       presetFileSelect,
       presetSelectionNote,
