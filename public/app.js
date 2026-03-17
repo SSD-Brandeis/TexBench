@@ -33,6 +33,7 @@ const hudLines = document.getElementById("hudLines");
 const jsonSectionsPill = document.getElementById("jsonSectionsPill");
 const jsonOpsPill = document.getElementById("jsonOpsPill");
 const jsonBytesPill = document.getElementById("jsonBytesPill");
+const jsonSummary = document.getElementById("jsonSummary");
 const benchmarkDatabaseSelect = document.getElementById(
   "benchmarkDatabaseSelect",
 );
@@ -3215,9 +3216,510 @@ function getJsonTreeViewer() {
   return jsonTreeViewer;
 }
 
+function operationDisplayName(op) {
+  const labels = {
+    inserts: "inserts",
+    updates: "updates",
+    merges: "read-modify-write merges",
+    point_queries: "point queries",
+    range_queries: "range queries",
+    point_deletes: "point deletes",
+    range_deletes: "range deletes",
+    empty_point_queries: "empty point queries",
+    empty_point_deletes: "empty point deletes",
+    sorted: "sorted operations",
+  };
+  return labels[op] || String(op || "").replace(/_/g, " ");
+}
+
+function joinPhrases(parts) {
+  const values = Array.isArray(parts)
+    ? parts.filter((value) => typeof value === "string" && value.trim())
+    : [];
+  if (values.length === 0) {
+    return "";
+  }
+  if (values.length === 1) {
+    return values[0];
+  }
+  if (values.length === 2) {
+    return values[0] + " and " + values[1];
+  }
+  return values.slice(0, -1).join(", ") + ", and " + values[values.length - 1];
+}
+
+function extractConfiguredOperations(group) {
+  if (!group || typeof group !== "object") {
+    return [];
+  }
+  return operationOrder
+    .filter((op) => {
+      if (!Object.prototype.hasOwnProperty.call(group, op)) {
+        return false;
+      }
+      const spec = group[op];
+      if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+        return false;
+      }
+      if (
+        Object.prototype.hasOwnProperty.call(spec, "enabled") &&
+        spec.enabled === false
+      ) {
+        return false;
+      }
+      return true;
+    })
+    .map((op) => ({
+      name: op,
+      spec: group[op],
+    }));
+}
+
+function getEffectiveCharacterSet(rootJson, section, group, spec) {
+  if (spec && typeof spec.character_set === "string" && spec.character_set) {
+    return spec.character_set;
+  }
+  if (group && typeof group.character_set === "string" && group.character_set) {
+    return group.character_set;
+  }
+  if (
+    section &&
+    typeof section.character_set === "string" &&
+    section.character_set
+  ) {
+    return section.character_set;
+  }
+  if (
+    rootJson &&
+    typeof rootJson.character_set === "string" &&
+    rootJson.character_set
+  ) {
+    return rootJson.character_set;
+  }
+  return "";
+}
+
+function describeStringExpression(expr) {
+  if (typeof expr === "string" && expr.trim()) {
+    return 'set to "' + expr.trim() + '"';
+  }
+  if (!expr || typeof expr !== "object" || Array.isArray(expr)) {
+    return "";
+  }
+  if (
+    expr.uniform &&
+    typeof expr.uniform === "object" &&
+    Number.isFinite(expr.uniform.len)
+  ) {
+    return "generated uniformly at length " + formatCount(expr.uniform.len);
+  }
+  if (expr.hot_range && typeof expr.hot_range === "object") {
+    return "generated with a hot-range expression";
+  }
+  if (Array.isArray(expr.weighted)) {
+    return "generated with a weighted expression";
+  }
+  if (Array.isArray(expr.segmented)) {
+    return "generated with a segmented expression";
+  }
+  return "generated with a custom expression";
+}
+
+function describeSelectionSettings(spec) {
+  if (!spec || typeof spec !== "object") {
+    return "";
+  }
+  if (spec.selection && typeof spec.selection === "object") {
+    if (
+      spec.selection.uniform &&
+      typeof spec.selection.uniform === "object" &&
+      Number.isFinite(spec.selection.uniform.min) &&
+      Number.isFinite(spec.selection.uniform.max)
+    ) {
+      return (
+        "selection uniform from " +
+        formatCount(spec.selection.uniform.min) +
+        " to " +
+        formatCount(spec.selection.uniform.max)
+      );
+    }
+    return "selection uses a custom distribution";
+  }
+  if (
+    typeof spec.selection_distribution === "string" &&
+    spec.selection_distribution
+  ) {
+    const parts = [spec.selection_distribution.replace(/_/g, " ")];
+    if (
+      Number.isFinite(spec.selection_min) &&
+      Number.isFinite(spec.selection_max)
+    ) {
+      parts.push(
+        "range " +
+          formatCount(spec.selection_min) +
+          "-" +
+          formatCount(spec.selection_max),
+      );
+    } else if (
+      Number.isFinite(spec.selection_mean) ||
+      Number.isFinite(spec.selection_std_dev)
+    ) {
+      const params = [];
+      if (Number.isFinite(spec.selection_mean)) {
+        params.push("mean " + formatCount(spec.selection_mean));
+      }
+      if (Number.isFinite(spec.selection_std_dev)) {
+        params.push("std dev " + formatCount(spec.selection_std_dev));
+      }
+      if (params.length > 0) {
+        parts.push(params.join(", "));
+      }
+    }
+    return "selection " + parts.join(" ");
+  }
+  return "";
+}
+
+function describeRangeSettings(spec) {
+  if (!spec || typeof spec !== "object") {
+    return "";
+  }
+  const details = [];
+  if (typeof spec.range_format === "string" && spec.range_format) {
+    details.push(spec.range_format + " format");
+  }
+  if (Number.isFinite(spec.k)) {
+    details.push("k " + formatCount(spec.k));
+  }
+  if (Number.isFinite(spec.l)) {
+    details.push("l " + formatCount(spec.l));
+  }
+  if (Number.isFinite(spec.selectivity)) {
+    details.push("selectivity " + spec.selectivity);
+  }
+  return details.length > 0 ? "range " + details.join(", ") : "";
+}
+
+function describeOperationPhrase(op, spec, rootJson, section, group) {
+  const prefix = Number.isFinite(spec && spec.op_count)
+    ? formatCount(spec.op_count) + " " + operationDisplayName(op)
+    : operationDisplayName(op);
+  const details = [];
+  const effectiveCharacterSet = getEffectiveCharacterSet(
+    rootJson,
+    section,
+    group,
+    spec,
+  );
+
+  if (op === "inserts") {
+    const keyDescription = describeStringExpression(spec && spec.key);
+    const valueDescription = describeStringExpression(spec && spec.val);
+    if (effectiveCharacterSet) {
+      details.push("character set " + effectiveCharacterSet);
+    }
+    if (keyDescription) {
+      details.push("keys " + keyDescription);
+    }
+    if (valueDescription) {
+      details.push("values " + valueDescription);
+    }
+  } else {
+    const selectionDescription = describeSelectionSettings(spec);
+    const rangeDescription =
+      op === "range_queries" || op === "range_deletes"
+        ? describeRangeSettings(spec)
+        : "";
+    if (selectionDescription) {
+      details.push(selectionDescription);
+    }
+    if (rangeDescription) {
+      details.push(rangeDescription);
+    }
+  }
+
+  return details.length > 0 ? prefix + " (" + details.join("; ") + ")" : prefix;
+}
+
+function operationProducesKeys(op) {
+  return op === "inserts";
+}
+
+function operationNeedsExistingKeys(op) {
+  return [
+    "updates",
+    "merges",
+    "point_queries",
+    "range_queries",
+    "point_deletes",
+    "range_deletes",
+    "empty_point_queries",
+    "empty_point_deletes",
+  ].includes(op);
+}
+
+function hasExplicitSelectionSettings(spec) {
+  if (!spec || typeof spec !== "object") {
+    return false;
+  }
+  return !!(
+    (spec.selection && typeof spec.selection === "object") ||
+    (typeof spec.selection_distribution === "string" &&
+      spec.selection_distribution)
+  );
+}
+
+function hasExplicitRangeSettings(spec) {
+  if (!spec || typeof spec !== "object") {
+    return false;
+  }
+  return !!(
+    (typeof spec.range_format === "string" && spec.range_format) ||
+    Number.isFinite(spec.k) ||
+    Number.isFinite(spec.l) ||
+    Number.isFinite(spec.selectivity)
+  );
+}
+
+function buildWorkloadSummaryModel(json) {
+  if (!json || typeof json !== "object" || !Array.isArray(json.sections)) {
+    return {
+      overview: "No workload JSON is available yet.",
+      groups: [],
+      assumptions: [],
+    };
+  }
+
+  const sections = json.sections.filter(
+    (section) => section && typeof section === "object",
+  );
+  const groupDescriptions = [];
+  const assumptions = [];
+  let totalGroups = 0;
+  let writesSeen = false;
+  let operationsNeedingExistingKeys = false;
+  let inheritedCharacterSetUsed = false;
+  let implicitSelectionUsed = false;
+  let implicitRangeUsed = false;
+  let implicitInsertGenerators = false;
+  let sectionLevelSkipEnabled = false;
+
+  sections.forEach((section, sectionIndex) => {
+    const groups = Array.isArray(section.groups)
+      ? section.groups.filter((group) => group && typeof group === "object")
+      : [];
+    groups.forEach((group, groupIndex) => {
+      totalGroups += 1;
+      const configuredOperations = extractConfiguredOperations(group);
+      if (configuredOperations.length === 0) {
+        return;
+      }
+      const groupCreatesKeys = configuredOperations.some((entry) =>
+        operationProducesKeys(entry.name),
+      );
+
+      const phrases = configuredOperations.map((entry) =>
+        describeOperationPhrase(entry.name, entry.spec, json, section, group),
+      );
+      const label =
+        sections.length === 1
+          ? "Group " + (groupIndex + 1)
+          : "Section " + (sectionIndex + 1) + ", group " + (groupIndex + 1);
+      const verb = configuredOperations.length > 1 ? "interleaves " : "runs ";
+      groupDescriptions.push(label + " " + verb + joinPhrases(phrases) + ".");
+
+      configuredOperations.forEach((entry) => {
+        const spec = entry.spec;
+        const op = entry.name;
+        const effectiveCharacterSet = getEffectiveCharacterSet(
+          json,
+          section,
+          group,
+          spec,
+        );
+        const explicitCharacterSet =
+          spec && typeof spec.character_set === "string" && spec.character_set;
+        if (!explicitCharacterSet && effectiveCharacterSet) {
+          inheritedCharacterSetUsed = true;
+        }
+        if (operationNeedsExistingKeys(op) && (writesSeen || groupCreatesKeys)) {
+          operationsNeedingExistingKeys = true;
+        }
+        if (
+          operationNeedsExistingKeys(op) &&
+          !hasExplicitSelectionSettings(spec) &&
+          op !== "empty_point_queries" &&
+          op !== "empty_point_deletes"
+        ) {
+          implicitSelectionUsed = true;
+        }
+        if (
+          (op === "range_queries" || op === "range_deletes") &&
+          !hasExplicitRangeSettings(spec)
+        ) {
+          implicitRangeUsed = true;
+        }
+        if (
+          op === "inserts" &&
+          (!spec || !spec.key || !spec.val)
+        ) {
+          implicitInsertGenerators = true;
+        }
+      });
+
+      if (
+        configuredOperations.some((entry) => operationProducesKeys(entry.name))
+      ) {
+        writesSeen = true;
+      }
+    });
+
+    if (section.skip_key_contains_check === true) {
+      sectionLevelSkipEnabled = true;
+    }
+  });
+
+  const totalOperations = sections.reduce((total, section) => {
+    const groups = Array.isArray(section.groups) ? section.groups : [];
+    return (
+      total +
+      groups.reduce((groupTotal, group) => {
+        return groupTotal + extractConfiguredOperations(group).length;
+      }, 0)
+    );
+  }, 0);
+
+  const overviewParts = [
+    "This workload contains " +
+      formatCount(sections.length) +
+      " section" +
+      (sections.length === 1 ? "" : "s") +
+      ", " +
+      formatCount(totalGroups) +
+      " group" +
+      (totalGroups === 1 ? "" : "s") +
+      ", and " +
+      formatCount(totalOperations) +
+      " active operation type" +
+      (totalOperations === 1 ? "" : "s") +
+      ".",
+  ];
+  if (typeof json.character_set === "string" && json.character_set) {
+    overviewParts.push(
+      "The workload-wide character set is " + json.character_set + ".",
+    );
+  }
+  if (json.skip_key_contains_check === true) {
+    overviewParts.push("Global skip key contains check is enabled.");
+  }
+
+  if (inheritedCharacterSetUsed) {
+    assumptions.push(
+      'Operations without an explicit character set inherit it from the nearest group, section, or workload setting' +
+        (typeof json.character_set === "string" && json.character_set
+          ? ', with "' + json.character_set + '" as the workload default.'
+          : "."),
+    );
+  }
+  if (operationsNeedingExistingKeys) {
+    assumptions.push(
+      "Read, update, merge, and delete operations are assumed to target keys created by earlier write phases or by inserts interleaved in the same group.",
+    );
+  }
+  if (implicitSelectionUsed) {
+    assumptions.push(
+      "Operations without explicit selection settings keep Tectonic's default key-selection behavior.",
+    );
+  }
+  if (implicitRangeUsed) {
+    assumptions.push(
+      "Range operations without explicit width or selectivity settings keep Tectonic's default range behavior.",
+    );
+  }
+  if (implicitInsertGenerators) {
+    assumptions.push(
+      "Insert operations without explicit key/value generators keep Tectonic's default generator settings.",
+    );
+  }
+  if (sectionLevelSkipEnabled && json.skip_key_contains_check !== true) {
+    assumptions.push(
+      "Skip key contains check is enabled only for specific sections, not globally.",
+    );
+  }
+
+  return {
+    overview: overviewParts.join(" "),
+    groups: groupDescriptions,
+    assumptions: Array.from(new Set(assumptions)),
+  };
+}
+
+function renderJsonSummary(json) {
+  if (!jsonSummary) {
+    return;
+  }
+  const model = buildWorkloadSummaryModel(json);
+  jsonSummary.replaceChildren();
+
+  const header = document.createElement("div");
+  header.className = "json-summary-header";
+
+  const title = document.createElement("div");
+  title.className = "json-summary-title";
+  title.textContent = "Workload Summary";
+  header.appendChild(title);
+  jsonSummary.appendChild(header);
+
+  const overview = document.createElement("div");
+  overview.className = "json-summary-overview";
+  overview.textContent = model.overview;
+  jsonSummary.appendChild(overview);
+
+  if (Array.isArray(model.groups) && model.groups.length > 0) {
+    const groupsSection = document.createElement("section");
+    groupsSection.className = "json-summary-section";
+
+    const groupsTitle = document.createElement("div");
+    groupsTitle.className = "json-summary-section-title";
+    groupsTitle.textContent = "Execution plan";
+    groupsSection.appendChild(groupsTitle);
+
+    const groupsList = document.createElement("ul");
+    groupsList.className = "json-summary-list";
+    model.groups.forEach((text) => {
+      const item = document.createElement("li");
+      item.textContent = text;
+      groupsList.appendChild(item);
+    });
+    groupsSection.appendChild(groupsList);
+    jsonSummary.appendChild(groupsSection);
+  }
+
+  if (Array.isArray(model.assumptions) && model.assumptions.length > 0) {
+    const assumptionsSection = document.createElement("section");
+    assumptionsSection.className = "json-summary-section";
+
+    const assumptionsTitle = document.createElement("div");
+    assumptionsTitle.className = "json-summary-section-title";
+    assumptionsTitle.textContent = "Assumptions filled in";
+    assumptionsSection.appendChild(assumptionsTitle);
+
+    const assumptionsList = document.createElement("ul");
+    assumptionsList.className = "json-summary-assumptions";
+    model.assumptions.forEach((text) => {
+      const item = document.createElement("li");
+      item.textContent = text;
+      assumptionsList.appendChild(item);
+    });
+    assumptionsSection.appendChild(assumptionsList);
+    jsonSummary.appendChild(assumptionsSection);
+  }
+}
+
 function renderGeneratedJson(json) {
   const jsonText = JSON.stringify(json, null, 2);
   jsonOutput.value = jsonText;
+  renderJsonSummary(json);
   const viewer = getJsonTreeViewer();
   if (viewer) {
     jsonOutput.hidden = true;

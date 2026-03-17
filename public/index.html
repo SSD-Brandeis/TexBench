@@ -1160,6 +1160,94 @@
         min-width: 0;
       }
 
+      .json-summary {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid #dce8f0;
+        border-radius: 12px;
+        background:
+          radial-gradient(
+            circle at top right,
+            rgba(84, 163, 145, 0.1),
+            transparent 34%
+          ),
+          linear-gradient(180deg, #fbfefd 0%, #f5fbfa 100%);
+      }
+
+      .json-summary:empty {
+        display: none;
+      }
+
+      .json-summary-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .json-summary-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #4a6970;
+      }
+
+      .json-summary-live {
+        font-size: 11px;
+        color: #698087;
+      }
+
+      .json-summary-overview {
+        font-size: 13px;
+        line-height: 1.55;
+        color: #2a4856;
+      }
+
+      .json-summary-section {
+        display: grid;
+        gap: 8px;
+      }
+
+      .json-summary-section-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #5a7481;
+      }
+
+      .json-summary-list {
+        margin: 0;
+        padding-left: 18px;
+        display: grid;
+        gap: 6px;
+        color: #345261;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .json-summary-assumptions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .json-summary-assumptions li {
+        font-size: 11px;
+        line-height: 1.35;
+        color: #35506b;
+        border: 1px solid #cfe2f4;
+        background: #edf5fc;
+        border-radius: 999px;
+        padding: 5px 9px;
+      }
+
       .json-tree {
         flex: 1;
         min-height: 0;
@@ -1891,6 +1979,7 @@
                   JSON validates automatically. Shortcut: Ctrl/Cmd + Shift + C
                   to copy.
                 </p>
+                <div id="jsonSummary" class="json-summary" aria-live="polite"></div>
                 <div id="jsonTree" class="json-tree" aria-live="polite"></div>
                 <textarea
                   id="jsonOutput"
