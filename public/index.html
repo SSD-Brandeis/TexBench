@@ -1132,6 +1132,14 @@
         flex-wrap: wrap;
       }
 
+      .preview-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        flex: 1;
+        min-height: 0;
+      }
+
       .validation-result {
         min-height: 18px;
         font-size: 12px;
@@ -1948,7 +1956,7 @@
             style="flex-shrink: 0"
           >
             <div class="panel-header">
-              <span class="panel-title">Generated JSON</span>
+              <span class="panel-title">Workload Overview</span>
               <div class="json-actions">
                 <div class="validation-result" id="validationResult"></div>
                 <div class="run-db-picker">
@@ -1960,6 +1968,9 @@
                 <button class="btn btn-ghost" id="runWorkloadBtn">
                   Run Workload
                 </button>
+                <button class="btn btn-ghost" id="toggleJsonPreviewBtn">
+                  Show Spec JSON
+                </button>
                 <button class="btn btn-ghost" id="downloadJsonBtn">
                   Download Spec JSON
                 </button>
@@ -1967,29 +1978,35 @@
               </div>
             </div>
             <div class="panel-body">
-              <div class="json-output">
-                <div class="json-stats">
-                  <span class="json-pill" id="jsonSectionsPill"
-                    >sections: 0</span
+              <div class="preview-stack">
+                <div
+                  id="jsonSummary"
+                  class="json-summary"
+                  aria-live="polite"
+                ></div>
+                <div id="jsonOutputShell" class="json-output" hidden>
+                  <div class="json-stats">
+                    <span class="json-pill" id="jsonSectionsPill"
+                      >sections: 0</span
+                    >
+                    <span class="json-pill" id="jsonOpsPill">ops: 0</span>
+                    <span class="json-pill" id="jsonBytesPill">bytes: 2</span>
+                  </div>
+                  <p class="shortcut-hint">
+                    JSON validates automatically. Shortcut: Ctrl/Cmd + Shift + C
+                    to copy.
+                  </p>
+                  <div id="jsonTree" class="json-tree" aria-live="polite"></div>
+                  <textarea
+                    id="jsonOutput"
+                    readonly
+                    hidden
+                    aria-hidden="true"
+                    placeholder="Generated JSON will appear here..."
                   >
-                  <span class="json-pill" id="jsonOpsPill">ops: 0</span>
-                  <span class="json-pill" id="jsonBytesPill">bytes: 2</span>
-                </div>
-                <p class="shortcut-hint">
-                  JSON validates automatically. Shortcut: Ctrl/Cmd + Shift + C
-                  to copy.
-                </p>
-                <div id="jsonSummary" class="json-summary" aria-live="polite"></div>
-                <div id="jsonTree" class="json-tree" aria-live="polite"></div>
-                <textarea
-                  id="jsonOutput"
-                  readonly
-                  hidden
-                  aria-hidden="true"
-                  placeholder="Generated JSON will appear here..."
-                >
 {}</textarea
-                >
+                  >
+                </div>
               </div>
             </div>
           </div>

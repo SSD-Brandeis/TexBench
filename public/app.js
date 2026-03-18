@@ -25,7 +25,9 @@ const operationConfigContainer = document.getElementById(
   "operationConfigContainer",
 );
 const jsonOutput = document.getElementById("jsonOutput");
+const jsonOutputShell = document.getElementById("jsonOutputShell");
 const jsonTree = document.getElementById("jsonTree");
+const toggleJsonPreviewBtn = document.getElementById("toggleJsonPreviewBtn");
 const hudSections = document.getElementById("hudSections");
 const hudGroups = document.getElementById("hudGroups");
 const hudOps = document.getElementById("hudOps");
@@ -74,6 +76,7 @@ let structurePanelRenderer = null;
 let presetFlowController = null;
 let assistantPanelController = null;
 let workloadRunsPanelController = null;
+let jsonPreviewVisible = false;
 
 const INITIAL_JSON_TEXT = "{}";
 const PRESET_INDEX_PATH = "/presets/index.json";
@@ -622,6 +625,11 @@ async function initApp() {
   }
   if (newWorkloadBtn) {
     newWorkloadBtn.addEventListener("click", resetFormInterface);
+  }
+  if (toggleJsonPreviewBtn) {
+    toggleJsonPreviewBtn.addEventListener("click", () => {
+      setJsonPreviewVisible(!jsonPreviewVisible);
+    });
   }
   if (runsController) {
     runsController.bindEvents();
@@ -3216,6 +3224,22 @@ function getJsonTreeViewer() {
   return jsonTreeViewer;
 }
 
+function syncJsonPreviewVisibility() {
+  if (jsonOutputShell) {
+    jsonOutputShell.hidden = !jsonPreviewVisible;
+  }
+  if (toggleJsonPreviewBtn) {
+    toggleJsonPreviewBtn.textContent = jsonPreviewVisible
+      ? "Hide Spec JSON"
+      : "Show Spec JSON";
+  }
+}
+
+function setJsonPreviewVisible(nextValue) {
+  jsonPreviewVisible = nextValue === true;
+  syncJsonPreviewVisibility();
+}
+
 function operationDisplayName(op) {
   const labels = {
     inserts: "inserts",
@@ -3720,6 +3744,7 @@ function renderGeneratedJson(json) {
   const jsonText = JSON.stringify(json, null, 2);
   jsonOutput.value = jsonText;
   renderJsonSummary(json);
+  syncJsonPreviewVisibility();
   const viewer = getJsonTreeViewer();
   if (viewer) {
     jsonOutput.hidden = true;
@@ -3730,6 +3755,9 @@ function renderGeneratedJson(json) {
 }
 
 function scrollJsonOutputToGroupFocus(target) {
+  if (!jsonPreviewVisible) {
+    setJsonPreviewVisible(true);
+  }
   const viewer = getJsonTreeViewer();
   if (viewer && viewer.focusGroup(target)) {
     return;
