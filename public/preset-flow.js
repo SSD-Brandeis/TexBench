@@ -70,6 +70,10 @@
         : function validateGeneratedJsonFallback() {
             return Promise.resolve();
           };
+    const clearWorkloadRuns =
+      typeof config.clearWorkloadRuns === "function"
+        ? config.clearWorkloadRuns
+        : function clearWorkloadRunsFallback() {};
     const setValidationStatus =
       typeof config.setValidationStatus === "function"
         ? config.setValidationStatus
@@ -178,6 +182,7 @@
     function enableCustomWorkloadMode() {
       setCustomWorkloadMode(true);
       clearLoadedPresetState();
+      clearWorkloadRuns();
       ensureWorkloadStructureState();
       loadActiveStructureIntoForm();
       updateJsonFromForm();

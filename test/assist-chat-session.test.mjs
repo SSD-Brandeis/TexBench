@@ -1,0 +1,166 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  applyPatchToState,
+  configuredOperations,
+  createFormState,
+  getSelectedProviderConfig,
+  requestLiveAssist,
+} from "./live-assist-test-helpers.mjs";
+
+const LIVE_PROVIDER = getSelectedProviderConfig();
+
+function buildCurrentJson(state) {
+  if (
+    !state ||
+    !Array.isArray(state.sections) ||
+    !state.sections.some(
+      (section) =>
+        section &&
+        Array.isArray(section.groups) &&
+        section.groups.some(
+          (group) => group && Object.keys(group).length > 0,
+        ),
+    )
+  ) {
+    return null;
+  }
+  return {
+    character_set: state.character_set,
+    sections: JSON.parse(JSON.stringify(state.sections)),
+  };
+}
+
+function appendConversation(conversation, prompt, result) {
+  return [
+    ...conversation,
+    { role: "user", text: prompt },
+    { role: "assistant", text: result.summary || "" },
+  ];
+}
+
+async function applyAssistTurn({ prompt, state, conversation }) {
+  const result = await requestLiveAssist({
+    prompt,
+    formState: state,
+    currentJson: buildCurrentJson(state),
+    conversation,
+    provider: LIVE_PROVIDER,
+  });
+  return {
+    result,
+    nextState: applyPatchToState(state, result.patch),
+    nextConversation: appendConversation(conversation, prompt, result),
+  };
+}
+
+test(
+  "continuous chat session: generate, update, then refine query behavior with assumptions",
+  { skip: !LIVE_PROVIDER.binding, timeout: 240000 },
+  async () => {
+    let state = createFormState({});
+    let conversation = [];
+
+    const first = await applyAssistTurn({
+      prompt: "Generate an insert-only workload with 250k inserts",
+      state,
+      conversation,
+    });
+    state = first.nextState;
+    conversation = first.nextConversation;
+
+    const second = await applyAssistTurn({
+      prompt: "interleave 5k point queries with the inserts",
+      state,
+      conversation,
+    });
+    state = second.nextState;
+    conversation = second.nextConversation;
+
+    const third = await applyAssistTurn({
+      prompt: "change point queries distribution to normal",
+      state,
+      conversation,
+    });
+    state = third.nextState;
+    conversation = third.nextConversation;
+
+    assert.equal(conversation.length, 6);
+    assert.equal(state.sections_count, 1);
+    assert.equal(state.groups_per_section, 1);
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[0]),
+      ["inserts", "point_queries"],
+    );
+    assert.equal(state.operations.inserts.enabled, true);
+    assert.equal(state.operations.inserts.op_count, 250000);
+    assert.equal(state.operations.point_queries.enabled, true);
+    assert.equal(state.operations.point_queries.op_count, 5000);
+    assert.equal(
+      state.operations.point_queries.selection_distribution,
+      "normal",
+    );
+    assert.equal(typeof state.operations.point_queries.selection_mean, "number");
+    assert.equal(
+      typeof state.operations.point_queries.selection_std_dev,
+      "number",
+    );
+    assert.ok(
+      third.result.assumptions.some((entry) =>
+        String(entry && entry.text ? entry.text : "")
+          .toLowerCase()
+          .includes("normal"),
+      ),
+    );
+
+    const finalJson = buildCurrentJson(state);
+    assert.ok(finalJson);
+    assert.equal(finalJson.sections.length, 1);
+    assert.deepEqual(
+      configuredOperations(finalJson.sections[0].groups[0]),
+      ["inserts", "point_queries"],
+    );
+  },
+);
+
+test(
+  "continuous chat session: generate workload then append a later phase",
+  { skip: !LIVE_PROVIDER.binding, timeout: 180000 },
+  async () => {
+    let state = createFormState({});
+    let conversation = [];
+
+    const first = await applyAssistTurn({
+      prompt: "Generate an insert-only workload with 250k inserts",
+      state,
+      conversation,
+    });
+    state = first.nextState;
+    conversation = first.nextConversation;
+
+    const second = await applyAssistTurn({
+      prompt: "then add a second phase with 5k point queries",
+      state,
+      conversation,
+    });
+    state = second.nextState;
+
+    assert.equal(state.sections_count, 1);
+    assert.equal(state.groups_per_section, 2);
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[0]),
+      ["inserts"],
+    );
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[1]),
+      ["point_queries"],
+    );
+    assert.equal(state.sections[0].groups[0].inserts.op_count, 250000);
+    assert.equal(state.sections[0].groups[1].point_queries.op_count, 5000);
+
+    const finalJson = buildCurrentJson(state);
+    assert.ok(finalJson);
+    assert.equal(finalJson.sections[0].groups.length, 2);
+  },
+);

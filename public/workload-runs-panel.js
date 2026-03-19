@@ -89,8 +89,16 @@
       }
     }
 
+    function clearRuns() {
+      if (!runsController || typeof runsController.clear !== "function") {
+        return;
+      }
+      runsController.clear();
+    }
+
     return {
       bindEvents,
+      clearRuns,
       handleRun,
       init,
       setBusy,

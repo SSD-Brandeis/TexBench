@@ -9,7 +9,6 @@ const addSectionBtn = document.getElementById("addSectionBtn");
 const structureTree = document.getElementById("structureTree");
 const structurePanel = document.querySelector(".structure-panel");
 const builderHint = document.querySelector(".builder-hint");
-const builderHud = document.querySelector(".hud");
 const structureSelectionLabel = document.getElementById(
   "structureSelectionLabel",
 );
@@ -31,10 +30,6 @@ const jsonOutput = document.getElementById("jsonOutput");
 const jsonOutputShell = document.getElementById("jsonOutputShell");
 const jsonTree = document.getElementById("jsonTree");
 const toggleJsonPreviewBtn = document.getElementById("toggleJsonPreviewBtn");
-const hudSections = document.getElementById("hudSections");
-const hudGroups = document.getElementById("hudGroups");
-const hudOps = document.getElementById("hudOps");
-const hudLines = document.getElementById("hudLines");
 const jsonSectionsPill = document.getElementById("jsonSectionsPill");
 const jsonOpsPill = document.getElementById("jsonOpsPill");
 const jsonBytesPill = document.getElementById("jsonBytesPill");
@@ -1207,9 +1202,6 @@ function updateStructurePanelVisibility() {
   if (structurePanel) {
     structurePanel.hidden = !showBuilderEditor;
   }
-  if (builderHud) {
-    builderHud.hidden = !showBuilderEditor;
-  }
   if (workloadForm) {
     workloadForm.hidden = !showBuilderEditor;
   }
@@ -1309,7 +1301,7 @@ function getPresetFlowController() {
   ) {
     return null;
   }
-  presetFlowController = globalThis.TectonicPresetFlow.createController({
+    presetFlowController = globalThis.TectonicPresetFlow.createController({
     refs: {
       appHeader,
       appShell,
@@ -1344,10 +1336,17 @@ function getPresetFlowController() {
       },
     },
     presetIndexPath: PRESET_INDEX_PATH,
-    cloneJsonValue,
-    clearPersistedCustomBuilderState,
-    ensureWorkloadStructureState,
-    loadActiveStructureIntoForm,
+      cloneJsonValue,
+      clearWorkloadRuns() {
+        const controller = getWorkloadRunsPanelController();
+        if (!controller || typeof controller.clearRuns !== "function") {
+          return;
+        }
+        controller.clearRuns();
+      },
+      clearPersistedCustomBuilderState,
+      ensureWorkloadStructureState,
+      loadActiveStructureIntoForm,
     loadPresetIntoBuilder,
     renderGeneratedJson,
     resetFormInterface,
@@ -1521,6 +1520,28 @@ function restorePersistedCustomBuilderState() {
     return false;
   }
 
+  const restoredSections =
+    Array.isArray(snapshot.sections) && snapshot.sections.length > 0
+      ? normalizePatchedStructureSections(snapshot.sections)
+      : [createEmptySectionState()];
+  if (
+    !Array.isArray(restoredSections) ||
+    !restoredSections.some(
+      (section) =>
+        Array.isArray(section && section.groups)
+          ? section.groups.some(
+              (group) =>
+                group &&
+                typeof group === "object" &&
+                countConfiguredGroupOperations(group) > 0,
+            )
+          : false,
+    )
+  ) {
+    clearPersistedCustomBuilderState();
+    return false;
+  }
+
   activePresetJson = null;
   customWorkloadMode = true;
   clearFieldLocks();
@@ -1540,10 +1561,7 @@ function restorePersistedCustomBuilderState() {
       : "";
   }
 
-  workloadStructureState =
-    Array.isArray(snapshot.sections) && snapshot.sections.length > 0
-      ? normalizePatchedStructureSections(snapshot.sections)
-      : [createEmptySectionState()];
+  workloadStructureState = restoredSections;
   activeSectionIndex = Math.max(
     0,
     Math.min(
@@ -4255,14 +4273,6 @@ function formatCount(value) {
 function updateInteractiveStats(json) {
   const hasSections = json && Array.isArray(json.sections);
   const sectionsCount = hasSections ? json.sections.length : 0;
-  const groupsCount = hasSections
-    ? json.sections.reduce((total, section) => {
-        const count = Array.isArray(section && section.groups)
-          ? section.groups.length
-          : 0;
-        return total + count;
-      }, 0)
-    : 0;
   const selectedOps = operationOrder.filter((op) =>
     hasSections
       ? json.sections.some(
@@ -4277,13 +4287,7 @@ function updateInteractiveStats(json) {
         )
       : false,
   );
-  const lines = jsonOutput.value ? jsonOutput.value.split("\n").length : 1;
   const bytes = safeTextSizeBytes(jsonOutput.value || "{}");
-
-  hudSections.textContent = formatCount(sectionsCount);
-  hudGroups.textContent = formatCount(groupsCount);
-  hudOps.textContent = formatCount(selectedOps.length);
-  hudLines.textContent = formatCount(lines);
 
   jsonSectionsPill.textContent = "sections: " + formatCount(sectionsCount);
   jsonOpsPill.textContent = "ops: " + formatCount(selectedOps.length);

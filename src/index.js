@@ -139,6 +139,19 @@ const SELECTION_PARAM_DEFAULTS = {
   selection_scale: 1,
   selection_shape: 2,
 };
+const SELECTION_PARAM_LABELS = {
+  selection_min: "min",
+  selection_max: "max",
+  selection_mean: "mean",
+  selection_std_dev: "standard deviation",
+  selection_alpha: "alpha",
+  selection_beta: "beta",
+  selection_n: "n",
+  selection_s: "s",
+  selection_lambda: "lambda",
+  selection_scale: "scale",
+  selection_shape: "shape",
+};
 const STRING_PATTERN_VALUES = ["uniform", "weighted", "segmented", "hot_range"];
 const STRING_PATTERN_DEFAULTS = {
   key_pattern: "uniform",
@@ -1675,7 +1688,10 @@ function normalizeAssistPayload(
     patch.groups_per_section = null;
   }
   suppressOperationPatchWhenSelectionIsAmbiguous(patch, effectiveClarifications);
-  const assumptions = normalizeAssumptionEntries(payload.assumptions);
+  const assumptions = mergeAssumptionsAiFirst(
+    normalizeAssumptionEntries(payload.assumptions),
+    deriveDeterministicAssumptions(patch, formState, prompt, schemaHints),
+  );
   const summary =
     typeof payload.summary === "string" && payload.summary.trim()
       ? payload.summary.trim()
@@ -2133,9 +2149,12 @@ function buildAggregateOperationsFromSections(
           return;
         }
         const normalized = normalizeOperationPatch(group[op], op, schemaHints);
+        const configuredFields = stripNullFields(
+          stripEnabledFromOperationPatch(normalized),
+        );
         operations[op] = {
           ...operations[op],
-          ...normalized,
+          ...configuredFields,
           enabled: true,
         };
       });
@@ -2177,26 +2196,8 @@ function applyPromptOperationIntentFallback(
     formState || { operations: {} },
     schemaHints,
   );
-  const patchedEnabledOps = getEnabledOperationNames(
-    buildEffectiveState(patch, formState || { operations: {} }, schemaHints),
-    schemaHints,
-  );
-
-  const hasExplicitOperationSetInPatch = schemaHints.operation_order.some(
-    (op) => {
-      const opPatch =
-        patch.operations && patch.operations[op] ? patch.operations[op] : null;
-      return !!(opPatch && typeof opPatch.enabled === "boolean");
-    },
-  );
-  if (
-    hasExplicitOperationSetInPatch ||
-    patchedEnabledOps.length > 0 ||
-    mentionedOps.length === 0
-  ) {
-    if (mentionedOps.length === 0) {
-      return;
-    }
+  if (mentionedOps.length === 0) {
+    return;
   }
 
   let targetOps = mentionedOps;
@@ -2216,7 +2217,9 @@ function applyPromptOperationIntentFallback(
       patch.operations[op].enabled = false;
       return;
     }
-    patch.operations[op].enabled = true;
+    if (patch.operations[op].enabled !== true) {
+      patch.operations[op].enabled = true;
+    }
   });
 
   if (exclusiveOp && currentEnabledOps.length > 0) {
@@ -4305,6 +4308,336 @@ function normalizeAssumptionEntries(rawAssumptions) {
     (entry) =>
       (entry.id || "") + "|" + entry.text + "|" + (entry.field_ref || ""),
   );
+}
+
+function deriveDeterministicAssumptions(patch, formState, prompt, schemaHints) {
+  const assumptions = [];
+  appendDistributionParameterAssumptions(
+    assumptions,
+    patch,
+    formState,
+    prompt,
+    schemaHints,
+  );
+  appendPreservedOperationStateAssumptions(
+    assumptions,
+    patch,
+    formState,
+    schemaHints,
+  );
+  return assumptions;
+}
+
+function mergeAssumptionsAiFirst(aiAssumptions, derivedAssumptions) {
+  const primary = Array.isArray(aiAssumptions) ? aiAssumptions : [];
+  const derived = Array.isArray(derivedAssumptions) ? derivedAssumptions : [];
+  const merged = [...primary];
+  derived.forEach((entry) => {
+    if (
+      primary.some((existing) =>
+        assumptionsOverlap(existing, entry),
+      )
+    ) {
+      return;
+    }
+    merged.push(entry);
+  });
+  return dedupeByKey(
+    merged,
+    (entry) =>
+      (entry.id || "") + "|" + entry.text + "|" + (entry.field_ref || ""),
+  );
+}
+
+function assumptionsOverlap(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+  if (left.text && right.text && left.text === right.text) {
+    return true;
+  }
+  if (!left.field_ref || !right.field_ref) {
+    return false;
+  }
+  return (
+    left.field_ref === right.field_ref ||
+    left.field_ref.startsWith(right.field_ref + ".") ||
+    right.field_ref.startsWith(left.field_ref + ".")
+  );
+}
+
+function appendDistributionParameterAssumptions(
+  assumptions,
+  patch,
+  formState,
+  prompt,
+  schemaHints,
+) {
+  if (!patch || typeof patch !== "object") {
+    return;
+  }
+  const lowerPrompt = String(prompt || "").toLowerCase();
+  const operations =
+    patch.operations && typeof patch.operations === "object"
+      ? patch.operations
+      : {};
+
+  schemaHints.operation_order.forEach((operationName) => {
+    const opPatch = operations[operationName];
+    if (!opPatch || typeof opPatch !== "object") {
+      return;
+    }
+    const distribution =
+      typeof opPatch.selection_distribution === "string" &&
+      opPatch.selection_distribution.trim()
+        ? opPatch.selection_distribution.trim()
+        : null;
+    if (!distribution) {
+      return;
+    }
+    const requiredFields = SELECTION_DISTRIBUTION_PARAM_KEYS[distribution] || [];
+    if (requiredFields.length === 0) {
+      return;
+    }
+
+    const currentState =
+      formState &&
+      formState.operations &&
+      formState.operations[operationName] &&
+      typeof formState.operations[operationName] === "object"
+        ? formState.operations[operationName]
+        : {};
+    const unspecifiedFields = requiredFields.filter(
+      (fieldName) => !promptMentionsSelectionParameter(lowerPrompt, fieldName),
+    );
+    if (unspecifiedFields.length === 0) {
+      return;
+    }
+
+    const details = [];
+    let usedDefault = false;
+    let reusedExisting = false;
+    unspecifiedFields.forEach((fieldName) => {
+      let value = opPatch[fieldName];
+      let source = "patch";
+      if (value === null || value === undefined) {
+        if (currentState[fieldName] !== null && currentState[fieldName] !== undefined) {
+          value = currentState[fieldName];
+          source = "current";
+        } else if (Object.prototype.hasOwnProperty.call(SELECTION_PARAM_DEFAULTS, fieldName)) {
+          value = SELECTION_PARAM_DEFAULTS[fieldName];
+          source = "default";
+        } else {
+          return;
+        }
+      } else if (
+        currentState[fieldName] !== null &&
+        currentState[fieldName] !== undefined &&
+        currentState[fieldName] === value
+      ) {
+        source = "current";
+      } else if (
+        Object.prototype.hasOwnProperty.call(SELECTION_PARAM_DEFAULTS, fieldName) &&
+        SELECTION_PARAM_DEFAULTS[fieldName] === value
+      ) {
+        source = "default";
+      }
+      if (source === "default") {
+        usedDefault = true;
+      }
+      if (source === "current") {
+        reusedExisting = true;
+      }
+      details.push(
+        selectionParameterLabel(fieldName) + " " + formatAssumptionValue(value),
+      );
+    });
+
+    if (details.length === 0) {
+      return;
+    }
+
+    let reasonText = "because they were not specified.";
+    if (usedDefault && reusedExisting) {
+      reasonText =
+        "using existing values where available and defaults for the rest because they were not specified.";
+    } else if (usedDefault) {
+      reasonText = "because they were not specified.";
+    } else if (reusedExisting) {
+      reasonText = "keeping the existing values because they were not specified.";
+    }
+
+    addAssumptionEntry(
+      assumptions,
+      "For " +
+        humanizeOperation(operationName, schemaHints) +
+        ", using " +
+        distribution +
+        " selection parameters " +
+        details.join(", ") +
+        " " +
+        reasonText,
+      operationName + ".selection_distribution",
+      usedDefault ? "default_applied" : "preserved_existing",
+      {
+        distribution,
+        parameters: unspecifiedFields.reduce((accumulator, fieldName) => {
+          if (opPatch[fieldName] !== null && opPatch[fieldName] !== undefined) {
+            accumulator[fieldName] = opPatch[fieldName];
+          } else if (
+            currentState[fieldName] !== null &&
+            currentState[fieldName] !== undefined
+          ) {
+            accumulator[fieldName] = currentState[fieldName];
+          } else if (
+            Object.prototype.hasOwnProperty.call(SELECTION_PARAM_DEFAULTS, fieldName)
+          ) {
+            accumulator[fieldName] = SELECTION_PARAM_DEFAULTS[fieldName];
+          }
+          return accumulator;
+        }, {}),
+      },
+    );
+  });
+}
+
+function selectionParameterLabel(fieldName) {
+  return SELECTION_PARAM_LABELS[fieldName] || fieldName;
+}
+
+function formatAssumptionValue(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Number.isInteger(value) ? String(value) : String(value);
+  }
+  return String(value);
+}
+
+function appendPreservedOperationStateAssumptions(
+  assumptions,
+  patch,
+  formState,
+  schemaHints,
+) {
+  if (!patch || typeof patch !== "object") {
+    return;
+  }
+  const operations =
+    patch.operations && typeof patch.operations === "object"
+      ? patch.operations
+      : {};
+  schemaHints.operation_order.forEach((operationName) => {
+    const opPatch = operations[operationName];
+    if (!opPatch || typeof opPatch !== "object") {
+      return;
+    }
+    const currentState =
+      formState &&
+      formState.operations &&
+      formState.operations[operationName] &&
+      typeof formState.operations[operationName] === "object"
+        ? formState.operations[operationName]
+        : null;
+    if (!currentState || currentState.enabled !== true) {
+      return;
+    }
+    const changedFields = configuredOperationFieldNames(opPatch);
+    if (changedFields.length === 0) {
+      return;
+    }
+    const preservedFields = configuredOperationFieldNames(currentState).filter(
+      (fieldName) => !changedFields.includes(fieldName),
+    );
+    if (preservedFields.length === 0) {
+      return;
+    }
+    const summaryFields = preservedFields
+      .slice(0, 3)
+      .map((fieldName) => operationFieldLabel(fieldName));
+    const moreCount = preservedFields.length - summaryFields.length;
+    const suffix =
+      moreCount > 0
+        ? ", and " + moreCount + " other setting" + (moreCount > 1 ? "s" : "")
+        : "";
+    addAssumptionEntry(
+      assumptions,
+      "For " +
+        humanizeOperation(operationName, schemaHints) +
+        ", kept the existing " +
+        summaryFields.join(", ") +
+        suffix +
+        " because they were not changed.",
+      operationName,
+      "preserved_existing",
+      {
+        kept_fields: preservedFields,
+      },
+    );
+  });
+}
+
+function configuredOperationFieldNames(operationPatch) {
+  if (!operationPatch || typeof operationPatch !== "object") {
+    return [];
+  }
+  return Array.from(OPERATION_BINDING_FIELDS).filter((fieldName) => {
+    if (fieldName === "enabled") {
+      return false;
+    }
+    const value = operationPatch[fieldName];
+    return value !== null && value !== undefined;
+  });
+}
+
+function operationFieldLabel(fieldName) {
+  if (SELECTION_PARAM_LABELS[fieldName]) {
+    return selectionParameterLabel(fieldName);
+  }
+  const labels = {
+    op_count: "operation count",
+    character_set: "character set",
+    key: "key generator",
+    val: "value generator",
+    selection: "selection",
+    selection_distribution: "selection distribution",
+    selectivity: "selectivity",
+    range_format: "range format",
+    key_len: "key length",
+    val_len: "value length",
+    key_pattern: "key pattern",
+    val_pattern: "value pattern",
+    key_hot_len: "key hot length",
+    key_hot_amount: "key hot amount",
+    key_hot_probability: "key hot probability",
+    val_hot_len: "value hot length",
+    val_hot_amount: "value hot amount",
+    val_hot_probability: "value hot probability",
+    k: "k",
+    l: "l",
+  };
+  return labels[fieldName] || String(fieldName).replace(/_/g, " ");
+}
+
+function promptMentionsSelectionParameter(lowerPrompt, fieldName) {
+  const text = String(lowerPrompt || "");
+  if (!text) {
+    return false;
+  }
+  const patterns = {
+    selection_min: /\bmin(?:imum)?\b/,
+    selection_max: /\bmax(?:imum)?\b/,
+    selection_mean: /\bmean\b/,
+    selection_std_dev:
+      /\bstandard deviation\b|\bstd(?:\.?\s*dev|_?dev|_?deviation)?\b/,
+    selection_alpha: /\balpha\b/,
+    selection_beta: /\bbeta\b/,
+    selection_n: /\bparameter\s+n\b|\bzipf\s+n\b/,
+    selection_s: /\bparameter\s+s\b|\bzipf\s+s\b/,
+    selection_lambda: /\blambda\b/,
+    selection_scale: /\bscale\b/,
+    selection_shape: /\bshape\b/,
+  };
+  const pattern = patterns[fieldName];
+  return !!(pattern && pattern.test(text));
 }
 
 function normalizeClarifications(

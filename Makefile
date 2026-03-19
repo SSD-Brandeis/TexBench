@@ -30,7 +30,7 @@ test:
 	$(NPM) test
 
 test-demo:
-	AI_PROVIDER=ollama OLLAMA_MODEL=llama3 node --test test/assist-natural-language-demo.test.mjs test/assist-natural-language-extended.test.mjs test/assist-provider-coverage.test.mjs
+	AI_PROVIDER=ollama OLLAMA_MODEL=llama3 node --test test/assist-chat-session.test.mjs test/assist-natural-language-demo.test.mjs test/assist-natural-language-extended.test.mjs test/assist-provider-coverage.test.mjs
 
 test-demo-ollama:
-	AI_PROVIDER=ollama node --test test/assist-natural-language-demo.test.mjs test/assist-natural-language-extended.test.mjs test/assist-provider-coverage.test.mjs
+	AI_PROVIDER=ollama node --test test/assist-chat-session.test.mjs test/assist-natural-language-demo.test.mjs test/assist-natural-language-extended.test.mjs test/assist-provider-coverage.test.mjs
