@@ -717,9 +717,6 @@ initApp().catch((initError) => {
 });
 
 function onFormChange(event) {
-  if (activePresetJson) {
-    clearLoadedPresetState();
-  }
   const eventTarget = event && event.target ? event.target : null;
   if (eventTarget === formSections) {
     persistActiveStructureFromForm();
@@ -1281,6 +1278,7 @@ function getPresetFlowController() {
     cloneJsonValue,
     ensureWorkloadStructureState,
     loadActiveStructureIntoForm,
+    loadPresetIntoBuilder,
     renderGeneratedJson,
     resetFormInterface,
     setValidationStatus,
@@ -1375,6 +1373,46 @@ function clearOperationFormState() {
     setOperationChecked(op, false);
     refreshAdvancedExpressionSummary(op);
   });
+}
+
+function loadPresetIntoBuilder(presetJson) {
+  const normalizedJson =
+    presetJson && typeof presetJson === "object"
+      ? stripValidationMetadata(cloneJsonValue(presetJson))
+      : {};
+  workloadForm.reset();
+  clearFieldLocks();
+  clearOperationFormState();
+  activePresetJson = null;
+
+  const presetCharacterSet =
+    normalizedJson && typeof normalizedJson.character_set === "string"
+      ? normalizedJson.character_set.trim()
+      : "";
+  if (formCharacterSet) {
+    const options = Array.from(formCharacterSet.options || []).map(
+      (option) => option.value,
+    );
+    formCharacterSet.value = options.includes(presetCharacterSet)
+      ? presetCharacterSet
+      : "";
+  }
+
+  workloadStructureState =
+    normalizedJson &&
+    Array.isArray(normalizedJson.sections) &&
+    normalizedJson.sections.length > 0
+      ? normalizePatchedStructureSections(normalizedJson.sections)
+      : [createEmptySectionState()];
+  activeSectionIndex = 0;
+  activeGroupIndex = 0;
+  customWorkloadMode = true;
+  clearAssistantThread();
+  setAssistantStatus("Ready", "default");
+  setRunButtonBusy(false);
+  loadActiveStructureIntoForm();
+  updateJsonFromForm();
+  syncLandingUi();
 }
 
 function applyOperationSpecToForm(op, spec) {
@@ -4074,10 +4112,7 @@ function updateJsonFromForm() {
 }
 
 function getCurrentWorkloadJson() {
-  if (!activePresetJson) {
-    return buildJsonFromForm();
-  }
-  return stripValidationMetadata(activePresetJson);
+  return buildJsonFromForm();
 }
 
 function clearAssistantThread() {

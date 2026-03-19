@@ -40,6 +40,10 @@
       typeof config.loadActiveStructureIntoForm === "function"
         ? config.loadActiveStructureIntoForm
         : function loadActiveStructureIntoFormFallback() {};
+    const loadPresetIntoBuilder =
+      typeof config.loadPresetIntoBuilder === "function"
+        ? config.loadPresetIntoBuilder
+        : function loadPresetIntoBuilderFallback() {};
     const updateJsonFromForm =
       typeof config.updateJsonFromForm === "function"
         ? config.updateJsonFromForm
@@ -306,7 +310,6 @@
           throw new Error("Failed to load preset JSON.");
         }
         const loadedJson = await response.json();
-        resetFormInterface();
         if (refs.presetFamilySelect) {
           refs.presetFamilySelect.value = preset.family;
         }
@@ -315,10 +318,9 @@
           refs.presetFileSelect.value = preset.id;
           refs.presetFileSelect.disabled = false;
         }
-        setActivePresetJson(cloneJsonValue(loadedJson));
-        renderGeneratedJson(loadedJson);
-        updateInteractiveStats(loadedJson);
-        void validateGeneratedJson(loadedJson);
+        setCustomWorkloadMode(true);
+        setActivePresetJson(null);
+        loadPresetIntoBuilder(cloneJsonValue(loadedJson));
         renderPresetSelectionNote(preset.family, preset.id);
         syncLandingUi();
       } catch (error) {
