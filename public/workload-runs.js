@@ -326,60 +326,67 @@
     return container;
   }
 
-  function buildRunCard(run, actions) {
-    const card = document.createElement("article");
-    card.className = "run-card";
+  function slugifyMetricLabel(label) {
+    return String(label || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  }
 
-    const head = document.createElement("div");
-    head.className = "run-card-head";
-    const left = document.createElement("span");
-    left.textContent = formatLocalTime(run.created_at);
-    const badge = document.createElement("span");
-    badge.className = "run-status-badge " + toStatusClass(run.status);
-    badge.textContent = statusLabel(run.status);
-    head.appendChild(left);
-    head.appendChild(badge);
-    card.appendChild(head);
+  function findOverallMetric(stats, candidates) {
+    const wanted = new Set(
+      (Array.isArray(candidates) ? candidates : [])
+        .map((entry) => String(entry || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    if (wanted.size === 0) {
+      return null;
+    }
+    const metrics =
+      stats && typeof stats === "object"
+        ? normalizeMetricsList(stats.overall)
+        : [];
+    for (const metric of metrics) {
+      const keys = [
+        String(metric && metric.key ? metric.key : "")
+          .trim()
+          .toLowerCase(),
+        slugifyMetricLabel(metric && metric.label ? metric.label : ""),
+      ].filter(Boolean);
+      if (keys.some((key) => wanted.has(key))) {
+        return metric;
+      }
+    }
+    return null;
+  }
 
-    const progress = document.createElement("p");
-    progress.className = "run-progress";
-    progress.textContent = run.progress_text || "No status message.";
-    card.appendChild(progress);
+  function basenameFromPath(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return "";
+    }
+    const normalized = text.split("?")[0];
+    const segments = normalized.split(/[\\/]/).filter(Boolean);
+    return segments.length > 0 ? segments[segments.length - 1] : normalized;
+  }
 
-    if (
+  function summarizeOutputTarget(run) {
+    const outputPath =
+      run &&
       run.output_paths &&
-      ((typeof run.output_paths.latest_output_path === "string" &&
-        run.output_paths.latest_output_path.trim()) ||
-        (typeof run.output_paths.latest_workload_path === "string" &&
-          run.output_paths.latest_workload_path.trim()))
-    ) {
-      const locationEl = document.createElement("p");
-      locationEl.className = "run-location";
-      locationEl.textContent =
-        "Known output: " +
-        (
-          run.output_paths.latest_output_path ||
-          run.output_paths.latest_workload_path
-        ).trim();
-      card.appendChild(locationEl);
-    }
+      (run.output_paths.latest_output_path || run.output_paths.latest_workload_path)
+        ? run.output_paths.latest_output_path || run.output_paths.latest_workload_path
+        : run &&
+            run.links &&
+            (run.links.output_download_path || run.links.workload_download_path)
+          ? run.links.output_download_path || run.links.workload_download_path
+          : "";
+    const label = basenameFromPath(outputPath);
+    return label || "—";
+  }
 
-    if (
-      run.error &&
-      typeof run.error.message === "string" &&
-      run.error.message.trim()
-    ) {
-      const errorEl = document.createElement("p");
-      errorEl.className = "run-error";
-      errorEl.textContent = run.error.message.trim();
-      card.appendChild(errorEl);
-    }
-
-    const statsEl = buildBenchmarkStats(run.benchmark_stats);
-    if (statsEl) {
-      card.appendChild(statsEl);
-    }
-
+  function buildRunActions(run, actions) {
     const runActions = document.createElement("div");
     runActions.className = "run-actions";
 
@@ -434,8 +441,167 @@
       runActions.appendChild(cancelBtn);
     }
 
-    card.appendChild(runActions);
-    return card;
+    return runActions;
+  }
+
+  function buildRunTable(runs, actions) {
+    const shell = document.createElement("div");
+    shell.className = "runs-table-shell";
+
+    const table = document.createElement("table");
+    table.className = "runs-table";
+
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    [
+      "Started",
+      "Database",
+      "Status",
+      "Throughput",
+      "Avg Latency",
+      "Output",
+    ].forEach((labelText) => {
+      const th = document.createElement("th");
+      th.textContent = labelText;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    runs.forEach((run) => {
+      const throughputMetric = findOverallMetric(run.benchmark_stats, [
+        "throughput_using_start_and_end_time_ops_ms",
+        "throughput_using_start_and_end_time",
+      ]);
+      const avgLatencyMetric = findOverallMetric(run.benchmark_stats, [
+        "average_latency",
+      ]);
+
+      const summaryRow = document.createElement("tr");
+      summaryRow.className = "runs-table-summary-row";
+      summaryRow.tabIndex = 0;
+      summaryRow.setAttribute("role", "button");
+      summaryRow.setAttribute("aria-expanded", "false");
+
+      const startedCell = document.createElement("td");
+      const startedPrimary = document.createElement("div");
+      startedPrimary.className = "runs-table-primary";
+      startedPrimary.textContent = formatLocalTime(run.created_at) || "—";
+      const startedSecondary = document.createElement("div");
+      startedSecondary.className = "runs-table-secondary";
+      startedSecondary.textContent =
+        typeof run.run_id === "string" && run.run_id.trim()
+          ? run.run_id.trim()
+          : "local run";
+      startedCell.appendChild(startedPrimary);
+      startedCell.appendChild(startedSecondary);
+      summaryRow.appendChild(startedCell);
+
+      const databaseCell = document.createElement("td");
+      databaseCell.textContent = run.database || "—";
+      summaryRow.appendChild(databaseCell);
+
+      const statusCell = document.createElement("td");
+      const badge = document.createElement("span");
+      badge.className = "run-status-badge " + toStatusClass(run.status);
+      badge.textContent = statusLabel(run.status);
+      statusCell.appendChild(badge);
+      summaryRow.appendChild(statusCell);
+
+      const throughputCell = document.createElement("td");
+      throughputCell.textContent = throughputMetric
+        ? formatMetricValue(throughputMetric)
+        : "—";
+      summaryRow.appendChild(throughputCell);
+
+      const latencyCell = document.createElement("td");
+      latencyCell.textContent = avgLatencyMetric
+        ? formatMetricValue(avgLatencyMetric)
+        : "—";
+      summaryRow.appendChild(latencyCell);
+
+      const outputCell = document.createElement("td");
+      outputCell.className = "runs-table-output";
+      outputCell.textContent = summarizeOutputTarget(run);
+      summaryRow.appendChild(outputCell);
+
+      const detailRow = document.createElement("tr");
+      detailRow.className = "runs-table-detail-row";
+      detailRow.hidden = true;
+
+      const detailCell = document.createElement("td");
+      detailCell.className = "runs-table-detail-cell";
+      detailCell.colSpan = 6;
+
+      const detail = document.createElement("div");
+      detail.className = "runs-table-detail";
+
+      const progress = document.createElement("p");
+      progress.className = "runs-table-detail-copy";
+      progress.textContent = run.progress_text || "No status message.";
+      detail.appendChild(progress);
+
+      if (
+        run.output_paths &&
+        ((typeof run.output_paths.latest_output_path === "string" &&
+          run.output_paths.latest_output_path.trim()) ||
+          (typeof run.output_paths.latest_workload_path === "string" &&
+            run.output_paths.latest_workload_path.trim()))
+      ) {
+        const locationEl = document.createElement("p");
+        locationEl.className = "run-location";
+        locationEl.textContent =
+          "Known output: " +
+          (
+            run.output_paths.latest_output_path ||
+            run.output_paths.latest_workload_path
+          ).trim();
+        detail.appendChild(locationEl);
+      }
+
+      if (
+        run.error &&
+        typeof run.error.message === "string" &&
+        run.error.message.trim()
+      ) {
+        const errorEl = document.createElement("p");
+        errorEl.className = "run-error";
+        errorEl.textContent = run.error.message.trim();
+        detail.appendChild(errorEl);
+      }
+
+      const statsEl = buildBenchmarkStats(run.benchmark_stats);
+      if (statsEl) {
+        detail.appendChild(statsEl);
+      }
+
+      detail.appendChild(buildRunActions(run, actions));
+      detailCell.appendChild(detail);
+      detailRow.appendChild(detailCell);
+
+      const toggleExpanded = () => {
+        const nextExpanded = detailRow.hidden;
+        detailRow.hidden = !nextExpanded;
+        summaryRow.classList.toggle("expanded", nextExpanded);
+        summaryRow.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+      };
+
+      summaryRow.addEventListener("click", toggleExpanded);
+      summaryRow.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          toggleExpanded();
+        }
+      });
+
+      tbody.appendChild(summaryRow);
+      tbody.appendChild(detailRow);
+    });
+
+    table.appendChild(tbody);
+    shell.appendChild(table);
+    return shell;
   }
 
   function normalizeRunEntry(raw, fallbackRunId) {
@@ -445,6 +611,15 @@
         typeof input.run_id === "string" && input.run_id.trim()
           ? input.run_id.trim()
           : fallbackRunId,
+      database:
+        typeof input.database === "string" && input.database.trim()
+          ? input.database.trim()
+          : input.run_options &&
+              typeof input.run_options === "object" &&
+              typeof input.run_options.database === "string" &&
+              input.run_options.database.trim()
+            ? input.run_options.database.trim()
+            : "",
       status:
         typeof input.status === "string" && input.status.trim()
           ? input.status.trim()
@@ -515,6 +690,9 @@
         runs.unshift(normalized);
         persistRuns();
         return normalized;
+      }
+      if (!normalized.database && existing.database) {
+        normalized.database = existing.database;
       }
       Object.assign(existing, normalized);
       persistRuns();
@@ -618,9 +796,7 @@
         runsListEl.appendChild(empty);
         return;
       }
-      runs.forEach((run) => {
-        runsListEl.appendChild(buildRunCard(run, { cancel: cancelRun }));
-      });
+      runsListEl.appendChild(buildRunTable(runs, { cancel: cancelRun }));
     }
 
     async function startRun(specJson, options) {
@@ -650,7 +826,10 @@
           }),
         });
         const body = await parseJsonResponse(response);
-        const merged = mergeRun(body);
+        const merged = mergeRun({
+          ...body,
+          database,
+        });
         render();
         ensurePolling();
         void pollRuns();

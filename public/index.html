@@ -87,11 +87,23 @@
 
       .workspace {
         display: grid;
-        gap: 16px;
+        gap: 20px;
         min-width: 0;
         width: 100%;
         align-items: stretch;
         grid-template-columns: minmax(0, 1fr);
+      }
+
+      .workspace-column {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      #leftRail:has(#welcomePanel[hidden]):has(#builderPanel[hidden]),
+      #rightRail:has(#previewPanel[hidden]):has(#runsPanel[hidden]) {
+        display: none;
       }
 
       .panel {
@@ -114,7 +126,7 @@
       }
 
       .json-panel {
-        min-height: 420px;
+        min-height: 0;
       }
 
       .panel-header {
@@ -659,6 +671,84 @@
         min-width: 0;
       }
 
+      .builder-panel {
+        min-height: 0;
+      }
+
+      .builder-panel > .panel-header {
+        display: none;
+      }
+
+      .builder-panel > .panel-body {
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .builder-entry-card {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: linear-gradient(180deg, #ffffff 0%, #f9fcfb 100%);
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .builder-mode-switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface-soft);
+        align-self: flex-start;
+      }
+
+      .builder-mode-btn {
+        min-height: 36px;
+        padding: 0 14px;
+        border-radius: 999px;
+      }
+
+      .builder-mode-btn.active {
+        background: var(--surface);
+        color: var(--text);
+        border-color: #cfdce8;
+      }
+
+      .builder-entry-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .builder-entry-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .builder-entry-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text);
+      }
+
+      .builder-entry-help {
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--text-dim);
+      }
+
+      .builder-preset-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 12px;
+      }
+
       .welcome-eyebrow {
         margin: 0 0 10px;
         font-size: 11px;
@@ -1133,20 +1223,26 @@
       }
 
       .panel-header-preview {
-        align-items: stretch;
-      }
-
-      .preview-header-top {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         gap: 12px;
         flex-wrap: wrap;
       }
 
+      .preview-header-top {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+
       .preview-header-copy {
-        display: grid;
-        gap: 4px;
+        display: flex;
+        align-items: center;
+        min-width: 0;
       }
 
       .preview-header-caption {
@@ -1397,14 +1493,26 @@
         box-shadow: 0 0 0 1px rgba(15, 118, 110, 0.12);
       }
 
-      .runs-panel {
-        padding: 16px 18px 18px;
+      .benchmark-results-section {
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: linear-gradient(180deg, #ffffff 0%, #f9fcfb 100%);
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        min-height: 0;
+        overflow: hidden;
       }
 
-      .runs-panel-title {
+      .benchmark-results-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .benchmark-results-title {
         font-size: 12px;
         color: #4f6679;
         font-weight: 700;
@@ -1412,10 +1520,100 @@
         letter-spacing: 0.05em;
       }
 
+      .benchmark-results-subtitle {
+        font-size: 12px;
+        color: var(--text-dim);
+      }
+
       .runs-list {
+        min-width: 0;
+      }
+
+      .runs-table-shell {
+        overflow: auto;
+        max-height: 560px;
+      }
+
+      .runs-table {
+        width: 100%;
+        min-width: 820px;
+        border-collapse: separate;
+        border-spacing: 0;
+      }
+
+      .runs-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #f7fbfd;
+        border-bottom: 1px solid var(--border);
+        padding: 11px 14px;
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #61798b;
+      }
+
+      .runs-table tbody td {
+        padding: 12px 14px;
+        border-bottom: 1px solid #e8eff5;
+        vertical-align: top;
+      }
+
+      .runs-table-summary-row {
+        cursor: pointer;
+      }
+
+      .runs-table-summary-row:hover {
+        background: #fbfefd;
+      }
+
+      .runs-table-summary-row.expanded {
+        background: #f8fcfb;
+      }
+
+      .runs-table-primary {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      .runs-table-secondary {
+        margin-top: 2px;
+        font-size: 11px;
+        line-height: 1.35;
+        color: var(--text-dim);
+      }
+
+      .runs-table-output {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+        color: #245272;
+        word-break: break-all;
+      }
+
+      .runs-table-detail-row[hidden] {
+        display: none;
+      }
+
+      .runs-table-detail-cell {
+        padding: 0;
+        background: #fbfefd;
+      }
+
+      .runs-table-detail {
+        padding: 14px;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 10px;
+      }
+
+      .runs-table-detail-copy {
+        font-size: 12px;
+        color: #506679;
+        line-height: 1.45;
       }
 
       .run-card {
@@ -1631,9 +1829,11 @@
       }
 
       .runs-empty {
-        font-size: 12px;
+        margin: 0;
+        padding: 18px 16px 20px;
+        font-size: 13px;
         color: #6d8091;
-        line-height: 1.35;
+        line-height: 1.45;
       }
 
       .runs-known-location {
@@ -1692,37 +1892,20 @@
       @media (min-width: 980px) {
         .workspace {
           min-height: calc(100vh - 120px);
+          grid-template-columns: minmax(360px, 0.92fr) minmax(420px, 1.08fr);
+          align-items: start;
         }
-        .workspace:has(#previewPanel:not([hidden])) {
-          grid-template-columns: minmax(0, 1.12fr) minmax(420px, 0.94fr);
-          grid-template-rows: minmax(620px, calc(100vh - 250px)) auto;
-          gap: 20px;
+
+        #welcomePanel,
+        #builderPanel,
+        #previewPanel,
+        #runsPanel {
+          min-width: 0;
         }
-        .workspace:has(#previewPanel[hidden]) {
-          grid-template-columns: minmax(0, 1fr);
-        }
-        .workspace:has(#previewPanel:not([hidden])) #welcomePanel,
-        .workspace:has(#previewPanel:not([hidden])) #builderPanel {
-          grid-column: 1;
-          grid-row: 1;
-          height: 100%;
-          min-height: 0;
-        }
-        .workspace:has(#previewPanel[hidden]) #welcomePanel {
-          min-height: calc(100vh - 120px);
-        }
-        .workspace:has(#previewPanel:not([hidden])) #previewPanel {
-          grid-column: 2;
-          grid-row: 1;
-          height: 100%;
-          min-height: 0;
-          position: relative;
-          align-self: stretch;
-        }
-        .workspace:has(#runsPanel:not([hidden])) #runsPanel {
-          grid-column: 1 / -1;
-          grid-row: 2;
-          align-self: stretch;
+
+        #previewPanel,
+        #builderPanel {
+          min-height: min(720px, calc(100vh - 180px));
         }
       }
 
@@ -1758,25 +1941,34 @@
         }
       }
       .panel-header-preview {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr);
-        align-items: stretch;
-        gap: 14px;
-        padding: 18px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        flex-wrap: wrap;
       }
 
       .preview-header-top {
         min-width: 0;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 12px;
+        justify-content: flex-start;
+        gap: 10px;
+        flex: 1 1 auto;
       }
 
-      .preview-header-copy {
+      .preview-header-copy,
+      .preview-header-actions {
         min-width: 0;
         display: flex;
         align-items: center;
+      }
+
+      .preview-header-actions {
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
       }
 
       .preview-header-copy .panel-title {
@@ -1785,44 +1977,54 @@
         letter-spacing: 0;
       }
 
-      .preview-toolbar {
+      .preview-stack {
         display: flex;
-        align-items: center;
-        justify-content: flex-start;
-        flex-wrap: wrap;
-        gap: 12px;
-        width: 100%;
+        flex-direction: column;
+        gap: 16px;
       }
 
-      .preview-toolbar-group {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 4px;
+      .run-control-card {
         border: 1px solid var(--border);
         border-radius: 16px;
-        background: var(--surface-soft);
-        box-shadow: none;
+        background: linear-gradient(180deg, #f9fcfb 0%, #ffffff 100%);
+        padding: 16px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: stretch;
       }
 
-      .preview-toolbar-group .btn {
-        min-height: 40px;
-        padding: 0 16px;
-        border-radius: 12px;
-        font-weight: 500;
-        white-space: nowrap;
+      .run-control-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }
 
-      .preview-toolbar-group:last-child .btn {
-        background: transparent;
-        border: 1px solid transparent;
+      .run-control-label {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #5d7384;
+      }
+
+      .run-control-help {
+        font-size: 13px;
+        line-height: 1.45;
         color: var(--text-dim);
       }
 
-      .preview-toolbar-group:last-child .btn:hover {
-        background: #fff;
-        border-color: var(--border);
-        color: var(--text);
+      .run-control-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+      }
+
+      .preview-action-btn {
+        min-height: 36px;
+        padding: 8px 14px;
       }
 
       #runWorkloadBtn {
@@ -1830,6 +2032,8 @@
         color: var(--accent);
         border: 1px solid #cfe1dc;
         box-shadow: none;
+        min-height: 48px;
+        padding: 0 20px;
       }
 
       #runWorkloadBtn:hover {
@@ -1843,10 +2047,11 @@
         display: flex;
         align-items: center;
         gap: 10px;
-        min-height: 40px;
-        padding: 0 8px 0 12px;
-        border-radius: 12px;
-        background: transparent;
+        min-height: 48px;
+        padding: 0 12px;
+        border-radius: 14px;
+        background: #fff;
+        border: 1px solid var(--border);
       }
 
       .run-db-picker label {
@@ -1873,8 +2078,8 @@
       }
 
       @media (max-width: 1080px) {
-        .preview-toolbar {
-          justify-content: flex-start;
+        .run-control-card {
+          grid-template-columns: minmax(0, 1fr);
         }
       }
 
@@ -1883,15 +2088,9 @@
           flex-wrap: wrap;
         }
 
-        .preview-toolbar {
-          flex-direction: column;
-          align-items: stretch;
-        }
-
-        .preview-toolbar-group {
-          width: 100%;
+        .preview-header-actions,
+        .run-control-actions {
           justify-content: flex-start;
-          flex-wrap: wrap;
         }
 
         .run-db-picker {
@@ -1919,280 +2118,262 @@
       </header>
       <main>
         <div class="workspace">
-          <div class="welcome-panel" id="welcomePanel">
-            <p class="welcome-eyebrow">Tectonic workload builder</p>
-            <h2 class="welcome-title">Choose how you want to start</h2>
-            <p class="welcome-lede">
-              Load one of the copied Tectonic example specs or open the custom
-              workload editor to build a new workload from scratch.
-            </p>
-            <div class="welcome-choice-grid">
-              <section class="welcome-option">
-                <h3>Load a preset</h3>
-                <p>
-                  Start from an example spec. Pick the workload family first,
-                  then choose the exact JSON file to load.
-                </p>
-                <div class="preset-picker-grid">
-                  <label class="field">
-                    <span>Workload family</span>
-                    <select id="presetFamilySelect">
-                      <option value="">Choose a family...</option>
-                    </select>
-                  </label>
-                  <label class="field">
-                    <span>Preset file</span>
-                    <select id="presetFileSelect" disabled>
-                      <option value="">Choose a file...</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="preset-note" id="presetSelectionNote" hidden></div>
-              </section>
-              <section class="welcome-option">
-                <h3>Generate a custom workload</h3>
-                <p>
-                  Open the chat and form editor, then describe the workload you
-                  want in plain English or configure it field by field.
-                </p>
-                <div class="welcome-actions">
-                  <button
-                    type="button"
-                    class="btn btn-ghost welcome-primary-btn"
-                    id="customWorkloadBtn"
-                  >
-                    Generate Custom Workload
-                  </button>
-                </div>
-              </section>
-            </div>
-          </div>
-          <div
-            id="builderPanel"
-            class="panel"
-            hidden
-            style="
-              flex: 1;
-              display: flex;
-              flex-direction: column;
-              min-height: 0;
-            "
-          >
+          <div class="workspace-column" id="leftRail">
+          <div class="welcome-panel" id="welcomePanel" hidden></div>
+          <div id="builderPanel" class="panel builder-panel" hidden>
             <div class="panel-header">
               <span class="panel-title">Workload Form</span>
             </div>
             <div class="panel-body">
-              <div class="assistant-panel">
-                <div class="assistant-head">
-                  <span class="assistant-title">Describe Workload</span>
-                  <span
-                    class="assistant-status"
-                    id="assistantStatus"
-                    aria-live="polite"
-                    >Ready</span
-                  >
-                </div>
-                <div
-                  class="assistant-timeline"
-                  id="assistantTimeline"
-                  aria-live="polite"
-                ></div>
-                <div class="assistant-composer">
-                  <label for="assistantInput" class="assistant-composer-label"></label>
-                  <textarea
-                    id="assistantInput"
-                    class="assistant-input"
-                    placeholder="Example: Generate an insert-only workload with 1 KB key value size. The number of inserts is 100K."
-                  ></textarea>
-                  <div class="assistant-actions">
-                    <button
-                      type="button"
-                      class="btn btn-ghost"
-                      id="assistantApplyBtn"
-                    >
-                      Apply
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-ghost"
-                      id="assistantClearBtn"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <p class="assistant-composer-hint" id="assistantComposerHint"></p>
-                </div>
-              </div>
-              <p class="builder-hint">
-                Sections do not share valid keys. Groups inside a section share
-                valid keys, and operations in the same group are interleaved.
-                Use the controls below to edit the active section and group.
-              </p>
-              <div class="structure-panel">
-                <div class="structure-panel-head">
-                  <div>
-                    <p class="structure-panel-title">Workload Structure</p>
-                    <p class="structure-help">
-                      Same group = interleaved operations. Different groups in
-                      the same section share valid keys but run separately.
-                    </p>
-                  </div>
+              <div class="builder-entry-card">
+                <div class="builder-mode-switch" role="tablist" aria-label="Builder mode">
                   <button
                     type="button"
-                    class="btn btn-ghost"
-                    id="addSectionBtn"
+                    class="btn btn-ghost builder-mode-btn"
+                    id="builderDescribeModeBtn"
                   >
-                    Add Section
+                    Describe
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost builder-mode-btn"
+                    id="builderPresetModeBtn"
+                  >
+                    Load preset
                   </button>
                 </div>
-                <p class="structure-selection" id="structureSelectionLabel">
-                  Editing Section 1 / Group 1
-                </p>
-                <div class="structure-tree" id="structureTree"></div>
-              </div>
-              <form id="workloadForm" class="workload-form">
-                <div class="form-grid">
-                  <label class="field">
-                    <span id="formCharacterSetLabel">Character Set</span>
-                    <select id="formCharacterSet">
-                      <option value="">(unset)</option>
-                      <option value="alphanumeric">alphanumeric</option>
-                      <option value="alphabetic">alphabetic</option>
-                      <option value="numeric">numeric</option>
-                    </select>
-                    <small
-                      class="field-description"
-                      id="characterSetDescription"
-                    ></small>
-                  </label>
-                  <label class="field hidden" aria-hidden="true">
-                    <span id="formSectionsLabel">Active Section</span>
-                    <select id="formSections"></select>
-                    <small
-                      class="field-description"
-                      id="sectionsDescription"
-                    ></small>
-                  </label>
-                  <label class="field hidden" aria-hidden="true">
-                    <span id="formGroupsLabel">Active Group</span>
-                    <select id="formGroups"></select>
-                    <small
-                      class="field-description"
-                      id="groupsDescription"
-                    ></small>
-                  </label>
-                  <div class="field">
-                    <span id="skipKeyContainsCheckLabel"
-                      >Skip Key Contains Check</span
-                    >
-                    <label class="checkbox-item">
-                      <input type="checkbox" id="formSkipKeyContainsCheck" />
-                      <span>Enable across sections</span>
+                <div class="builder-entry-panel" id="builderPresetPanel" hidden>
+                  <div class="builder-entry-copy">
+                    <span class="builder-entry-title">Start from a preset</span>
+                    <p class="builder-entry-help">
+                      Pick a workload family and file. The selected preset loads
+                      directly into the same editable builder below.
+                    </p>
+                  </div>
+                  <div class="builder-preset-grid">
+                    <label class="field">
+                      <span>Workload family</span>
+                      <select id="presetFamilySelect">
+                        <option value="">Choose a family...</option>
+                      </select>
                     </label>
-                    <small
-                      class="field-description"
-                      id="skipKeyContainsCheckDescription"
-                    ></small>
+                    <label class="field">
+                      <span>Preset file</span>
+                      <select id="presetFileSelect" disabled>
+                        <option value="">Choose a file...</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="preset-note" id="presetSelectionNote" hidden></div>
+                </div>
+                <div class="builder-entry-panel" id="builderDescribePanel">
+                  <div class="assistant-panel">
+                    <div class="assistant-head">
+                      <span class="assistant-title">Describe Workload</span>
+                      <span
+                        class="assistant-status"
+                        id="assistantStatus"
+                        aria-live="polite"
+                        >Ready</span
+                      >
+                    </div>
+                    <div
+                      class="assistant-timeline"
+                      id="assistantTimeline"
+                      aria-live="polite"
+                    ></div>
+                    <div class="assistant-composer">
+                      <label for="assistantInput" class="assistant-composer-label"></label>
+                      <textarea
+                        id="assistantInput"
+                        class="assistant-input"
+                        placeholder="Example: Generate an insert-only workload with 1 KB key value size. The number of inserts is 100K."
+                      ></textarea>
+                      <div class="assistant-actions">
+                        <button
+                          type="button"
+                          class="btn btn-ghost"
+                          id="assistantApplyBtn"
+                        >
+                          Apply
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-ghost"
+                          id="assistantClearBtn"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <p class="assistant-composer-hint" id="assistantComposerHint"></p>
+                    </div>
                   </div>
                 </div>
-
-                <div class="fieldset">
-                  <p class="fieldset-title" id="operationsTitle">Operations</p>
-                  <div class="checkbox-grid" id="operationToggles"></div>
+              </div>
+                <div class="structure-panel">
+                  <div class="structure-panel-head">
+                    <div>
+                      <p class="structure-panel-title">Workload Structure</p>
+                      <p class="structure-help">
+                        Same group = interleaved operations. Different groups in
+                        the same section share valid keys but run separately.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      class="btn btn-ghost"
+                      id="addSectionBtn"
+                    >
+                      Add Section
+                    </button>
+                  </div>
+                  <p class="structure-selection" id="structureSelectionLabel">
+                    Editing Section 1 / Group 1
+                  </p>
+                  <div class="structure-tree" id="structureTree"></div>
                 </div>
+                <form id="workloadForm" class="workload-form">
+                  <div class="form-grid">
+                    <label class="field">
+                      <span id="formCharacterSetLabel">Character Set</span>
+                      <select id="formCharacterSet">
+                        <option value="">(unset)</option>
+                        <option value="alphanumeric">alphanumeric</option>
+                        <option value="alphabetic">alphabetic</option>
+                        <option value="numeric">numeric</option>
+                      </select>
+                      <small
+                        class="field-description"
+                        id="characterSetDescription"
+                      ></small>
+                    </label>
+                    <label class="field hidden" aria-hidden="true">
+                      <span id="formSectionsLabel">Active Section</span>
+                      <select id="formSections"></select>
+                      <small
+                        class="field-description"
+                        id="sectionsDescription"
+                      ></small>
+                    </label>
+                    <label class="field hidden" aria-hidden="true">
+                      <span id="formGroupsLabel">Active Group</span>
+                      <select id="formGroups"></select>
+                      <small
+                        class="field-description"
+                        id="groupsDescription"
+                      ></small>
+                    </label>
+                    <div class="field">
+                      <span id="skipKeyContainsCheckLabel"
+                        >Skip Key Contains Check</span
+                      >
+                      <label class="checkbox-item">
+                        <input type="checkbox" id="formSkipKeyContainsCheck" />
+                        <span>Enable across sections</span>
+                      </label>
+                      <small
+                        class="field-description"
+                        id="skipKeyContainsCheckDescription"
+                      ></small>
+                    </div>
+                  </div>
 
-                <div
-                  id="operationConfigContainer"
-                  class="operation-config-container"
-                ></div>
-              </form>
+                  <div class="fieldset">
+                    <p class="fieldset-title" id="operationsTitle">Operations</p>
+                    <div class="checkbox-grid" id="operationToggles"></div>
+                  </div>
+
+                  <div
+                    id="operationConfigContainer"
+                    class="operation-config-container"
+                  ></div>
+                </form>
+              </div>
             </div>
           </div>
-          <div
-            id="previewPanel"
-            class="panel json-panel"
-            hidden
-            style="flex-shrink: 0"
-          >
-            <div class="panel-header panel-header-preview">
-              <div class="preview-header-top">
-                <div class="preview-header-copy">
-                  <span class="panel-title">Workload Overview</span>
-                </div>
-                <div class="validation-result" id="validationResult"></div>
-              </div>
-              <div class="preview-toolbar">
-                <div class="preview-toolbar-group">
-                  <div class="run-db-picker">
-                    <label for="benchmarkDatabaseSelect">DB</label>
-                    <select id="benchmarkDatabaseSelect" class="run-db-select">
-                  <option value="rocksdb">rocksdb</option>
-                  <option value="printdb">printdb</option>
-                    </select>
+          <div class="workspace-column" id="rightRail">
+            <div id="previewPanel" class="panel json-panel" hidden>
+              <div class="panel-header panel-header-preview">
+                <div class="preview-header-top">
+                  <div class="preview-header-copy">
+                    <span class="panel-title">Workload Overview</span>
                   </div>
-                  <button class="btn btn-ghost" id="runWorkloadBtn">
-                    Run Workload
-                  </button>
+                  <div class="validation-result" id="validationResult"></div>
                 </div>
-                <div class="preview-toolbar-group">
-                  <button class="btn btn-ghost" id="toggleJsonPreviewBtn">
+                <div class="preview-header-actions">
+                  <button class="btn btn-ghost preview-action-btn" id="toggleJsonPreviewBtn">
                     Show Spec JSON
                   </button>
-                  <button class="btn btn-ghost" id="downloadJsonBtn">
+                  <button class="btn btn-ghost preview-action-btn" id="downloadJsonBtn">
                     Download Spec JSON
                   </button>
-                  <button class="btn btn-ghost" id="copyBtn">Copy</button>
+                  <button class="btn btn-ghost preview-action-btn" id="copyBtn">Copy</button>
                 </div>
               </div>
-            </div>
-            <div class="panel-body">
-              <div class="preview-stack">
-                <div
-                  id="jsonSummary"
-                  class="json-summary"
-                  aria-live="polite"
-                ></div>
-                <div id="jsonOutputShell" class="json-output" hidden>
-                  <div class="json-stats">
-                    <span class="json-pill" id="jsonSectionsPill"
-                      >sections: 0</span
-                    >
-                    <span class="json-pill" id="jsonOpsPill">ops: 0</span>
-                    <span class="json-pill" id="jsonBytesPill">bytes: 2</span>
+              <div class="panel-body">
+                <div class="preview-stack">
+                  <div
+                    id="jsonSummary"
+                    class="json-summary"
+                    aria-live="polite"
+                  ></div>
+                  <div class="run-control-card">
+                    <div class="run-control-copy">
+                      <span class="run-control-label">Benchmark target</span>
+                      <p class="run-control-help">
+                        Choose the database engine and run the current workload
+                        spec without leaving the overview panel.
+                      </p>
+                    </div>
+                    <div class="run-control-actions">
+                      <div class="run-db-picker">
+                        <label for="benchmarkDatabaseSelect">DB</label>
+                        <select id="benchmarkDatabaseSelect" class="run-db-select">
+                          <option value="rocksdb">rocksdb</option>
+                          <option value="printdb">printdb</option>
+                        </select>
+                      </div>
+                      <button class="btn btn-ghost" id="runWorkloadBtn">
+                        Run Workload
+                      </button>
+                    </div>
                   </div>
-                  <p class="shortcut-hint">
-                    JSON validates automatically. Shortcut: Ctrl/Cmd + Shift + C
-                    to copy.
-                  </p>
-                  <div id="jsonTree" class="json-tree" aria-live="polite"></div>
-                  <textarea
-                    id="jsonOutput"
-                    readonly
-                    hidden
-                    aria-hidden="true"
-                    placeholder="Generated JSON will appear here..."
-                  >
+                  <section class="benchmark-results-section" id="runsPanel" hidden>
+                    <div class="benchmark-results-head">
+                      <span class="benchmark-results-title">Benchmark results</span>
+                      <span class="benchmark-results-subtitle">Recent session runs</span>
+                    </div>
+                    <div class="runs-list" id="runsList">
+                      <p class="runs-empty">
+                        No runs yet. Click "Run Workload" to execute a tectonic benchmark.
+                      </p>
+                    </div>
+                  </section>
+                  <div id="jsonOutputShell" class="json-output" hidden>
+                    <div class="json-stats">
+                      <span class="json-pill" id="jsonSectionsPill"
+                        >sections: 0</span
+                      >
+                      <span class="json-pill" id="jsonOpsPill">ops: 0</span>
+                      <span class="json-pill" id="jsonBytesPill">bytes: 2</span>
+                    </div>
+                    <p class="shortcut-hint">
+                      JSON validates automatically. Shortcut: Ctrl/Cmd + Shift + C
+                      to copy.
+                    </p>
+                    <div id="jsonTree" class="json-tree" aria-live="polite"></div>
+                    <textarea
+                      id="jsonOutput"
+                      readonly
+                      hidden
+                      aria-hidden="true"
+                      placeholder="Generated JSON will appear here..."
+                    >
 {}</textarea
-                  >
+                    >
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-          <div class="panel runs-panel" id="runsPanel" hidden>
-            <p class="runs-panel-title">Workload Runs (Session)</p>
-            <p class="runs-known-location">
-              Known output file:
-              <code>generated-workloads/latest-workload.tar.gz</code>
-            </p>
-            <p class="runs-known-location">
-              Start app with <code>npm run dev</code>. Workload generation runs
-              in this same process.
-            </p>
-            <div class="runs-list" id="runsList">
-              <p class="runs-empty">
-                No runs yet. Click "Run Workload" to generate a workload
-                artifact.
-              </p>
             </div>
           </div>
         </div>

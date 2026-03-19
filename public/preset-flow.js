@@ -25,6 +25,22 @@
       typeof state.setCustomWorkloadMode === "function"
         ? state.setCustomWorkloadMode
         : function setCustomWorkloadModeFallback() {};
+    const getBuilderInputMode =
+      typeof state.getBuilderInputMode === "function"
+        ? state.getBuilderInputMode
+        : function getBuilderInputModeFallback() {
+            return "preset";
+          };
+    const setBuilderInputMode =
+      typeof state.setBuilderInputMode === "function"
+        ? state.setBuilderInputMode
+        : function setBuilderInputModeFallback() {};
+    const hasConfiguredWorkload =
+      typeof state.hasConfiguredWorkload === "function"
+        ? state.hasConfiguredWorkload
+        : function hasConfiguredWorkloadFallback() {
+            return false;
+          };
 
     const cloneJsonValue =
       typeof config.cloneJsonValue === "function"
@@ -137,18 +153,49 @@
       clearPresetSelectionNote();
     }
 
+    function syncBuilderEntryModeUi() {
+      const activeMode =
+        getBuilderInputMode() === "describe" ? "describe" : "preset";
+      if (refs.builderDescribeModeBtn) {
+        refs.builderDescribeModeBtn.classList.toggle(
+          "active",
+          activeMode === "describe",
+        );
+        refs.builderDescribeModeBtn.setAttribute(
+          "aria-selected",
+          activeMode === "describe" ? "true" : "false",
+        );
+      }
+      if (refs.builderPresetModeBtn) {
+        refs.builderPresetModeBtn.classList.toggle(
+          "active",
+          activeMode === "preset",
+        );
+        refs.builderPresetModeBtn.setAttribute(
+          "aria-selected",
+          activeMode === "preset" ? "true" : "false",
+        );
+      }
+      if (refs.builderDescribePanel) {
+        refs.builderDescribePanel.hidden = activeMode !== "describe";
+      }
+      if (refs.builderPresetPanel) {
+        refs.builderPresetPanel.hidden = activeMode !== "preset";
+      }
+    }
+
     function syncLandingUi() {
-      const hasPreset = !!getActivePresetJson();
-      const showPreview = getCustomWorkloadMode() || hasPreset;
+      const showPreview = hasConfiguredWorkload();
+      syncBuilderEntryModeUi();
 
       if (refs.appHeader) {
-        refs.appHeader.hidden = !getCustomWorkloadMode();
+        refs.appHeader.hidden = false;
       }
       if (refs.appShell && refs.appShell.classList) {
-        refs.appShell.classList.toggle("landing", !getCustomWorkloadMode());
+        refs.appShell.classList.remove("landing");
       }
       if (refs.builderPanel) {
-        refs.builderPanel.hidden = !getCustomWorkloadMode();
+        refs.builderPanel.hidden = false;
       }
       if (refs.previewPanel) {
         refs.previewPanel.hidden = !showPreview;
@@ -169,20 +216,19 @@
         refs.validationResult.hidden = !showPreview;
       }
       if (refs.newWorkloadBtn) {
-        refs.newWorkloadBtn.hidden = !getCustomWorkloadMode();
+        refs.newWorkloadBtn.hidden = !showPreview;
       }
       if (refs.presetBrowserBtn) {
-        refs.presetBrowserBtn.hidden = !getCustomWorkloadMode();
+        refs.presetBrowserBtn.hidden = true;
       }
       if (refs.welcomePanel) {
-        refs.welcomePanel.hidden = getCustomWorkloadMode();
+        refs.welcomePanel.hidden = true;
       }
     }
 
     function enableCustomWorkloadMode() {
       setCustomWorkloadMode(true);
-      clearLoadedPresetState();
-      clearWorkloadRuns();
+      setBuilderInputMode("describe");
       ensureWorkloadStructureState();
       loadActiveStructureIntoForm();
       updateJsonFromForm();
@@ -193,10 +239,15 @@
     }
 
     function enablePresetBrowserMode() {
-      setCustomWorkloadMode(false);
-      clearPersistedCustomBuilderState();
-      clearLoadedPresetState();
+      setBuilderInputMode("preset");
       syncLandingUi();
+      if (refs.presetFileSelect && !refs.presetFileSelect.disabled) {
+        refs.presetFileSelect.focus();
+        return;
+      }
+      if (refs.presetFamilySelect) {
+        refs.presetFamilySelect.focus();
+      }
     }
 
     function renderPresetFamilyOptions() {
@@ -277,12 +328,10 @@
         event && event.target && typeof event.target.value === "string"
           ? event.target.value
           : "";
-      setCustomWorkloadMode(false);
+      setBuilderInputMode("preset");
       setActivePresetJson(null);
-      clearPresetSelectionNote();
       renderPresetFileOptions(family);
       clearPresetSelectionNote();
-      updateJsonFromForm();
       syncLandingUi();
     }
 
@@ -291,14 +340,13 @@
         event && event.target && typeof event.target.value === "string"
           ? event.target.value
           : "";
-      setCustomWorkloadMode(false);
+      setBuilderInputMode("preset");
       if (!presetId) {
         setActivePresetJson(null);
         renderPresetSelectionNote(
           refs.presetFamilySelect ? refs.presetFamilySelect.value : "",
           "",
         );
-        updateJsonFromForm();
         syncLandingUi();
         return;
       }
@@ -309,7 +357,6 @@
       if (!preset) {
         setActivePresetJson(null);
         clearPresetSelectionNote();
-        updateJsonFromForm();
         syncLandingUi();
         return;
       }
@@ -329,14 +376,16 @@
           refs.presetFileSelect.disabled = false;
         }
         setCustomWorkloadMode(true);
+        setBuilderInputMode("describe");
         setActivePresetJson(null);
         loadPresetIntoBuilder(cloneJsonValue(loadedJson));
+        clearWorkloadRuns();
         renderPresetSelectionNote(preset.family, preset.id);
         syncLandingUi();
       } catch (error) {
         setActivePresetJson(null);
         clearPresetSelectionNote();
-        updateJsonFromForm();
+        setBuilderInputMode("preset");
         setValidationStatus(
           error && error.message ? error.message : "Failed to load preset JSON.",
           "invalid",
@@ -356,6 +405,18 @@
         refs.presetFileSelect.addEventListener(
           "change",
           handlePresetFileChange,
+        );
+      }
+      if (refs.builderDescribeModeBtn) {
+        refs.builderDescribeModeBtn.addEventListener(
+          "click",
+          enableCustomWorkloadMode,
+        );
+      }
+      if (refs.builderPresetModeBtn) {
+        refs.builderPresetModeBtn.addEventListener(
+          "click",
+          enablePresetBrowserMode,
         );
       }
       if (refs.customWorkloadBtn) {
