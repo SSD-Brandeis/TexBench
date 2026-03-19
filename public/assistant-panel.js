@@ -136,7 +136,7 @@
       if (refs.assistantTimeline) {
         refs.assistantTimeline.innerHTML = "";
       }
-      setComposerHint("Answer required clarifications to continue the thread.");
+      setComposerHint("");
     }
 
     function createTurnId() {
@@ -838,60 +838,14 @@
       clarificationIndex.clear();
 
       conversation.forEach(function renderTurn(turn) {
-        const turnEl = document.createElement("article");
-        turnEl.className =
-          "assistant-turn " + (turn.role === "user" ? "user" : "assistant");
+        if (turn.role !== "user") {
+          if (
+            !Array.isArray(turn.clarifications) ||
+            turn.clarifications.length === 0
+          ) {
+            return;
+          }
 
-        const header = document.createElement("div");
-        header.className = "assistant-turn-header";
-        const left = document.createElement("span");
-        left.textContent = turn.role === "user" ? "You" : "Assistant";
-        const right = document.createElement("span");
-        right.textContent = turn.at || "";
-        header.appendChild(left);
-        header.appendChild(right);
-        turnEl.appendChild(header);
-
-        if (turn.role === "user") {
-          const message = document.createElement("p");
-          message.className = "assistant-turn-message";
-          message.textContent = turn.text || "";
-          turnEl.appendChild(message);
-          refs.assistantTimeline.appendChild(turnEl);
-          return;
-        }
-
-        const summary = document.createElement("p");
-        summary.className = "assistant-turn-summary";
-        summary.textContent = turn.summary || "Applied.";
-        turnEl.appendChild(summary);
-
-        if (Array.isArray(turn.warnings) && turn.warnings.length > 0) {
-          const warning = document.createElement("p");
-          warning.className = "assistant-inline-meta";
-          warning.textContent = "Warnings: " + turn.warnings.join(" ");
-          turnEl.appendChild(warning);
-        }
-
-        if (Array.isArray(turn.assumptions) && turn.assumptions.length > 0) {
-          const assumptionsWrap = document.createElement("div");
-          assumptionsWrap.className = "assistant-assumptions";
-          const assumptionsTitle = document.createElement("span");
-          assumptionsTitle.className = "assistant-inline-meta";
-          assumptionsTitle.textContent = "Assumptions applied:";
-          assumptionsWrap.appendChild(assumptionsTitle);
-          const assumptionList = document.createElement("ul");
-          assumptionList.className = "assistant-assumption-list";
-          turn.assumptions.forEach(function appendAssumption(entry) {
-            const item = document.createElement("li");
-            item.textContent = entry.text;
-            assumptionList.appendChild(item);
-          });
-          assumptionsWrap.appendChild(assumptionList);
-          turnEl.appendChild(assumptionsWrap);
-        }
-
-        if (Array.isArray(turn.clarifications) && turn.clarifications.length > 0) {
           const clarificationsWrap = document.createElement("div");
           clarificationsWrap.className = "assistant-clarification-list";
           turn.clarifications.forEach(function appendClarification(clarification) {
@@ -980,20 +934,32 @@
 
             clarificationsWrap.appendChild(block);
           });
-          turnEl.appendChild(clarificationsWrap);
 
-          const footer = document.createElement("div");
-          footer.className = "assistant-card-footer";
-          const footerLeft = document.createElement("span");
-          footerLeft.textContent = "Edits save automatically.";
-          const footerRight = document.createElement("span");
-          footerRight.textContent = "Required answers gate next send.";
-          footer.appendChild(footerLeft);
-          footer.appendChild(footerRight);
-          turnEl.appendChild(footer);
+          refs.assistantTimeline.appendChild(clarificationsWrap);
+          return;
         }
 
-        refs.assistantTimeline.appendChild(turnEl);
+        const turnEl = document.createElement("article");
+        turnEl.className = "assistant-turn user";
+
+        const header = document.createElement("div");
+        header.className = "assistant-turn-header";
+        const left = document.createElement("span");
+        left.textContent = turn.role === "user" ? "You" : "Assistant";
+        const right = document.createElement("span");
+        right.textContent = turn.at || "";
+        header.appendChild(left);
+        header.appendChild(right);
+        turnEl.appendChild(header);
+
+        if (turn.role === "user") {
+          const message = document.createElement("p");
+          message.className = "assistant-turn-message";
+          message.textContent = turn.text || "";
+          turnEl.appendChild(message);
+          refs.assistantTimeline.appendChild(turnEl);
+          return;
+        }
       });
 
       pruneAnswerStore();

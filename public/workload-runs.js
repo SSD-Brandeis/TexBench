@@ -185,16 +185,24 @@
 
     if (rawValue.endsWith("us")) {
       const numberPart = rawValue.slice(0, -2).trim();
-      return formatNumericString(numberPart, 2) + " us";
+      return formatNumericString(numberPart, 2) + " µs";
     }
 
     if (rawValue.endsWith("ms")) {
       const numberPart = rawValue.slice(0, -2).trim();
-      return formatNumericString(numberPart, 2) + " ms";
+      const parsed = Number.parseFloat(numberPart);
+      if (!Number.isFinite(parsed)) {
+        return rawValue;
+      }
+      return formatNumericString(parsed * 1000, 2) + " µs";
     }
 
     if (label.indexOf("Throughput") !== -1 && rawValue.indexOf("ops/ms") === -1) {
-      return formatNumericString(rawValue, 2) + " ops/ms";
+      const parsed = Number.parseFloat(rawValue);
+      if (!Number.isFinite(parsed)) {
+        return rawValue;
+      }
+      return formatNumericString(parsed / 1000, 4) + " ops/µs";
     }
 
     if (/^-?\d+(?:\.\d+)?$/.test(rawValue)) {
