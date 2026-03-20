@@ -154,33 +154,11 @@
     }
 
     function syncBuilderEntryModeUi() {
-      const activeMode =
-        getBuilderInputMode() === "describe" ? "describe" : "preset";
-      if (refs.builderDescribeModeBtn) {
-        refs.builderDescribeModeBtn.classList.toggle(
-          "active",
-          activeMode === "describe",
-        );
-        refs.builderDescribeModeBtn.setAttribute(
-          "aria-selected",
-          activeMode === "describe" ? "true" : "false",
-        );
-      }
-      if (refs.builderPresetModeBtn) {
-        refs.builderPresetModeBtn.classList.toggle(
-          "active",
-          activeMode === "preset",
-        );
-        refs.builderPresetModeBtn.setAttribute(
-          "aria-selected",
-          activeMode === "preset" ? "true" : "false",
-        );
-      }
       if (refs.builderDescribePanel) {
-        refs.builderDescribePanel.hidden = activeMode !== "describe";
+        refs.builderDescribePanel.hidden = false;
       }
       if (refs.builderPresetPanel) {
-        refs.builderPresetPanel.hidden = activeMode !== "preset";
+        refs.builderPresetPanel.hidden = false;
       }
     }
 

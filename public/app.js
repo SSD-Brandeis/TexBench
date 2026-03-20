@@ -85,6 +85,7 @@ let builderInputMode = "preset";
 
 const INITIAL_JSON_TEXT = "{}";
 const CUSTOM_BUILDER_STORAGE_KEY = "tectonic.customBuilderState.v1";
+const UI_SESSION_STORAGE_KEY = "tectonic.uiSession.v1";
 const PRESET_INDEX_PATH = "/presets/index.json";
 const PROMPT_OPERATION_MATCHER_SOURCES = {
   inserts: "insert(?:s|ion)?",
@@ -616,7 +617,12 @@ async function initApp() {
     reportUiIssue("Failed to load preset catalog", e);
   }
   try {
-    if (window.__TECTONIC_FORCE_INIT__ === true) {
+    const shouldRestorePersistedUiState =
+      window.__TECTONIC_FORCE_INIT__ === true
+        ? false
+        : markUiSessionActiveForRestore();
+    window.__TECTONIC_RESTORE_UI_STATE__ = shouldRestorePersistedUiState;
+    if (!shouldRestorePersistedUiState) {
       clearPersistedCustomBuilderState();
     } else {
       restorePersistedCustomBuilderState();
@@ -1021,6 +1027,18 @@ function ensureOperationDefaultsIfEmpty(op) {
 
 function cloneJsonValue(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function markUiSessionActiveForRestore() {
+  try {
+    if (window.sessionStorage.getItem(UI_SESSION_STORAGE_KEY) === "active") {
+      return true;
+    }
+    window.sessionStorage.setItem(UI_SESSION_STORAGE_KEY, "active");
+    return false;
+  } catch (_error) {
+    return false;
+  }
 }
 
 function readCustomBuilderStorage() {
@@ -4331,6 +4349,7 @@ function updateJsonFromForm() {
     renderStructureSelectors();
   }
   renderGeneratedJson(generated);
+  syncLandingUi();
   updateStructurePanelVisibility();
   if (pendingJsonFocusTarget) {
     scrollJsonOutputToGroupFocus(pendingJsonFocusTarget);
@@ -4755,6 +4774,7 @@ function applyAssistantPatch(patch) {
   if (!patch || typeof patch !== "object") {
     return;
   }
+  customWorkloadMode = true;
   builderInputMode = "describe";
 
   const scopeOp = deriveAssistantScopeOperation(context);

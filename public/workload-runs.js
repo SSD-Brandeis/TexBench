@@ -14,6 +14,10 @@
 
   function readPersistedRuns() {
     try {
+      if (window.__TECTONIC_RESTORE_UI_STATE__ !== true) {
+        clearPersistedRuns();
+        return [];
+      }
       const raw = window.localStorage.getItem(WORKLOAD_RUNS_STORAGE_KEY);
       if (!raw) {
         return [];
@@ -371,21 +375,6 @@
     return segments.length > 0 ? segments[segments.length - 1] : normalized;
   }
 
-  function summarizeOutputTarget(run) {
-    const outputPath =
-      run &&
-      run.output_paths &&
-      (run.output_paths.latest_output_path || run.output_paths.latest_workload_path)
-        ? run.output_paths.latest_output_path || run.output_paths.latest_workload_path
-        : run &&
-            run.links &&
-            (run.links.output_download_path || run.links.workload_download_path)
-          ? run.links.output_download_path || run.links.workload_download_path
-          : "";
-    const label = basenameFromPath(outputPath);
-    return label || "—";
-  }
-
   function buildRunActions(run, actions) {
     const runActions = document.createElement("div");
     runActions.className = "run-actions";
@@ -459,7 +448,7 @@
       "Status",
       "Throughput",
       "Avg Latency",
-      "Output",
+      "Details",
     ].forEach((labelText) => {
       const th = document.createElement("th");
       th.textContent = labelText;
@@ -523,7 +512,7 @@
 
       const outputCell = document.createElement("td");
       outputCell.className = "runs-table-output";
-      outputCell.textContent = summarizeOutputTarget(run);
+      outputCell.textContent = "Show all stats";
       summaryRow.appendChild(outputCell);
 
       const detailRow = document.createElement("tr");
@@ -833,7 +822,6 @@
         render();
         ensurePolling();
         void pollRuns();
-        onInfo("Workload run started.");
         return merged;
       } catch (error) {
         onError("Failed to start workload run: " + formatApiError(error));

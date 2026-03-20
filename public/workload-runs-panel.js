@@ -40,9 +40,6 @@
       }
       runsController = createRunsController({
         runsListEl: refs.runsList,
-        onInfo(message) {
-          setValidationStatus(message, "valid");
-        },
         onError(message) {
           setValidationStatus(message, "invalid");
         },
