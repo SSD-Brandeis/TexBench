@@ -25,16 +25,6 @@
       typeof state.setCustomWorkloadMode === "function"
         ? state.setCustomWorkloadMode
         : function setCustomWorkloadModeFallback() {};
-    const getBuilderInputMode =
-      typeof state.getBuilderInputMode === "function"
-        ? state.getBuilderInputMode
-        : function getBuilderInputModeFallback() {
-            return "preset";
-          };
-    const setBuilderInputMode =
-      typeof state.setBuilderInputMode === "function"
-        ? state.setBuilderInputMode
-        : function setBuilderInputModeFallback() {};
     const hasConfiguredWorkload =
       typeof state.hasConfiguredWorkload === "function"
         ? state.hasConfiguredWorkload
@@ -48,10 +38,6 @@
         : function cloneJsonValueFallback(value) {
             return value;
           };
-    const clearPersistedCustomBuilderState =
-      typeof config.clearPersistedCustomBuilderState === "function"
-        ? config.clearPersistedCustomBuilderState
-        : function clearPersistedCustomBuilderStateFallback() {};
     const ensureWorkloadStructureState =
       typeof config.ensureWorkloadStructureState === "function"
         ? config.ensureWorkloadStructureState
@@ -68,24 +54,6 @@
       typeof config.updateJsonFromForm === "function"
         ? config.updateJsonFromForm
         : function updateJsonFromFormFallback() {};
-    const resetFormInterface =
-      typeof config.resetFormInterface === "function"
-        ? config.resetFormInterface
-        : function resetFormInterfaceFallback() {};
-    const renderGeneratedJson =
-      typeof config.renderGeneratedJson === "function"
-        ? config.renderGeneratedJson
-        : function renderGeneratedJsonFallback() {};
-    const updateInteractiveStats =
-      typeof config.updateInteractiveStats === "function"
-        ? config.updateInteractiveStats
-        : function updateInteractiveStatsFallback() {};
-    const validateGeneratedJson =
-      typeof config.validateGeneratedJson === "function"
-        ? config.validateGeneratedJson
-        : function validateGeneratedJsonFallback() {
-            return Promise.resolve();
-          };
     const clearWorkloadRuns =
       typeof config.clearWorkloadRuns === "function"
         ? config.clearWorkloadRuns
@@ -153,18 +121,8 @@
       clearPresetSelectionNote();
     }
 
-    function syncBuilderEntryModeUi() {
-      if (refs.builderDescribePanel) {
-        refs.builderDescribePanel.hidden = false;
-      }
-      if (refs.builderPresetPanel) {
-        refs.builderPresetPanel.hidden = false;
-      }
-    }
-
     function syncLandingUi() {
       const showPreview = hasConfiguredWorkload();
-      syncBuilderEntryModeUi();
 
       if (refs.appHeader) {
         refs.appHeader.hidden = false;
@@ -199,14 +157,10 @@
       if (refs.presetBrowserBtn) {
         refs.presetBrowserBtn.hidden = true;
       }
-      if (refs.welcomePanel) {
-        refs.welcomePanel.hidden = true;
-      }
     }
 
     function enableCustomWorkloadMode() {
       setCustomWorkloadMode(true);
-      setBuilderInputMode("describe");
       ensureWorkloadStructureState();
       loadActiveStructureIntoForm();
       updateJsonFromForm();
@@ -217,7 +171,6 @@
     }
 
     function enablePresetBrowserMode() {
-      setBuilderInputMode("preset");
       syncLandingUi();
       if (refs.presetFileSelect && !refs.presetFileSelect.disabled) {
         refs.presetFileSelect.focus();
@@ -306,7 +259,6 @@
         event && event.target && typeof event.target.value === "string"
           ? event.target.value
           : "";
-      setBuilderInputMode("preset");
       setActivePresetJson(null);
       renderPresetFileOptions(family);
       clearPresetSelectionNote();
@@ -318,7 +270,6 @@
         event && event.target && typeof event.target.value === "string"
           ? event.target.value
           : "";
-      setBuilderInputMode("preset");
       if (!presetId) {
         setActivePresetJson(null);
         renderPresetSelectionNote(
@@ -354,7 +305,6 @@
           refs.presetFileSelect.disabled = false;
         }
         setCustomWorkloadMode(true);
-        setBuilderInputMode("describe");
         setActivePresetJson(null);
         loadPresetIntoBuilder(cloneJsonValue(loadedJson));
         clearWorkloadRuns();
@@ -363,7 +313,6 @@
       } catch (error) {
         setActivePresetJson(null);
         clearPresetSelectionNote();
-        setBuilderInputMode("preset");
         setValidationStatus(
           error && error.message ? error.message : "Failed to load preset JSON.",
           "invalid",
@@ -383,24 +332,6 @@
         refs.presetFileSelect.addEventListener(
           "change",
           handlePresetFileChange,
-        );
-      }
-      if (refs.builderDescribeModeBtn) {
-        refs.builderDescribeModeBtn.addEventListener(
-          "click",
-          enableCustomWorkloadMode,
-        );
-      }
-      if (refs.builderPresetModeBtn) {
-        refs.builderPresetModeBtn.addEventListener(
-          "click",
-          enablePresetBrowserMode,
-        );
-      }
-      if (refs.customWorkloadBtn) {
-        refs.customWorkloadBtn.addEventListener(
-          "click",
-          enableCustomWorkloadMode,
         );
       }
       if (refs.presetBrowserBtn) {

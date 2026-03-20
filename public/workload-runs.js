@@ -365,16 +365,6 @@
     return null;
   }
 
-  function basenameFromPath(value) {
-    const text = String(value || "").trim();
-    if (!text) {
-      return "";
-    }
-    const normalized = text.split("?")[0];
-    const segments = normalized.split(/[\\/]/).filter(Boolean);
-    return segments.length > 0 ? segments[segments.length - 1] : normalized;
-  }
-
   function buildRunActions(run, actions) {
     const runActions = document.createElement("div");
     runActions.className = "run-actions";
@@ -652,8 +642,6 @@
   function createWorkloadRunsController(options) {
     const opts = options && typeof options === "object" ? options : {};
     const runsListEl = opts.runsListEl || null;
-    const onInfo =
-      typeof opts.onInfo === "function" ? opts.onInfo : defaultNoop;
     const onError =
       typeof opts.onError === "function" ? opts.onError : defaultNoop;
     const onBusyChange =

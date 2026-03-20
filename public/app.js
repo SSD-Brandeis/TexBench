@@ -8,7 +8,6 @@ const formSkipKeyContainsCheck = document.getElementById(
 const addSectionBtn = document.getElementById("addSectionBtn");
 const structureTree = document.getElementById("structureTree");
 const structurePanel = document.querySelector(".structure-panel");
-const builderHint = document.querySelector(".builder-hint");
 const structureSelectionLabel = document.getElementById(
   "structureSelectionLabel",
 );
@@ -60,16 +59,8 @@ const assistantTimeline = document.getElementById("assistantTimeline");
 const assistantComposerHint = document.getElementById("assistantComposerHint");
 const appShell = document.getElementById("appShell");
 const appHeader = document.getElementById("appHeader");
-const welcomePanel = document.getElementById("welcomePanel");
-const customWorkloadBtn = document.getElementById("customWorkloadBtn");
 const builderPanel = document.getElementById("builderPanel");
 const previewPanel = document.getElementById("previewPanel");
-const builderDescribeModeBtn = document.getElementById(
-  "builderDescribeModeBtn",
-);
-const builderPresetModeBtn = document.getElementById("builderPresetModeBtn");
-const builderDescribePanel = document.getElementById("builderDescribePanel");
-const builderPresetPanel = document.getElementById("builderPresetPanel");
 let pendingJsonFocusTarget = null;
 const runsPanel = document.getElementById("runsPanel");
 const structuredUiNormalizer =
@@ -81,7 +72,6 @@ let presetFlowController = null;
 let assistantPanelController = null;
 let workloadRunsPanelController = null;
 let jsonPreviewVisible = false;
-let builderInputMode = "preset";
 
 const INITIAL_JSON_TEXT = "{}";
 const CUSTOM_BUILDER_STORAGE_KEY = "tectonic.customBuilderState.v1";
@@ -1224,9 +1214,6 @@ function hasConfiguredWorkloadStructure() {
 
 function updateStructurePanelVisibility() {
   const showBuilderEditor = hasConfiguredWorkloadStructure();
-  if (builderHint) {
-    builderHint.hidden = !showBuilderEditor;
-  }
   if (structurePanel) {
     structurePanel.hidden = !showBuilderEditor;
   }
@@ -1335,12 +1322,7 @@ function getPresetFlowController() {
       appShell,
       assistantInput,
       builderPanel,
-      builderDescribeModeBtn,
-      builderDescribePanel,
-      builderPresetModeBtn,
-      builderPresetPanel,
       copyBtn,
-      customWorkloadBtn,
       downloadJsonBtn,
       newWorkloadBtn,
       presetBrowserBtn,
@@ -1351,7 +1333,6 @@ function getPresetFlowController() {
       runWorkloadBtn,
       runsPanel,
       validationResult,
-      welcomePanel,
     },
     state: {
       getActivePresetJson() {
@@ -1366,12 +1347,6 @@ function getPresetFlowController() {
       setCustomWorkloadMode(nextValue) {
         customWorkloadMode = nextValue === true;
       },
-      getBuilderInputMode() {
-        return builderInputMode;
-      },
-      setBuilderInputMode(nextValue) {
-        builderInputMode = nextValue === "describe" ? "describe" : "preset";
-      },
       hasConfiguredWorkload() {
         return hasConfiguredWorkloadStructure();
       },
@@ -1385,16 +1360,11 @@ function getPresetFlowController() {
         }
         controller.clearRuns();
       },
-      clearPersistedCustomBuilderState,
       ensureWorkloadStructureState,
       loadActiveStructureIntoForm,
     loadPresetIntoBuilder,
-    renderGeneratedJson,
-    resetFormInterface,
     setValidationStatus,
-    updateInteractiveStats,
     updateJsonFromForm,
-    validateGeneratedJson,
   });
   return presetFlowController;
 }
@@ -1517,7 +1487,6 @@ function loadPresetIntoBuilder(presetJson) {
   activeSectionIndex = 0;
   activeGroupIndex = 0;
   customWorkloadMode = true;
-  builderInputMode = "describe";
   clearAssistantThread();
   setAssistantStatus("Ready", "default");
   setRunButtonBusy(false);
@@ -1586,7 +1555,6 @@ function restorePersistedCustomBuilderState() {
 
   activePresetJson = null;
   customWorkloadMode = true;
-  builderInputMode = "describe";
   clearFieldLocks();
   clearOperationFormState();
   clearAssistantThread();
@@ -1823,7 +1791,6 @@ function enableCustomWorkloadMode() {
   const controller = getPresetFlowController();
   if (!controller) {
     customWorkloadMode = true;
-    builderInputMode = "describe";
     return;
   }
   controller.enableCustomWorkloadMode();
@@ -4775,7 +4742,6 @@ function applyAssistantPatch(patch) {
     return;
   }
   customWorkloadMode = true;
-  builderInputMode = "describe";
 
   const scopeOp = deriveAssistantScopeOperation(context);
   const allowOperationSetChanges = assistantPromptHasOperationIntent(
@@ -4800,7 +4766,6 @@ function applyAssistantPatch(patch) {
     activeSectionIndex = 0;
     activeGroupIndex = 0;
     customWorkloadMode = true;
-    builderInputMode = "describe";
     syncLandingUi();
     loadActiveStructureIntoForm();
     return;
@@ -5129,7 +5094,6 @@ function resetFormInterface(options) {
       : options.stayInBuilder !== false;
   workloadForm.reset();
   customWorkloadMode = stayInBuilder;
-  builderInputMode = stayInBuilder ? "describe" : "preset";
   clearLoadedPresetState();
   resetWorkloadStructureState();
   clearFieldLocks();

@@ -101,7 +101,6 @@
         gap: 20px;
       }
 
-      #leftRail:has(#welcomePanel[hidden]):has(#builderPanel[hidden]),
       #rightRail:has(#previewPanel[hidden]):has(#runsPanel[hidden]) {
         display: none;
       }
@@ -696,29 +695,6 @@
         gap: 12px;
       }
 
-      .builder-mode-switch {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 4px;
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        background: var(--surface-soft);
-        align-self: flex-start;
-      }
-
-      .builder-mode-btn {
-        min-height: 36px;
-        padding: 0 14px;
-        border-radius: 999px;
-      }
-
-      .builder-mode-btn.active {
-        background: var(--surface);
-        color: var(--text);
-        border-color: #cfdce8;
-      }
-
       .builder-entry-panel {
         display: flex;
         flex-direction: column;
@@ -1215,13 +1191,6 @@
         display: none !important;
       }
 
-      .json-actions {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-
       .panel-header-preview {
         display: flex;
         align-items: center;
@@ -1243,13 +1212,6 @@
         display: flex;
         align-items: center;
         min-width: 0;
-      }
-
-      .preview-header-caption {
-        margin: 0;
-        font-size: 12px;
-        line-height: 1.45;
-        color: #647989;
       }
 
       .preview-toolbar {
@@ -1896,7 +1858,6 @@
           align-items: start;
         }
 
-        #welcomePanel,
         #builderPanel,
         #previewPanel,
         #runsPanel {
@@ -2119,7 +2080,6 @@
       <main>
         <div class="workspace">
           <div class="workspace-column" id="leftRail">
-          <div class="welcome-panel" id="welcomePanel" hidden></div>
           <div id="builderPanel" class="panel builder-panel" hidden>
             <div class="panel-header">
               <span class="panel-title">Workload Form</span>
