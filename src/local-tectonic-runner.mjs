@@ -28,9 +28,9 @@ const DEFAULT_DATABASE =
 const MAX_SPEC_BYTES = parseInteger(process.env.RUN_MAX_SPEC_BYTES, 512 * 1024);
 const MAX_TIMEOUT_SECONDS = parseInteger(
   process.env.RUN_MAX_TIMEOUT_SECONDS,
-  1800,
+  7200,
 );
-const DEFAULT_TIMEOUT_SECONDS = 1800;
+const DEFAULT_TIMEOUT_SECONDS = 7200;
 const MIN_TIMEOUT_SECONDS = 30;
 const WORKLOAD_FILENAME = "benchmark-output.txt";
 const SPEC_FILENAME = "spec.json";
