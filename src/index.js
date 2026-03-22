@@ -5572,31 +5572,31 @@ function buildEffectiveState(patch, formState, schemaHints) {
       schemaHints,
       effective.operations,
     );
-  } else if (
-    !patchHasStructuredSections &&
-    singleGroupNeedsFlatFieldProjection(
+  } else if (!patchHasStructuredSections) {
+    const projectedSections = projectFlatOperationsIntoUniqueGroups(
       normalizedSections,
       effective.operations,
       schemaHints,
-    )
-  ) {
-    normalizedSections = synthesizeSectionsFromFlatState(effective, schemaHints);
-    effective.sections_count =
-      normalizedSections.length > 0
-        ? normalizedSections.length
-        : effective.sections_count;
-    effective.groups_per_section =
-      maxGroupsPerSection(normalizedSections) ?? effective.groups_per_section;
-    effective.skip_key_contains_check =
-      effective.skip_key_contains_check ||
-      normalizedSections.some(
-        (section) => section.skip_key_contains_check === true,
-      );
-    effective.operations = buildAggregateOperationsFromSections(
-      normalizedSections,
-      schemaHints,
-      effective.operations,
     );
+    if (projectedSections !== normalizedSections) {
+      normalizedSections = projectedSections;
+      effective.sections_count =
+        normalizedSections.length > 0
+          ? normalizedSections.length
+          : effective.sections_count;
+      effective.groups_per_section =
+        maxGroupsPerSection(normalizedSections) ?? effective.groups_per_section;
+      effective.skip_key_contains_check =
+        effective.skip_key_contains_check ||
+        normalizedSections.some(
+          (section) => section.skip_key_contains_check === true,
+        );
+      effective.operations = buildAggregateOperationsFromSections(
+        normalizedSections,
+        schemaHints,
+        effective.operations,
+      );
+    }
   }
   effective.sections = normalizedSections;
 
@@ -5631,39 +5631,51 @@ function sectionsNeedSynthesisFromFlatOperations(
   });
 }
 
-function singleGroupNeedsFlatFieldProjection(
+function projectFlatOperationsIntoUniqueGroups(
   sections,
   operations,
   schemaHints,
 ) {
-  if (
-    !Array.isArray(sections) ||
-    sections.length !== 1 ||
-    !sections[0] ||
-    !Array.isArray(sections[0].groups) ||
-    sections[0].groups.length !== 1
-  ) {
-    return false;
+  if (!Array.isArray(sections) || sections.length === 0) {
+    return sections;
   }
-  const group =
-    sections[0].groups[0] && typeof sections[0].groups[0] === "object"
-      ? sections[0].groups[0]
-      : {};
-  return schemaHints.operation_order.some((operationName) => {
+  let mutated = false;
+  const nextSections = cloneJsonValue(sections);
+  schemaHints.operation_order.forEach((operationName) => {
     const flatState =
       operations && operations[operationName] ? operations[operationName] : null;
     if (!flatState || flatState.enabled !== true) {
-      return false;
+      return;
     }
-    if (!Object.prototype.hasOwnProperty.call(group, operationName)) {
-      return false;
+    const matches = [];
+    nextSections.forEach((section, sectionIndex) => {
+      const groups = Array.isArray(section && section.groups) ? section.groups : [];
+      groups.forEach((group, groupIndex) => {
+        if (group && Object.prototype.hasOwnProperty.call(group, operationName)) {
+          matches.push({ sectionIndex, groupIndex });
+        }
+      });
+    });
+    if (matches.length !== 1) {
+      return;
+    }
+    const { sectionIndex, groupIndex } = matches[0];
+    const group =
+      nextSections[sectionIndex] &&
+      Array.isArray(nextSections[sectionIndex].groups) &&
+      nextSections[sectionIndex].groups[groupIndex] &&
+      typeof nextSections[sectionIndex].groups[groupIndex] === "object"
+        ? nextSections[sectionIndex].groups[groupIndex]
+        : null;
+    if (!group) {
+      return;
     }
     const groupState = normalizeOperationPatch(
       group[operationName],
       operationName,
       schemaHints,
     );
-    return configuredOperationFieldNames(flatState).some((fieldName) => {
+    const needsProjection = configuredOperationFieldNames(flatState).some((fieldName) => {
       const flatValue = flatState[fieldName];
       if (flatValue === null || flatValue === undefined) {
         return false;
@@ -5672,7 +5684,23 @@ function singleGroupNeedsFlatFieldProjection(
         JSON.stringify(flatValue) !== JSON.stringify(groupState[fieldName])
       );
     });
+    if (!needsProjection) {
+      return;
+    }
+    group[operationName] = stripEnabledFromOperationPatch(
+      normalizeOperationPatch(
+        {
+          ...groupState,
+          ...flatState,
+          enabled: true,
+        },
+        operationName,
+        schemaHints,
+      ),
+    );
+    mutated = true;
   });
+  return mutated ? nextSections : sections;
 }
 
 function getEnabledOperationNames(state, schemaHints) {

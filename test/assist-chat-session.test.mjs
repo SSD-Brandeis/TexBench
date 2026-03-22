@@ -40,12 +40,13 @@ function appendConversation(conversation, prompt, result) {
   ];
 }
 
-async function applyAssistTurn({ prompt, state, conversation }) {
+async function applyAssistTurn({ prompt, state, conversation, answers = {} }) {
   const result = await requestLiveAssist({
     prompt,
     formState: state,
     currentJson: buildCurrentJson(state),
     conversation,
+    answers,
     provider: LIVE_PROVIDER,
   });
   return {
@@ -440,6 +441,184 @@ test(
     assert.deepEqual(
       configuredOperations(state.sections[0].groups[1]),
       ["empty_point_queries", "inserts", "point_deletes"],
+    );
+  },
+);
+
+test(
+  "continuous chat session: repeated edits to the same interleaved group compose cleanly",
+  { skip: !LIVE_PROVIDER.binding, timeout: 240000 },
+  async () => {
+    let state = createFormState({});
+    let conversation = [];
+
+    const first = await applyAssistTurn({
+      prompt: "Generate an insert-only workload with 250k inserts",
+      state,
+      conversation,
+    });
+    state = first.nextState;
+    conversation = first.nextConversation;
+
+    const second = await applyAssistTurn({
+      prompt: "interleave 5k point queries with the inserts",
+      state,
+      conversation,
+    });
+    state = second.nextState;
+    conversation = second.nextConversation;
+
+    const third = await applyAssistTurn({
+      prompt: "change point queries distribution to normal",
+      state,
+      conversation,
+    });
+    state = third.nextState;
+    conversation = third.nextConversation;
+
+    const fourth = await applyAssistTurn({
+      prompt: "Add updates to group 1",
+      state,
+      conversation,
+    });
+    state = fourth.nextState;
+
+    assert.equal(state.sections_count, 1);
+    assert.equal(state.groups_per_section, 1);
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[0]),
+      ["inserts", "point_queries", "updates"],
+    );
+    assert.equal(state.sections[0].groups[0].inserts.op_count, 250000);
+    assert.equal(state.sections[0].groups[0].point_queries.op_count, 5000);
+    assert.equal(
+      state.sections[0].groups[0].point_queries.selection_distribution,
+      "normal",
+    );
+    assert.ok(state.sections[0].groups[0].updates);
+    assert.equal(state.operations.updates.enabled, true);
+  },
+);
+
+test(
+  "continuous chat session: repeated edits to group 2 preserve layout and prior changes",
+  { skip: !LIVE_PROVIDER.binding, timeout: 240000 },
+  async () => {
+    let state = createFormState({});
+    let conversation = [];
+
+    const first = await applyAssistTurn({
+      prompt: "Generate an insert-only workload with 250k inserts",
+      state,
+      conversation,
+    });
+    state = first.nextState;
+    conversation = first.nextConversation;
+
+    const second = await applyAssistTurn({
+      prompt: "then add a second phase with 5k updates and 5k range deletes",
+      state,
+      conversation,
+    });
+    state = second.nextState;
+    conversation = second.nextConversation;
+
+    const third = await applyAssistTurn({
+      prompt: "Change updates in group 2 to merges",
+      state,
+      conversation,
+    });
+    state = third.nextState;
+    conversation = third.nextConversation;
+
+    const fourth = await applyAssistTurn({
+      prompt: "Change range deletes in group 2 to point deletes",
+      state,
+      conversation,
+    });
+    state = fourth.nextState;
+
+    assert.equal(state.sections_count, 1);
+    assert.equal(state.groups_per_section, 2);
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[0]),
+      ["inserts"],
+    );
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[1]),
+      ["merges", "point_deletes"],
+    );
+    assert.equal(state.sections[0].groups[0].inserts.op_count, 250000);
+    assert.equal(state.sections[0].groups[1].merges.op_count, 5000);
+    assert.equal(state.sections[0].groups[1].point_deletes.op_count, 5000);
+    assert.equal(state.sections[0].groups[1].updates, undefined);
+    assert.equal(state.sections[0].groups[1].range_deletes, undefined);
+  },
+);
+
+test(
+  "continuous chat session: repeated structural and scoped edits preserve earlier groups",
+  { skip: !LIVE_PROVIDER.binding, timeout: 240000 },
+  async () => {
+    let state = createFormState({});
+    let conversation = [];
+
+    const first = await applyAssistTurn({
+      prompt: "Generate an insert-only workload with 250k inserts",
+      state,
+      conversation,
+    });
+    state = first.nextState;
+    conversation = first.nextConversation;
+
+    const second = await applyAssistTurn({
+      prompt: "then add a second phase with 5k point queries",
+      state,
+      conversation,
+    });
+    state = second.nextState;
+    conversation = second.nextConversation;
+
+    const third = await applyAssistTurn({
+      prompt: "change point queries distribution to normal",
+      state,
+      conversation,
+    });
+    state = third.nextState;
+    conversation = third.nextConversation;
+
+    const fourth = await applyAssistTurn({
+      prompt: "Add a third group with all deletes",
+      state,
+      conversation,
+      answers: {
+        clarify_delete_ops: [
+          "point_deletes",
+          "range_deletes",
+          "empty_point_deletes",
+        ],
+      },
+    });
+    state = fourth.nextState;
+
+    assert.equal(state.sections_count, 1);
+    assert.equal(state.groups_per_section, 3);
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[0]),
+      ["inserts"],
+    );
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[1]),
+      ["point_queries"],
+    );
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[2]),
+      ["empty_point_deletes", "point_deletes", "range_deletes"],
+    );
+    assert.equal(state.sections[0].groups[1].point_queries.op_count, 5000);
+    assert.equal(
+      state.sections[0].groups[1].point_queries.selection_distribution,
+      "normal",
     );
   },
 );
