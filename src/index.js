@@ -2204,8 +2204,51 @@ function normalizeSectionsFromStateLike(value, schemaHints) {
   return [];
 }
 
+function normalizeCurrentSectionsForIntentChecks(value, schemaHints) {
+  const explicitSections = normalizeSectionsFromStateLike(value, schemaHints);
+  if (!value || typeof value !== "object") {
+    return explicitSections;
+  }
+  const operations =
+    value.operations && typeof value.operations === "object"
+      ? value.operations
+      : {};
+  const hasEnabledOperations = schemaHints.operation_order.some(
+    (operationName) =>
+      operations[operationName] && operations[operationName].enabled === true,
+  );
+  if (
+    explicitSections.length > 0 &&
+    (!hasEnabledOperations ||
+      !sectionsNeedSynthesisFromFlatOperations(
+        explicitSections,
+        operations,
+        schemaHints,
+      ))
+  ) {
+    return explicitSections;
+  }
+  if (!hasEnabledOperations) {
+    return explicitSections;
+  }
+  return synthesizeSectionsFromFlatState(
+    {
+      character_set:
+        typeof value.character_set === "string" ? value.character_set : null,
+      sections_count: value.sections_count ?? null,
+      groups_per_section: value.groups_per_section ?? null,
+      skip_key_contains_check: value.skip_key_contains_check === true,
+      operations,
+    },
+    schemaHints,
+  );
+}
+
 function aiExpandedSectionsLayout(patch, formState, schemaHints) {
-  const currentSections = normalizeSectionsFromStateLike(formState, schemaHints);
+  const currentSections = normalizeCurrentSectionsForIntentChecks(
+    formState,
+    schemaHints,
+  );
   const nextSections = normalizeSectionsFromStateLike(patch, schemaHints);
   const currentGroupCount =
     currentSections[0] && Array.isArray(currentSections[0].groups)
@@ -2231,7 +2274,7 @@ function aiSatisfiedStructuredLayoutEditIntent(
     return false;
   }
   const currentSections = canonicalizeSectionsForStructuredEdit(
-    formState && Array.isArray(formState.sections) ? formState.sections : [],
+    normalizeCurrentSectionsForIntentChecks(formState, schemaHints),
     schemaHints,
   );
   const nextSections = canonicalizeSectionsForStructuredEdit(
@@ -2272,7 +2315,10 @@ function aiSatisfiedExplicitGroupAppendIntent(
   if (!aiExpandedSectionsLayout(patch, formState, schemaHints)) {
     return false;
   }
-  const currentSections = normalizeSectionsFromStateLike(formState, schemaHints);
+  const currentSections = normalizeCurrentSectionsForIntentChecks(
+    formState,
+    schemaHints,
+  );
   const nextSections = normalizeSectionsFromStateLike(patch, schemaHints);
   const currentGroupCount =
     currentSections[0] && Array.isArray(currentSections[0].groups)
@@ -2308,7 +2354,10 @@ function aiSatisfiedTargetedGroupEditIntent(
   if (!target) {
     return false;
   }
-  const currentSections = normalizeSectionsFromStateLike(formState, schemaHints);
+  const currentSections = normalizeCurrentSectionsForIntentChecks(
+    formState,
+    schemaHints,
+  );
   const nextSections = normalizeSectionsFromStateLike(patch, schemaHints);
   const currentGroup =
     currentSections[target.sectionIndex] &&
@@ -2322,6 +2371,38 @@ function aiSatisfiedTargetedGroupEditIntent(
       : null;
   if (!nextGroup) {
     return false;
+  }
+  if (currentSections.length !== nextSections.length) {
+    return false;
+  }
+  for (let sectionIndex = 0; sectionIndex < currentSections.length; sectionIndex += 1) {
+    const currentGroups =
+      currentSections[sectionIndex] &&
+      Array.isArray(currentSections[sectionIndex].groups)
+        ? currentSections[sectionIndex].groups
+        : [];
+    const nextGroups =
+      nextSections[sectionIndex] &&
+      Array.isArray(nextSections[sectionIndex].groups)
+        ? nextSections[sectionIndex].groups
+        : [];
+    if (currentGroups.length !== nextGroups.length) {
+      return false;
+    }
+    for (let groupIndex = 0; groupIndex < currentGroups.length; groupIndex += 1) {
+      if (
+        sectionIndex === target.sectionIndex &&
+        groupIndex === target.groupIndex
+      ) {
+        continue;
+      }
+      if (
+        JSON.stringify(currentGroups[groupIndex]) !==
+        JSON.stringify(nextGroups[groupIndex])
+      ) {
+        return false;
+      }
+    }
   }
   const replacement = extractPromptOperationReplacement(prompt, schemaHints);
   if (
@@ -2340,6 +2421,17 @@ function aiSatisfiedTargetedGroupEditIntent(
         replacement.targetOperation,
       )
     );
+  }
+  const mentionedOperations = getMentionedOperationsFromPrompt(prompt, schemaHints);
+  if (mentionedOperations.length > 0) {
+    const nextOperations = configuredGroupOperationNames(nextGroup, schemaHints);
+    if (
+      !mentionedOperations.every((operationName) =>
+        nextOperations.includes(operationName),
+      )
+    ) {
+      return false;
+    }
   }
   return JSON.stringify(currentGroup) !== JSON.stringify(nextGroup);
 }
@@ -2368,10 +2460,20 @@ function normalizeAssistPayload(
     promptRequestsStructuredLayoutEdit(prompt);
   const explicitGroupAppendRequested =
     !structuredPrompt && promptRequestsExplicitGroupAppend(prompt);
+  const explicitGroupTarget = extractExplicitGroupTarget(
+    prompt,
+    formState,
+    schemaHints,
+  );
   const structuredPromptOwnsLayout =
     structuredPrompt &&
     promptDefinesFreshStructuredWorkload(prompt, formState, schemaHints);
-  if (!structuredPrompt && !programHasStructuralCommands) {
+  if (
+    !structuredPrompt &&
+    !structuredLayoutEditRequested &&
+    !explicitGroupAppendRequested &&
+    !explicitGroupTarget
+  ) {
     collapseUnexpectedStructuredPatchToOperations(patch, schemaHints);
     if (!patch.operations || typeof patch.operations !== "object") {
       patch.operations = {};
@@ -2465,6 +2567,30 @@ function normalizeAssistPayload(
       formState,
       prompt,
       schemaHints,
+    );
+  }
+  if (
+    structuredLayoutEditRequested &&
+    !aiExpandedSectionsLayout(patch, formState, schemaHints)
+  ) {
+    applyPromptStructuredLayoutEditFallback(
+      patch,
+      formState,
+      prompt,
+      schemaHints,
+      options.answers,
+    );
+  }
+  if (
+    explicitGroupAppendRequested &&
+    !aiExpandedSectionsLayout(patch, formState, schemaHints)
+  ) {
+    applyPromptStructuredLayoutEditFallback(
+      patch,
+      formState,
+      prompt,
+      schemaHints,
+      options.answers,
     );
   }
   canonicalizePhasedSectionsLayout(patch, prompt, schemaHints);
@@ -3180,7 +3306,7 @@ function applyPromptStructuredLayoutEditFallback(
   }
   const derivedSections = deriveStructuredSectionsFromPrompt(prompt, schemaHints);
   const currentSections = canonicalizeSectionsForStructuredEdit(
-    formState && Array.isArray(formState.sections) ? formState.sections : [],
+    normalizeCurrentSectionsForIntentChecks(formState, schemaHints),
     schemaHints,
   );
   if (
@@ -3278,20 +3404,16 @@ function buildAnsweredStructuredGroupFallback(
   schemaHints,
   answers,
 ) {
-  if (!promptRequestsExplicitGroupAppend(prompt)) {
+  if (
+    !promptRequestsExplicitGroupAppend(prompt) &&
+    !promptRequestsStructuredLayoutEdit(prompt)
+  ) {
     return null;
   }
   const answeredOps = extractAnsweredOperationsSet(answers, schemaHints);
   const promptOps = getMentionedOperationsFromPrompt(
     String(prompt || "").toLowerCase(),
     schemaHints,
-  ).filter(
-    (operationName) =>
-      operationName !== "inserts" &&
-      operationName !== "updates" &&
-      operationName !== "merges" &&
-      operationName !== "point_queries" &&
-      operationName !== "range_queries",
   );
   const selectedOps = uniqueStrings([...answeredOps, ...promptOps]);
   const operationsPatch =
@@ -3401,11 +3523,20 @@ function promptRequestsExplicitGroupAppend(prompt) {
   if (!lowerPrompt) {
     return false;
   }
+  if (
+    /\b(?:change|replace|turn|convert|edit|modify)\b/.test(lowerPrompt) &&
+    /\bgroup\b/.test(lowerPrompt)
+  ) {
+    return false;
+  }
   return (
     /\b(?:add|append|create|make)\b[\s\S]{0,36}\b(?:an?\s+)?(?:another|new|next|second|third|2nd|3rd)\s+group\b/.test(
       lowerPrompt,
     ) ||
-    /\b(?:an?\s+)?(?:another|new|next|second|third|2nd|3rd)\s+group\b/.test(
+    /\b(?:put|place|move)\b[\s\S]{0,80}\b(?:into|to|as)\s+(?:an?\s+)?(?:second|third|2nd|3rd)\s+group\b/.test(
+      lowerPrompt,
+    ) ||
+    /\b(?:an?\s+)?(?:another|new|next)\s+group\b/.test(
       lowerPrompt,
     )
   );
@@ -3463,8 +3594,8 @@ function extractExplicitGroupTarget(prompt, formState, schemaHints) {
   if (!Number.isInteger(groupIndex) || groupIndex < 0) {
     return null;
   }
-  const normalizedSections = normalizeSectionsValue(
-    Array.isArray(formState && formState.sections) ? formState.sections : [],
+  const normalizedSections = normalizeCurrentSectionsForIntentChecks(
+    formState,
     normalizeSchemaHints(schemaHints),
   );
   const resolvedSectionIndex = Number.isInteger(sectionIndex) && sectionIndex >= 0
@@ -3625,8 +3756,8 @@ function applyPromptTargetedGroupEditFallback(
   if (!target) {
     return false;
   }
-  const currentSections = normalizeSectionsValue(
-    Array.isArray(formState && formState.sections) ? formState.sections : [],
+  const currentSections = normalizeCurrentSectionsForIntentChecks(
+    formState,
     schemaHints,
   );
   if (
@@ -3640,18 +3771,31 @@ function applyPromptTargetedGroupEditFallback(
   const nextSections = cloneJsonValue(currentSections);
   const nextGroup = nextSections[target.sectionIndex].groups[target.groupIndex];
   const replacement = extractPromptOperationReplacement(prompt, schemaHints);
+  const mentionedOperations = getMentionedOperationsFromPrompt(prompt, schemaHints);
+  const allowedOperations = new Set(
+    replacement &&
+    replacement.sourceOperation &&
+    replacement.targetOperation &&
+    replacement.sourceOperation !== replacement.targetOperation
+      ? [replacement.sourceOperation, replacement.targetOperation]
+      : mentionedOperations,
+  );
   const operationsPatch =
     patch.operations && typeof patch.operations === "object"
       ? patch.operations
       : {};
   const hasOperationPatch = Object.keys(operationsPatch).length > 0;
 
-  if (!hasOperationPatch && !replacement) {
+  if (!hasOperationPatch && !replacement && allowedOperations.size === 0) {
     return false;
   }
 
+  let appliedOperationPatch = false;
   Object.entries(operationsPatch).forEach(([operationName, operationPatch]) => {
     if (!schemaHints.operation_order.includes(operationName)) {
+      return;
+    }
+    if (allowedOperations.size > 0 && !allowedOperations.has(operationName)) {
       return;
     }
     applyOperationPatchToStructuredGroup(
@@ -3660,7 +3804,22 @@ function applyPromptTargetedGroupEditFallback(
       operationPatch,
       schemaHints,
     );
+    appliedOperationPatch = true;
   });
+
+  if (!replacement && allowedOperations.size > 0 && !appliedOperationPatch) {
+    allowedOperations.forEach((operationName) => {
+      if (!schemaHints.operation_order.includes(operationName)) {
+        return;
+      }
+      applyOperationPatchToStructuredGroup(
+        nextGroup,
+        operationName,
+        { enabled: true },
+        schemaHints,
+      );
+    });
+  }
 
   if (
     replacement &&
@@ -5413,6 +5572,31 @@ function buildEffectiveState(patch, formState, schemaHints) {
       schemaHints,
       effective.operations,
     );
+  } else if (
+    !patchHasStructuredSections &&
+    singleGroupNeedsFlatFieldProjection(
+      normalizedSections,
+      effective.operations,
+      schemaHints,
+    )
+  ) {
+    normalizedSections = synthesizeSectionsFromFlatState(effective, schemaHints);
+    effective.sections_count =
+      normalizedSections.length > 0
+        ? normalizedSections.length
+        : effective.sections_count;
+    effective.groups_per_section =
+      maxGroupsPerSection(normalizedSections) ?? effective.groups_per_section;
+    effective.skip_key_contains_check =
+      effective.skip_key_contains_check ||
+      normalizedSections.some(
+        (section) => section.skip_key_contains_check === true,
+      );
+    effective.operations = buildAggregateOperationsFromSections(
+      normalizedSections,
+      schemaHints,
+      effective.operations,
+    );
   }
   effective.sections = normalizedSections;
 
@@ -5444,6 +5628,50 @@ function sectionsNeedSynthesisFromFlatOperations(
       flatState.enabled === true &&
       (!sectionState || sectionState.enabled !== true)
     );
+  });
+}
+
+function singleGroupNeedsFlatFieldProjection(
+  sections,
+  operations,
+  schemaHints,
+) {
+  if (
+    !Array.isArray(sections) ||
+    sections.length !== 1 ||
+    !sections[0] ||
+    !Array.isArray(sections[0].groups) ||
+    sections[0].groups.length !== 1
+  ) {
+    return false;
+  }
+  const group =
+    sections[0].groups[0] && typeof sections[0].groups[0] === "object"
+      ? sections[0].groups[0]
+      : {};
+  return schemaHints.operation_order.some((operationName) => {
+    const flatState =
+      operations && operations[operationName] ? operations[operationName] : null;
+    if (!flatState || flatState.enabled !== true) {
+      return false;
+    }
+    if (!Object.prototype.hasOwnProperty.call(group, operationName)) {
+      return false;
+    }
+    const groupState = normalizeOperationPatch(
+      group[operationName],
+      operationName,
+      schemaHints,
+    );
+    return configuredOperationFieldNames(flatState).some((fieldName) => {
+      const flatValue = flatState[fieldName];
+      if (flatValue === null || flatValue === undefined) {
+        return false;
+      }
+      return (
+        JSON.stringify(flatValue) !== JSON.stringify(groupState[fieldName])
+      );
+    });
   });
 }
 

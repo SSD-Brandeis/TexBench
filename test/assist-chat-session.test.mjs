@@ -383,3 +383,63 @@ test(
     );
   },
 );
+
+test(
+  "continuous chat session: add updates to group 1 without mutating group 2",
+  { skip: !LIVE_PROVIDER.binding, timeout: 240000 },
+  async () => {
+    let state = applyPatchToState(createFormState({}), {
+      sections: [
+        {
+          character_set: "alphanumeric",
+          skip_key_contains_check: true,
+          groups: [
+            {
+              inserts: {
+                enabled: true,
+                op_count: 1000000,
+              },
+            },
+            {
+              empty_point_queries: {
+                enabled: true,
+                op_count: 1000,
+              },
+              inserts: {
+                enabled: true,
+                op_count: 1000,
+              },
+              point_deletes: {
+                enabled: true,
+                op_count: 1000,
+              },
+            },
+          ],
+        },
+      ],
+      sections_count: 1,
+      groups_per_section: 2,
+      clear_operations: false,
+      operations: {},
+    });
+    let conversation = [];
+
+    const turn = await applyAssistTurn({
+      prompt: "Add updates to group 1",
+      state,
+      conversation,
+    });
+    state = turn.nextState;
+
+    assert.equal(state.sections_count, 1);
+    assert.equal(state.groups_per_section, 2);
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[0]),
+      ["inserts", "updates"],
+    );
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[1]),
+      ["empty_point_queries", "inserts", "point_deletes"],
+    );
+  },
+);
