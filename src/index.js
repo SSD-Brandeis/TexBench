@@ -573,6 +573,27 @@ const OPENAI_ASSIST_PROGRAM_COMMAND_SCHEMA = {
     {
       type: "object",
       additionalProperties: false,
+      required: ["kind", "factor"],
+      properties: {
+        kind: { type: "string", enum: ["scale_all_op_counts"] },
+        factor: { type: ["number", "null"] },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["kind", "scan_length"],
+      properties: {
+        kind: { type: "string", enum: ["set_range_scan_length"] },
+        section_index: { type: ["number", "null"] },
+        group_index: { type: ["number", "null"] },
+        operation: { type: ["string", "null"] },
+        scan_length: { type: ["number", "null"] },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
       required: ["kind", "group"],
       properties: {
         kind: { type: "string", enum: ["append_group"] },
@@ -717,6 +738,25 @@ async function handleAssistRequest(request, env) {
   const currentJson = normalizeCurrentJson(body.current_json);
   const conversation = normalizeConversation(body.conversation);
   const answers = normalizeAssistantAnswers(body.answers);
+  const deterministicPayload = buildDeterministicAssistPayload(
+    prompt,
+    formState,
+    schemaHints,
+  );
+  if (deterministicPayload) {
+    const normalized = normalizeAssistPayload(
+      deterministicPayload,
+      schemaHints,
+      formState,
+      prompt,
+      {
+        allowDeterministicStructureFallback: false,
+        answers,
+      },
+    );
+    normalized.source = "deterministic";
+    return jsonResponse(normalized, 200);
+  }
   if (!env.AI || typeof env.AI.run !== "function") {
     const configError =
       typeof env.AI_CONFIG_ERROR === "string" && env.AI_CONFIG_ERROR.trim()
@@ -1191,6 +1231,8 @@ function buildAssistantMessages(
     "Do not return patch.",
     "Program is an ordered array of commands.",
     "Use set_operation_fields for simple add/remove/edit prompts.",
+    "Use scale_all_op_counts when the user asks to shrink or grow all operation counts together by some factor.",
+    "Use set_range_scan_length when the user asks for a fixed range scan length or exact scan length.",
     "Use set_group_operation_fields for edits scoped to one existing group.",
     "Use rename_group_operation when converting one operation in a group into another.",
     "Use append_group when the user asks for another/new/next/second/third group or a later phase group.",
@@ -1199,11 +1241,13 @@ function buildAssistantMessages(
     "For phased prompts, prefer one section with multiple groups.",
     "Do not ask for sections_count/groups_per_section when the phase layout is clear.",
     "Group indexes and section indexes are 1-based.",
-    "Allowed command kinds: set_top_field, clear_operations, set_operation_fields, append_group, set_group_operation_fields, rename_group_operation, replace_sections.",
+    "Allowed command kinds: set_top_field, clear_operations, set_operation_fields, scale_all_op_counts, set_range_scan_length, append_group, set_group_operation_fields, rename_group_operation, replace_sections.",
     "set_operation_fields.operation must be one of the allowed operation names.",
     "set_group_operation_fields.operation must be one of the allowed operation names.",
     "set_operation_fields.fields is an array of { field, string_value, number_value, boolean_value, json_value }.",
     "set_group_operation_fields.fields is an array of { field, string_value, number_value, boolean_value, json_value }.",
+    "scale_all_op_counts.factor is a positive multiplier like 0.1 or 2.",
+    "set_range_scan_length.scan_length is the desired number of keys per scan; prefer targeting range_queries unless the prompt clearly asks for range_deletes.",
     "append_group.group uses the compact structured layout with group.operations arrays or direct operation keys.",
     "replace_sections.sections uses the compact structured layout with section.groups[].operations arrays.",
     "Operation names must be exactly one of: inserts, updates, merges, point_queries, range_queries, point_deletes, range_deletes, empty_point_queries, empty_point_deletes, sorted.",
@@ -1758,6 +1802,34 @@ function canonicalizeAssistProgramCommand(command) {
     }
     const normalized = { ...value };
     if (
+      (normalized.factor === null || normalized.factor === undefined) &&
+      typeof normalized.scale_factor === "number" &&
+      Number.isFinite(normalized.scale_factor)
+    ) {
+      normalized.factor = normalized.scale_factor;
+    }
+    if (
+      (normalized.factor === null || normalized.factor === undefined) &&
+      typeof normalized.multiplier === "number" &&
+      Number.isFinite(normalized.multiplier)
+    ) {
+      normalized.factor = normalized.multiplier;
+    }
+    if (
+      (normalized.scan_length === null || normalized.scan_length === undefined) &&
+      typeof normalized.length === "number" &&
+      Number.isFinite(normalized.length)
+    ) {
+      normalized.scan_length = normalized.length;
+    }
+    if (
+      (normalized.scan_length === null || normalized.scan_length === undefined) &&
+      typeof normalized.count === "number" &&
+      Number.isFinite(normalized.count)
+    ) {
+      normalized.scan_length = normalized.count;
+    }
+    if (
       !Array.isArray(normalized.fields) &&
       Array.isArray(normalized.operation_fields)
     ) {
@@ -1823,6 +1895,8 @@ function canonicalizeAssistProgramCommand(command) {
               "set_top_field",
               "clear_operations",
               "set_operation_fields",
+              "scale_all_op_counts",
+              "set_range_scan_length",
               "append_group",
               "set_group_operation_fields",
               "rename_group_operation",
@@ -1840,6 +1914,8 @@ function canonicalizeAssistProgramCommand(command) {
     "set_top_field",
     "clear_operations",
     "set_operation_fields",
+    "scale_all_op_counts",
+    "set_range_scan_length",
     "append_group",
     "set_group_operation_fields",
     "rename_group_operation",
@@ -1852,6 +1928,10 @@ function canonicalizeAssistProgramCommand(command) {
     const inferredKind =
       Array.isArray(command.sections)
         ? "replace_sections"
+        : normalizedFinitePositiveNumber(command.factor) !== null
+          ? "scale_all_op_counts"
+          : normalizedFinitePositiveNumber(command.scan_length) !== null
+            ? "set_range_scan_length"
         : isPlainObject(command.group)
           ? "append_group"
           : (typeof command.from_operation === "string" ||
@@ -2036,6 +2116,88 @@ function patchFromAssistProgram(rawProgram, schemaHints, formState = null) {
       };
       return;
     }
+    if (kind === "scale_all_op_counts") {
+      const factor = normalizedFinitePositiveNumber(normalizedCommand.factor);
+      if (factor === null) {
+        return;
+      }
+      if (
+        Array.isArray(rawPatch.sections) ||
+        (formState &&
+          Array.isArray(formState.sections) &&
+          formState.sections.length > 0)
+      ) {
+        const sections = ensureProgramStructuralSections(
+          rawPatch,
+          formState,
+          schemaHints,
+        );
+        scaleOperationCountsInSections(sections, factor, schemaHints);
+        touchedStructure = true;
+      } else {
+        scaleFlatOperationCounts(rawPatch, formState, schemaHints, factor);
+      }
+      return;
+    }
+    if (kind === "set_range_scan_length") {
+      const scanLength = normalizedFinitePositiveNumber(
+        normalizedCommand.scan_length,
+      );
+      if (scanLength === null) {
+        return;
+      }
+      const target = resolveRangeScanCommandTarget(
+        normalizedCommand,
+        formState,
+        schemaHints,
+      );
+      if (!target) {
+        return;
+      }
+      const validKeyCount = estimateRangeScanValidKeyCount(
+        formState,
+        target,
+        schemaHints,
+      );
+      if (validKeyCount === null || validKeyCount <= 0) {
+        return;
+      }
+      const selectivity = Math.min(1, scanLength / validKeyCount);
+      if (
+        positiveIntegerOrNull(target.section_index) &&
+        positiveIntegerOrNull(target.group_index)
+      ) {
+        const group = ensureProgramGroup(
+          rawPatch,
+          formState,
+          schemaHints,
+          target.section_index,
+          target.group_index,
+        );
+        const merged = normalizeOperationPatch(
+          {
+            ...(isPlainObject(group[target.operation])
+              ? cloneJsonValue(group[target.operation])
+              : {}),
+            enabled: true,
+            range_format: "StartCount",
+            selectivity,
+          },
+          target.operation,
+          schemaHints,
+        );
+        group[target.operation] = stripEnabledFromOperationPatch(merged);
+        touchedStructure = true;
+      } else {
+        rawPatch.operations[target.operation] = {
+          ...(rawPatch.operations[target.operation] || {}),
+          enabled: true,
+          range_format: "StartCount",
+          selectivity,
+        };
+      }
+      return;
+    }
     if (kind === "append_group") {
       const section = ensureProgramSection(
         rawPatch,
@@ -2161,6 +2323,82 @@ function patchFromAssistProgram(rawProgram, schemaHints, formState = null) {
     finalizeProgramStructuralPatch(rawPatch, schemaHints);
   }
   return rawPatch;
+}
+
+function normalizedFinitePositiveNumber(value) {
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : NaN;
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+function scaleCountValue(value, factor) {
+  const numeric = normalizedFinitePositiveNumber(value);
+  if (numeric === null) {
+    return value;
+  }
+  const scaled = numeric * factor;
+  if (!Number.isFinite(scaled)) {
+    return value;
+  }
+  if (scaled === 0) {
+    return 0;
+  }
+  return Math.max(1, Math.round(scaled));
+}
+
+function scaleOperationCountsInSections(sections, factor, schemaHints) {
+  if (!Array.isArray(sections)) {
+    return;
+  }
+  sections.forEach((section) => {
+    const groups = Array.isArray(section && section.groups) ? section.groups : [];
+    groups.forEach((group) => {
+      schemaHints.operation_order.forEach((operationName) => {
+        if (!Object.prototype.hasOwnProperty.call(group || {}, operationName)) {
+          return;
+        }
+        const current = normalizeOperationPatch(
+          group[operationName],
+          operationName,
+          schemaHints,
+        );
+        if (current.op_count === null || current.op_count === undefined) {
+          return;
+        }
+        current.op_count = scaleCountValue(current.op_count, factor);
+        group[operationName] = stripEnabledFromOperationPatch(current);
+      });
+    });
+  });
+}
+
+function scaleFlatOperationCounts(rawPatch, formState, schemaHints, factor) {
+  schemaHints.operation_order.forEach((operationName) => {
+    const current =
+      formState &&
+      formState.operations &&
+      formState.operations[operationName] &&
+      formState.operations[operationName].enabled === true
+        ? formState.operations[operationName]
+        : null;
+    const next =
+      rawPatch.operations && rawPatch.operations[operationName]
+        ? rawPatch.operations[operationName]
+        : {};
+    const source = current || next;
+    if (!source || source.op_count === null || source.op_count === undefined) {
+      return;
+    }
+    rawPatch.operations[operationName] = {
+      ...next,
+      enabled: true,
+      op_count: scaleCountValue(source.op_count, factor),
+    };
+  });
 }
 
 function interpretAssistProgram(rawProgram, schemaHints, formState = null) {
@@ -2563,6 +2801,13 @@ function normalizeAssistPayload(
       schemaHints,
     );
     suppressSelectionPatchForStringDistributionPrompts(
+      patch,
+      formState,
+      prompt,
+      schemaHints,
+    );
+    applyPromptScaleAllOpCountsFallback(patch, formState, prompt, schemaHints);
+    applyPromptFixedRangeScanLengthFallback(
       patch,
       formState,
       prompt,
@@ -4385,6 +4630,400 @@ function applyPromptOperationFieldFallback(
   if (changed) {
     patch.operations[operationName] = opPatch;
   }
+}
+
+function promptRequestsAllOperationCountScaling(lowerPrompt) {
+  const text = String(lowerPrompt || "");
+  return (
+    /\b(?:all|every|each)\b[\s\S]{0,32}\b(?:operation counts?|op counts?|counts?)\b/.test(
+      text,
+    ) ||
+    /\b(?:operation counts?|op counts?|counts?)\b[\s\S]{0,32}\b(?:all|every|each)\b/.test(
+      text,
+    ) ||
+    /\bfor all operations\b/.test(text)
+  );
+}
+
+function extractPromptOperationCountScaleFactor(lowerPrompt) {
+  const text = String(lowerPrompt || "");
+  if (!text) {
+    return null;
+  }
+  if (
+    /\bone order of magnitude smaller\b/.test(text) ||
+    /\ban order of magnitude smaller\b/.test(text)
+  ) {
+    return 0.1;
+  }
+
+  let match = text.match(
+    /\bdivide(?:[\s\S]{0,24})\bby\s+([0-9][0-9,]*(?:\.\d+)?)\b/,
+  );
+  if (match) {
+    const divisor = normalizedFinitePositiveNumber(
+      parseHumanCountToken(match[1]),
+    );
+    return divisor ? 1 / divisor : null;
+  }
+
+  match = text.match(/\b([0-9][0-9,]*(?:\.\d+)?)x\s+(?:smaller|lower)\b/);
+  if (match) {
+    const divisor = normalizedFinitePositiveNumber(
+      parseHumanCountToken(match[1]),
+    );
+    return divisor ? 1 / divisor : null;
+  }
+
+  match = text.match(
+    /\b(?:decrease|decreased|reduce|reduced|lower|lowered|shrink|shrunken|cut|make)\b[\s\S]{0,48}\b(?:factor|magnitude)\s+of\s+([0-9][0-9,]*(?:\.\d+)?)\b/,
+  );
+  if (match) {
+    const divisor = normalizedFinitePositiveNumber(
+      parseHumanCountToken(match[1]),
+    );
+    return divisor ? 1 / divisor : null;
+  }
+
+  if (
+    /\b(?:decrease|decreased|reduce|reduced|lower|lowered|shrink|shrunken|cut)\b[\s\S]{0,48}\border of magnitude\b/.test(
+      text,
+    )
+  ) {
+    return 0.1;
+  }
+
+  match = text.match(
+    /\b(?:multiply|scale|increase|grow|raise)\b[\s\S]{0,24}\bby\s+([0-9][0-9,]*(?:\.\d+)?)\b/,
+  );
+  if (match) {
+    return normalizedFinitePositiveNumber(parseHumanCountToken(match[1]));
+  }
+
+  match = text.match(/\b([0-9][0-9,]*(?:\.\d+)?)x\s+(?:larger|bigger)\b/);
+  if (match) {
+    return normalizedFinitePositiveNumber(parseHumanCountToken(match[1]));
+  }
+
+  return null;
+}
+
+function extractPromptRangeScanLengthHint(prompt) {
+  const text = String(prompt || "");
+  if (!text) {
+    return null;
+  }
+  const patterns = [
+    /\b(?:scan|range)\s+length\b[\s\S]{0,24}?\b(?:(?:to|of)\s+)?(?:exact(?:ly)?\s+)?([0-9][0-9,]*(?:\.\d+)?(?:\s*(?:k|m|b|thousand|million|billion))?)\b/i,
+    /\b(?:exact(?:ly)?\s+)?([0-9][0-9,]*(?:\.\d+)?(?:\s*(?:k|m|b|thousand|million|billion))?)\b[\s\S]{0,12}\b(?:key|keys)\s+per\s+scan\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) {
+      continue;
+    }
+    const parsed = parseHumanCountToken(match[1]);
+    if (normalizedFinitePositiveNumber(parsed) !== null) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function resolveRangeScanPromptTarget(formState, prompt, schemaHints) {
+  const lowerPrompt = String(prompt || "").toLowerCase();
+  const mentionedRangeOps = getMentionedOperationsFromPrompt(
+    lowerPrompt,
+    schemaHints,
+  ).filter((operationName) =>
+    ["range_queries", "range_deletes"].includes(operationName),
+  );
+  if (mentionedRangeOps.length === 1) {
+    return {
+      operation: mentionedRangeOps[0],
+    };
+  }
+
+  const sections = normalizeCurrentSectionsForIntentChecks(formState, schemaHints);
+  const groupMatches = [];
+  sections.forEach((section, sectionIndex) => {
+    const groups = Array.isArray(section && section.groups) ? section.groups : [];
+    groups.forEach((group, groupIndex) => {
+      ["range_queries", "range_deletes"].forEach((operationName) => {
+        if (Object.prototype.hasOwnProperty.call(group || {}, operationName)) {
+          groupMatches.push({
+            operation: operationName,
+            section_index: sectionIndex + 1,
+            group_index: groupIndex + 1,
+          });
+        }
+      });
+    });
+  });
+  if (groupMatches.length === 1) {
+    return groupMatches[0];
+  }
+
+  const enabledMatches = ["range_queries", "range_deletes"].filter(
+    (operationName) =>
+      formState &&
+      formState.operations &&
+      formState.operations[operationName] &&
+      formState.operations[operationName].enabled === true,
+  );
+  if (enabledMatches.length === 1) {
+    return {
+      operation: enabledMatches[0],
+    };
+  }
+  return null;
+}
+
+function sumInsertCountsInGroups(groups) {
+  if (!Array.isArray(groups)) {
+    return null;
+  }
+  let total = 0;
+  let hasAny = false;
+  groups.forEach((group) => {
+    const count = normalizedFinitePositiveNumber(
+      group &&
+        group.inserts &&
+        (group.inserts.op_count ?? group.inserts.number_value),
+    );
+    if (count === null) {
+      return;
+    }
+    total += count;
+    hasAny = true;
+  });
+  return hasAny ? total : null;
+}
+
+function sumInsertCountsInSections(sections) {
+  if (!Array.isArray(sections)) {
+    return null;
+  }
+  let total = 0;
+  let hasAny = false;
+  sections.forEach((section) => {
+    const groups = Array.isArray(section && section.groups) ? section.groups : [];
+    const sectionTotal = sumInsertCountsInGroups(groups);
+    if (sectionTotal === null) {
+      return;
+    }
+    total += sectionTotal;
+    hasAny = true;
+  });
+  return hasAny ? total : null;
+}
+
+function estimateRangeScanValidKeyCount(formState, target, schemaHints) {
+  const sections = normalizeCurrentSectionsForIntentChecks(formState, schemaHints);
+  const sectionIndex = positiveIntegerOrNull(target && target.section_index);
+  const groupIndex = positiveIntegerOrNull(target && target.group_index);
+  if (
+    sectionIndex &&
+    groupIndex &&
+    sections[sectionIndex - 1] &&
+    Array.isArray(sections[sectionIndex - 1].groups)
+  ) {
+    const priorInsertCount = sumInsertCountsInGroups(
+      sections[sectionIndex - 1].groups.slice(0, groupIndex - 1),
+    );
+    if (priorInsertCount !== null) {
+      return priorInsertCount;
+    }
+    const sectionInsertCount = sumInsertCountsInGroups(
+      sections[sectionIndex - 1].groups,
+    );
+    if (sectionInsertCount !== null) {
+      return sectionInsertCount;
+    }
+  }
+  const totalInsertCount = sumInsertCountsInSections(sections);
+  if (totalInsertCount !== null) {
+    return totalInsertCount;
+  }
+  return normalizedFinitePositiveNumber(
+    formState &&
+      formState.operations &&
+      formState.operations.inserts &&
+      formState.operations.inserts.op_count,
+  );
+}
+
+function resolveRangeScanCommandTarget(command, formState, schemaHints) {
+  const requestedOperation =
+    typeof command.operation === "string" && command.operation.trim()
+      ? command.operation.trim()
+      : "";
+  if (
+    requestedOperation &&
+    !["range_queries", "range_deletes"].includes(requestedOperation)
+  ) {
+    return null;
+  }
+  if (
+    requestedOperation &&
+    positiveIntegerOrNull(command.section_index) &&
+    positiveIntegerOrNull(command.group_index)
+  ) {
+    return {
+      operation: requestedOperation,
+      section_index: positiveIntegerOrNull(command.section_index),
+      group_index: positiveIntegerOrNull(command.group_index),
+    };
+  }
+  if (requestedOperation) {
+    return {
+      operation: requestedOperation,
+    };
+  }
+  return resolveRangeScanPromptTarget(formState, "", schemaHints);
+}
+
+function applyPromptScaleAllOpCountsFallback(patch, formState, prompt, schemaHints) {
+  if (!patch || typeof patch !== "object") {
+    return;
+  }
+  const lowerPrompt = String(prompt || "").toLowerCase();
+  if (!promptRequestsAllOperationCountScaling(lowerPrompt)) {
+    return;
+  }
+  const factor = extractPromptOperationCountScaleFactor(lowerPrompt);
+  if (factor === null) {
+    return;
+  }
+  const currentSections = normalizeCurrentSectionsForIntentChecks(
+    formState,
+    schemaHints,
+  );
+  if (currentSections.length > 0) {
+    patch.sections = cloneJsonValue(currentSections);
+    scaleOperationCountsInSections(patch.sections, factor, schemaHints);
+    patch.sections_count = currentSections.length;
+    patch.groups_per_section = maxGroupsPerSection(currentSections);
+    return;
+  }
+  scaleFlatOperationCounts(patch, formState, schemaHints, factor);
+}
+
+function applyPromptFixedRangeScanLengthFallback(
+  patch,
+  formState,
+  prompt,
+  schemaHints,
+) {
+  if (!patch || typeof patch !== "object") {
+    return;
+  }
+  const scanLength = extractPromptRangeScanLengthHint(prompt);
+  if (scanLength === null) {
+    return;
+  }
+  const target = resolveRangeScanPromptTarget(formState, prompt, schemaHints);
+  if (!target) {
+    return;
+  }
+  const validKeyCount = estimateRangeScanValidKeyCount(
+    formState,
+    target,
+    schemaHints,
+  );
+  if (validKeyCount === null || validKeyCount <= 0) {
+    return;
+  }
+  const nextSelectivity = Math.min(1, scanLength / validKeyCount);
+  if (
+    positiveIntegerOrNull(target.section_index) &&
+    positiveIntegerOrNull(target.group_index)
+  ) {
+    const currentSections = normalizeCurrentSectionsForIntentChecks(
+      formState,
+      schemaHints,
+    );
+    if (
+      currentSections[target.section_index - 1] &&
+      Array.isArray(currentSections[target.section_index - 1].groups) &&
+      currentSections[target.section_index - 1].groups[target.group_index - 1]
+    ) {
+      patch.sections = cloneJsonValue(currentSections);
+      const targetGroup =
+        patch.sections[target.section_index - 1].groups[target.group_index - 1];
+      targetGroup[target.operation] = {
+        ...(isPlainObject(targetGroup[target.operation])
+          ? cloneJsonValue(targetGroup[target.operation])
+          : {}),
+        range_format: "StartCount",
+        selectivity: nextSelectivity,
+      };
+      patch.sections_count = patch.sections.length;
+      patch.groups_per_section = maxGroupsPerSection(patch.sections);
+    }
+  }
+  patch.operations[target.operation] = {
+    ...(patch.operations[target.operation] || {}),
+    enabled: true,
+    range_format: "StartCount",
+    selectivity: nextSelectivity,
+  };
+}
+
+function buildDeterministicAssistPayload(prompt, formState, schemaHints) {
+  const lowerPrompt = String(prompt || "").toLowerCase();
+  if (!lowerPrompt) {
+    return null;
+  }
+
+  if (promptRequestsAllOperationCountScaling(lowerPrompt)) {
+    const factor = extractPromptOperationCountScaleFactor(lowerPrompt);
+    if (factor !== null) {
+      return {
+        summary:
+          factor < 1
+            ? "Scaled all operation counts down by " + String(1 / factor) + "x."
+            : "Scaled all operation counts by " + String(factor) + "x.",
+        program: [{ kind: "scale_all_op_counts", factor }],
+        clarifications: [],
+        assumptions: [],
+        questions: [],
+        assumption_texts: [],
+      };
+    }
+  }
+
+  const scanLength = extractPromptRangeScanLengthHint(prompt);
+  if (scanLength !== null) {
+    const target = resolveRangeScanPromptTarget(formState, prompt, schemaHints);
+    if (target) {
+      return {
+        summary:
+          "Adjusted " +
+          target.operation.replace(/_/g, " ") +
+          " to use an approximate scan length of " +
+          String(Math.round(scanLength)) +
+          " keys.",
+        program: [
+          {
+            kind: "set_range_scan_length",
+            operation: target.operation,
+            section_index: target.section_index ?? null,
+            group_index: target.group_index ?? null,
+            scan_length: scanLength,
+          },
+        ],
+        clarifications: [],
+        assumptions: [
+          "Fixed scan length is approximated through range selectivity using the current valid-key estimate for the targeted range workload.",
+        ],
+        questions: [],
+        assumption_texts: [],
+      };
+    }
+  }
+
+  return null;
 }
 
 function deriveStructuredSectionsFromPrompt(prompt, schemaHints) {

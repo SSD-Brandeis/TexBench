@@ -445,3 +445,100 @@ test("intent boundaries: DSL structural commands conform to interpreter semantic
     "normal",
   );
 });
+
+test("intent boundaries: scale_all_op_counts preserves layout while scaling counts", () => {
+  const formState = createStructuredState([
+    {
+      inserts: {
+        enabled: true,
+        op_count: 1000000,
+      },
+    },
+    {
+      range_queries: {
+        enabled: true,
+        op_count: 950000,
+        selectivity: 0.001,
+      },
+      inserts: {
+        enabled: true,
+        op_count: 50000,
+      },
+    },
+  ]);
+  assert.equal(formState.sections[0].groups[0].inserts.op_count, 1000000);
+  assert.equal(formState.sections[0].groups[1].range_queries.op_count, 950000);
+  assert.equal(formState.sections[0].groups[1].inserts.op_count, 50000);
+  const patch = __test.patchFromAssistProgram(
+    [{ kind: "scale_all_op_counts", factor: 0.1 }],
+    NORMALIZED_SCHEMA_HINTS,
+    formState,
+  );
+  const effective = __test.buildEffectiveState(
+    patch,
+    formState,
+    NORMALIZED_SCHEMA_HINTS,
+  );
+
+  assert.equal(effective.sections_count, 1);
+  assert.equal(effective.groups_per_section, 2);
+  assert.equal(effective.sections[0].groups[0].inserts.op_count, 100000);
+  assert.equal(effective.sections[0].groups[1].range_queries.op_count, 95000);
+  assert.equal(effective.sections[0].groups[1].inserts.op_count, 5000);
+});
+
+test("intent boundaries: set_range_scan_length converts fixed length into selectivity", () => {
+  const formState = createStructuredState([
+    {
+      inserts: {
+        enabled: true,
+        op_count: 1000000,
+      },
+    },
+    {
+      range_queries: {
+        enabled: true,
+        op_count: 950000,
+        selectivity: 0.001,
+      },
+      inserts: {
+        enabled: true,
+        op_count: 50000,
+      },
+    },
+  ]);
+  assert.equal(formState.sections[0].groups[1].range_queries.selectivity, 0.001);
+  assert.notEqual(
+    formState.sections[0].groups[1].range_queries.selectivity,
+    100 / 1000000,
+  );
+  const patch = __test.patchFromAssistProgram(
+    [
+      {
+        kind: "set_range_scan_length",
+        operation: "range_queries",
+        section_index: 1,
+        group_index: 2,
+        scan_length: 100,
+      },
+    ],
+    NORMALIZED_SCHEMA_HINTS,
+    formState,
+  );
+  const effective = __test.buildEffectiveState(
+    patch,
+    formState,
+    NORMALIZED_SCHEMA_HINTS,
+  );
+
+  assert.equal(effective.sections_count, 1);
+  assert.equal(effective.groups_per_section, 2);
+  assert.equal(
+    effective.sections[0].groups[1].range_queries.range_format,
+    "StartCount",
+  );
+  assert.equal(
+    effective.sections[0].groups[1].range_queries.selectivity,
+    100 / 1000000,
+  );
+});

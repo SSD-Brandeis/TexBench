@@ -47,6 +47,8 @@ The interpreter currently supports exactly these command kinds:
 - `set_top_field`
 - `clear_operations`
 - `set_operation_fields`
+- `scale_all_op_counts`
+- `set_range_scan_length`
 - `append_group`
 - `set_group_operation_fields`
 - `rename_group_operation`
@@ -199,6 +201,58 @@ Typical uses:
 - changing distribution or range parameters
 - setting operation-local character sets
 
+## `scale_all_op_counts`
+
+Scales all currently enabled operation counts by a positive multiplier.
+
+Shape:
+
+```json
+{
+  "kind": "scale_all_op_counts",
+  "factor": 0.1
+}
+```
+
+Semantics:
+- `factor` must be a positive number
+- `0.1` means "make counts one tenth as large"
+- `2` means "double all operation counts"
+- when the current workload is structured, scaling is applied group-by-group so layout is preserved
+
+Typical uses:
+- "reduce all operation counts by a factor of 10"
+- "make every operation count 10x smaller"
+- "scale all op counts down by one order of magnitude"
+
+## `set_range_scan_length`
+
+Sets a fixed target scan length for a range operation by converting it into a deterministic `selectivity` update.
+
+Shape:
+
+```json
+{
+  "kind": "set_range_scan_length",
+  "operation": "range_queries",
+  "section_index": 1,
+  "group_index": 2,
+  "scan_length": 100
+}
+```
+
+Semantics:
+- `scan_length` is the desired number of keys per scan
+- the interpreter converts that to `range_format = "StartCount"` and a `selectivity` value
+- conversion uses the current valid-key estimate for the targeted workload state
+- if `section_index` and `group_index` are provided, the update is scoped to that group
+- if no group is provided, the interpreter targets the unique matching range operation when possible
+
+Typical uses:
+- "set the scan length to exactly 100"
+- "make range scans read 100 keys"
+- "use a fixed scan length of 100"
+
 ## `append_group`
 
 Appends a new group to an existing section.
@@ -341,8 +395,10 @@ The deterministic interpreter currently applies these rules:
 2. Unknown commands are ignored.
 3. Repeated `set_operation_fields` commands merge into the same flat operation patch.
 4. `clear_operations` resets previously accumulated flat operation patches.
-5. `replace_sections` sets structured layout metadata from the provided sections.
-6. The result of program interpretation is still normalized by the backend before it is used.
+5. `scale_all_op_counts` preserves existing group layout when structure already exists.
+6. `set_range_scan_length` is interpreted as a deterministic selectivity update, not a free-form natural-language edit.
+7. `replace_sections` sets structured layout metadata from the provided sections.
+8. The result of program interpretation is still normalized by the backend before it is used.
 
 ## Relationship to final patch
 

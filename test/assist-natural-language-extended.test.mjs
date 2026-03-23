@@ -29,6 +29,41 @@ function createInsertSeed() {
   };
 }
 
+function createWorkloadEStyleState() {
+  return applyPatchToState(createFormState({}), {
+    sections: [
+      {
+        groups: [
+          {
+            inserts: {
+              enabled: true,
+              op_count: 1000000,
+            },
+          },
+          {
+            range_queries: {
+              enabled: true,
+              op_count: 950000,
+              selectivity: 0.001,
+              selection_distribution: "beta",
+              selection_alpha: 0.1,
+              selection_beta: 5,
+            },
+            inserts: {
+              enabled: true,
+              op_count: 50000,
+            },
+          },
+        ],
+      },
+    ],
+    sections_count: 1,
+    groups_per_section: 2,
+    clear_operations: false,
+    operations: {},
+  });
+}
+
 async function requestAssist(prompt, formState = createFormState({})) {
   return requestLiveAssist({ prompt, formState, provider: LIVE_PROVIDER });
 }
@@ -198,6 +233,67 @@ test(
       third.patch.operations.point_queries.selection_distribution,
       "zipf",
     );
+  },
+);
+
+test(
+  "multi-turn regression: workload e fixed scan length prompt updates range queries",
+  { skip: !LIVE_PROVIDER.binding, timeout: 180000 },
+  async () => {
+    const state = createWorkloadEStyleState();
+    assert.equal(state.sections[0].groups[1].range_queries.selectivity, 0.001);
+    assert.notEqual(
+      state.sections[0].groups[1].range_queries.selectivity,
+      100 / 1000000,
+    );
+    const result = await requestAssist(
+      "set the scan length to exactly 100",
+      state,
+    );
+    const nextState = applyPatchToState(state, result.patch);
+
+    assert.equal(nextState.sections_count, 1);
+    assert.equal(nextState.groups_per_section, 2);
+    assert.equal(
+      nextState.sections[0].groups[1].range_queries.range_format,
+      "StartCount",
+    );
+    assert.equal(
+      nextState.sections[0].groups[1].range_queries.selectivity,
+      100 / 1000000,
+    );
+  },
+);
+
+test(
+  "multi-turn regression: scale all operation counts by one order of magnitude",
+  { skip: !LIVE_PROVIDER.binding, timeout: 240000 },
+  async (t) => {
+    const prompts = [
+      "decrease the operation counts for all operations by a magnitude of 10",
+      "reduce all operation counts by a factor of 10",
+      "make every operation count 10x smaller",
+    ];
+
+    for (const prompt of prompts) {
+      await t.test(prompt, { timeout: 60000 }, async () => {
+        const state = createWorkloadEStyleState();
+        assert.equal(state.sections[0].groups[0].inserts.op_count, 1000000);
+        assert.equal(state.sections[0].groups[1].range_queries.op_count, 950000);
+        assert.equal(state.sections[0].groups[1].inserts.op_count, 50000);
+        const result = await requestAssist(prompt, state);
+        const nextState = applyPatchToState(state, result.patch);
+
+        assert.equal(nextState.sections_count, 1);
+        assert.equal(nextState.groups_per_section, 2);
+        assert.equal(nextState.sections[0].groups[0].inserts.op_count, 100000);
+        assert.equal(
+          nextState.sections[0].groups[1].range_queries.op_count,
+          95000,
+        );
+        assert.equal(nextState.sections[0].groups[1].inserts.op_count, 5000);
+      });
+    }
   },
 );
 
