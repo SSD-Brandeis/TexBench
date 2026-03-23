@@ -552,7 +552,12 @@ async function startTectonicRun(run) {
   clearRunTimeout(run);
   run.child = null;
 
-  if (run.status === "cancelled" || run.status === "timed_out") {
+  if (run.status === "cancelled") {
+    setRunProgressText(run, "Run cancelled.");
+    return;
+  }
+
+  if (run.status === "timed_out") {
     return;
   }
 

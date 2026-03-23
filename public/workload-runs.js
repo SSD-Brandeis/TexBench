@@ -102,6 +102,30 @@
     return parts.join(" ");
   }
 
+  function getCancelProgressText(body) {
+    const explicitText =
+      body && typeof body.progress_text === "string" && body.progress_text.trim()
+        ? body.progress_text.trim()
+        : "";
+    if (explicitText) {
+      return explicitText;
+    }
+    const status =
+      body && typeof body.status === "string" && body.status.trim()
+        ? body.status.trim()
+        : "";
+    if (status === "cancelled") {
+      return "Run cancelled.";
+    }
+    if (status === "timed_out") {
+      return "Run timed out.";
+    }
+    if (status === "failed") {
+      return "Run failed.";
+    }
+    return "Cancellation requested.";
+  }
+
   function createRunId() {
     return (
       "local-" +
@@ -497,7 +521,7 @@
     return runActions;
   }
 
-  function buildRunTable(runs, actions) {
+  function buildRunTable(runs, actions, expandedRunIds) {
     const shell = document.createElement("div");
     shell.className = "runs-table-shell";
 
@@ -523,6 +547,8 @@
 
     const tbody = document.createElement("tbody");
     runs.forEach((run) => {
+      const isExpanded =
+        expandedRunIds instanceof Set && expandedRunIds.has(run.run_id);
       const throughputMetric = findOverallMetric(run.benchmark_stats, [
         "throughput_using_start_and_end_time_ops_ms",
         "throughput_using_start_and_end_time",
@@ -535,7 +561,7 @@
       summaryRow.className = "runs-table-summary-row";
       summaryRow.tabIndex = 0;
       summaryRow.setAttribute("role", "button");
-      summaryRow.setAttribute("aria-expanded", "false");
+      summaryRow.setAttribute("aria-expanded", isExpanded ? "true" : "false");
 
       const startedCell = document.createElement("td");
       const startedPrimary = document.createElement("div");
@@ -586,7 +612,7 @@
 
       const detailRow = document.createElement("tr");
       detailRow.className = "runs-table-detail-row";
-      detailRow.hidden = true;
+      detailRow.hidden = !isExpanded;
 
       const detailCell = document.createElement("td");
       detailCell.className = "runs-table-detail-cell";
@@ -662,7 +688,16 @@
         detailRow.hidden = !nextExpanded;
         summaryRow.classList.toggle("expanded", nextExpanded);
         summaryRow.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+        if (expandedRunIds instanceof Set) {
+          if (nextExpanded) {
+            expandedRunIds.add(run.run_id);
+          } else {
+            expandedRunIds.delete(run.run_id);
+          }
+        }
       };
+
+      summaryRow.classList.toggle("expanded", isExpanded);
 
       summaryRow.addEventListener("click", toggleExpanded);
       summaryRow.addEventListener("keydown", (event) => {
@@ -751,6 +786,7 @@
     const runs = readPersistedRuns().map((entry) =>
       normalizeRunEntry(entry, createRunId()),
     );
+    const expandedRunIds = new Set();
     let pollTimer = null;
     let requestInFlight = false;
 
@@ -850,10 +886,20 @@
           method: "POST",
         });
         const body = await parseJsonResponse(response);
+        const nextStatus =
+          body && typeof body.status === "string" && body.status.trim()
+            ? body.status.trim()
+            : "cancelled";
+        const optimisticStatus = ACTIVE_STATUSES.has(run.status)
+          ? run.status
+          : nextStatus;
         mergeRun({
           run_id: run.run_id,
-          status: body && body.status ? body.status : "cancelled",
-          progress_text: "Cancellation requested.",
+          status: optimisticStatus,
+          progress_text:
+            optimisticStatus === nextStatus
+              ? getCancelProgressText(body)
+              : "Cancellation requested.",
           error: null,
         });
         render();
@@ -868,6 +914,7 @@
       }
       runsListEl.innerHTML = "";
       if (runs.length === 0) {
+        expandedRunIds.clear();
         const empty = document.createElement("p");
         empty.className = "runs-empty";
         empty.textContent =
@@ -875,7 +922,9 @@
         runsListEl.appendChild(empty);
         return;
       }
-      runsListEl.appendChild(buildRunTable(runs, { cancel: cancelRun }));
+      runsListEl.appendChild(
+        buildRunTable(runs, { cancel: cancelRun }, expandedRunIds),
+      );
     }
 
     async function startRun(specJson, options) {
@@ -923,6 +972,7 @@
 
     function clear() {
       runs.length = 0;
+      expandedRunIds.clear();
       stopPolling();
       clearPersistedRuns();
       render();
