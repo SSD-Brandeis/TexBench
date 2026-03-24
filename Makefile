@@ -31,7 +31,7 @@ test:
 	$(NPM) test
 
 test-demo:
-	AI_PROVIDER=ollama OLLAMA_MODEL=llama3 node --test test/ui-structured-normalization.test.mjs test/assist-interpreter-invariants.test.mjs test/assist-dsl-coverage.test.mjs test/assist-chat-session.test.mjs test/assist-intent-boundaries.test.mjs test/assist-intent-matrix.test.mjs test/assist-structural-paraphrases.test.mjs test/assist-natural-language-demo.test.mjs test/assist-natural-language-extended.test.mjs test/assist-provider-coverage.test.mjs
+	AI_PROVIDER=ollama OLLAMA_MODEL=llama3.2:3b node --test test/ui-structured-normalization.test.mjs test/assist-interpreter-invariants.test.mjs test/assist-dsl-coverage.test.mjs test/assist-chat-session.test.mjs test/assist-intent-boundaries.test.mjs test/assist-intent-matrix.test.mjs test/assist-structural-paraphrases.test.mjs test/assist-natural-language-demo.test.mjs test/assist-natural-language-extended.test.mjs test/assist-provider-coverage.test.mjs
 
 test-demo-ollama:
 	AI_PROVIDER=ollama node --test test/ui-structured-normalization.test.mjs test/assist-interpreter-invariants.test.mjs test/assist-dsl-coverage.test.mjs test/assist-chat-session.test.mjs test/assist-intent-boundaries.test.mjs test/assist-intent-matrix.test.mjs test/assist-structural-paraphrases.test.mjs test/assist-natural-language-demo.test.mjs test/assist-natural-language-extended.test.mjs test/assist-provider-coverage.test.mjs

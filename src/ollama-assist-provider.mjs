@@ -1,4 +1,4 @@
-export const DEFAULT_OLLAMA_MODEL = "llama3";
+export const DEFAULT_OLLAMA_MODEL = "llama3.2:3b";
 
 export function isOllamaAssistProvider(value) {
   return readString(value).toLowerCase() === "ollama";

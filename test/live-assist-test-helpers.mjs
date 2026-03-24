@@ -200,7 +200,7 @@ function buildProviderEnv(providerName, envLike = process.env) {
   if (providerName === "ollama") {
     const out = {
       AI_PROVIDER: "ollama",
-      OLLAMA_MODEL: envLike.OLLAMA_MODEL || "llama3",
+      OLLAMA_MODEL: envLike.OLLAMA_MODEL || "llama3.2:3b",
     };
     if (envLike.OLLAMA_BASE_URL) {
       out.OLLAMA_BASE_URL = envLike.OLLAMA_BASE_URL;
