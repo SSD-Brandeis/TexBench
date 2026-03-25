@@ -5343,13 +5343,7 @@ function buildDeterministicPercentMixWorkloadPayload(
   };
 }
 
-function deriveStructuredSectionsFromPrompt(prompt, schemaHints) {
-  const text = typeof prompt === "string" ? prompt.trim() : "";
-  if (!text || !STRUCTURED_WORKLOAD_PATTERN.test(text)) {
-    return null;
-  }
-
-  const lowerPrompt = text.toLowerCase();
+function buildStructuredGroupsFromPromptText(text, schemaHints) {
   const clauses = splitPromptIntoPhaseClauses(text);
   const groups = clauses
     .map((clause) => deriveStructuredGroupFromClause(clause, schemaHints))
@@ -5362,6 +5356,70 @@ function deriveStructuredSectionsFromPrompt(prompt, schemaHints) {
         ),
     );
   if (groups.length === 0) {
+    return null;
+  }
+  applyStructuredPromptSelectionHints(groups, text, schemaHints);
+  applyStructuredPromptScanLengthHints(groups, text);
+  return groups;
+}
+
+function splitPromptIntoSectionClauses(prompt) {
+  const text = String(prompt || "");
+  if (!text) {
+    return null;
+  }
+  const matches = Array.from(
+    text.matchAll(
+      /\b(?:in\s+)?(?:the\s+)?(\d+|1st|first|2nd|second|3rd|third|4th|fourth)\s+section\b\s*[:,-]?\s*/gi,
+    ),
+  );
+  if (matches.length === 0) {
+    return null;
+  }
+  const sections = [];
+  matches.forEach((match, index) => {
+    const sectionIndex = parsePromptOrdinalIndex(match[1]);
+    if (!Number.isInteger(sectionIndex) || sectionIndex < 0) {
+      return;
+    }
+    const start = (match.index ?? 0) + match[0].length;
+    const end =
+      index + 1 < matches.length && Number.isInteger(matches[index + 1].index)
+        ? matches[index + 1].index
+        : text.length;
+    const clause = text.slice(start, end).trim().replace(/^[,.\s]+|[,.\s]+$/g, "");
+    sections[sectionIndex] = clause;
+  });
+  return sections.every((sectionText) => typeof sectionText === "string" && sectionText)
+    ? sections
+    : null;
+}
+
+function deriveStructuredSectionsFromPrompt(prompt, schemaHints) {
+  const text = typeof prompt === "string" ? prompt.trim() : "";
+  if (!text || !STRUCTURED_WORKLOAD_PATTERN.test(text)) {
+    return null;
+  }
+
+  const lowerPrompt = text.toLowerCase();
+  const sectionClauses = splitPromptIntoSectionClauses(text);
+  if (Array.isArray(sectionClauses) && sectionClauses.length > 0) {
+    const sections = sectionClauses
+      .map((sectionText) => {
+        const groups = buildStructuredGroupsFromPromptText(
+          sectionText,
+          schemaHints,
+        );
+        return groups ? { groups } : null;
+      })
+      .filter(Boolean);
+    if (sections.length === sectionClauses.length && sections.length > 0) {
+      return sections;
+    }
+  }
+
+  const groups = buildStructuredGroupsFromPromptText(text, schemaHints);
+  if (!Array.isArray(groups) || groups.length === 0) {
     return null;
   }
 
@@ -5389,9 +5447,6 @@ function deriveStructuredSectionsFromPrompt(prompt, schemaHints) {
       return null;
     }
   }
-
-  applyStructuredPromptSelectionHints(groups, text, schemaHints);
-  applyStructuredPromptScanLengthHints(groups, text);
 
   return [{ groups }];
 }

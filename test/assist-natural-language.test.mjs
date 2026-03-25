@@ -634,6 +634,51 @@ test("three phase prompts keep each interleaved phase in its own group", () => {
   );
 });
 
+test("explicit multi-section prompts preserve section boundaries and intra-section interleaving", () => {
+  const result = applyPrompt({
+    prompt:
+      "Create a workload with two sections, each having two phases. In the first section, perform bulk inserts of 1 million records in phase 1, then update 10,000 keys in phase 2. In the second section, insert 10,000 new keys, interleave 1,000 point queries, and then execute 1K range queries with a 10% selectivity.",
+    formState: createFormState({}),
+    rawPatch: {
+      operations: {},
+    },
+  });
+
+  assert.equal(result.patch.sections.length, 2);
+  assert.equal(result.patch.sections_count, 2);
+  assert.equal(result.patch.groups_per_section, 2);
+  assert.equal(result.patch.sections[0].groups.length, 2);
+  assert.equal(result.patch.sections[1].groups.length, 2);
+
+  assert.deepEqual(
+    sortedKeys(result.patch.sections[0].groups[0]),
+    ["inserts"],
+  );
+  assert.deepEqual(
+    sortedKeys(result.patch.sections[0].groups[1]),
+    ["updates"],
+  );
+  assert.equal(result.patch.sections[0].groups[0].inserts.op_count, 1000000);
+  assert.equal(result.patch.sections[0].groups[1].updates.op_count, 10000);
+
+  assert.deepEqual(
+    sortedKeys(result.patch.sections[1].groups[0]),
+    ["inserts", "point_queries"],
+  );
+  assert.deepEqual(
+    sortedKeys(result.patch.sections[1].groups[1]),
+    ["range_queries"],
+  );
+  assert.equal(result.patch.sections[1].groups[0].inserts.op_count, 10000);
+  assert.equal(result.patch.sections[1].groups[0].point_queries.op_count, 1000);
+  assert.equal(result.patch.sections[1].groups[1].range_queries.op_count, 1000);
+  assert.equal(result.patch.sections[1].groups[1].range_queries.selectivity, 0.1);
+  assert.equal(
+    result.patch.sections[1].groups[1].range_queries.range_format,
+    "StartCount",
+  );
+});
+
 test("high-level three phase workload prompt variants normalize to the expected groups", async (t) => {
   const scenarios = [
     {
