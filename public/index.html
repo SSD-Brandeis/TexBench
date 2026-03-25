@@ -1613,11 +1613,144 @@
 
       .runs-list {
         min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 14px;
+      }
+
+      .benchmark-batch-graphs {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .benchmark-batch-card {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: linear-gradient(180deg, #ffffff 0%, #f6fbfd 100%);
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .benchmark-batch-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .benchmark-batch-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text);
+      }
+
+      .benchmark-batch-meta {
+        font-size: 12px;
+        color: var(--text-dim);
+      }
+
+      .benchmark-batch-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .benchmark-batch-stat {
+        border: 1px solid #d6e4ef;
+        border-radius: 999px;
+        background: #f7fbfd;
+        padding: 6px 10px;
+        font-size: 12px;
+        color: #38536a;
+      }
+
+      .benchmark-batch-empty {
+        font-size: 12px;
+        color: var(--text-dim);
+      }
+
+      .benchmark-metric-chart-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 12px;
+      }
+
+      .benchmark-metric-chart-card {
+        border: 1px solid #dbe5ee;
+        border-radius: 16px;
+        background:
+          radial-gradient(circle at top right, rgba(220, 236, 248, 0.8) 0%, transparent 38%),
+          linear-gradient(180deg, #ffffff 0%, #f7fbfd 100%);
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.82),
+          0 10px 24px rgba(11, 30, 45, 0.05);
+      }
+
+      .benchmark-metric-chart-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: #30495d;
+      }
+
+      .benchmark-chart-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .benchmark-chart {
+        width: 100%;
+        height: auto;
+        display: block;
+        border: 1px solid #dfe7ef;
+        border-radius: 12px;
+        background:
+          radial-gradient(circle at top, rgba(233, 242, 248, 0.9) 0%, transparent 42%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 249, 252, 0.98) 100%);
+      }
+
+      .benchmark-chart-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 12px;
+        color: var(--text-dim);
+      }
+
+      .benchmark-chart-legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .benchmark-chart-legend-swatch {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+      }
+
+      .benchmark-chart-legend-swatch.line {
+        width: 18px;
+        height: 3px;
+        border-radius: 999px;
       }
 
       .runs-table-shell {
         overflow: auto;
         max-height: 560px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: #fff;
       }
 
       .runs-table {
@@ -1854,7 +1987,18 @@
         line-height: 1.35;
       }
 
-      .run-db-picker {
+      .run-db-menu {
+        display: inline-flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .run-db-menu[open] {
+        min-width: 220px;
+      }
+
+      .run-db-menu-summary {
+        list-style: none;
         display: inline-flex;
         align-items: center;
         gap: 8px;
@@ -1862,9 +2006,15 @@
         border: 1px solid #d6e7ef;
         border-radius: 999px;
         background: #f7fbfd;
+        color: #16364d;
+        cursor: pointer;
       }
 
-      .run-db-picker label {
+      .run-db-menu-summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .run-db-menu-label {
         font-size: 11px;
         font-weight: 700;
         letter-spacing: 0.04em;
@@ -1872,15 +2022,36 @@
         color: #688091;
       }
 
-      .run-db-select {
-        min-width: 120px;
-        border: none;
-        background: transparent;
-        color: #16364d;
-        font: inherit;
+      .run-db-menu-value {
         font-size: 12px;
         font-weight: 600;
-        outline: none;
+        color: #16364d;
+      }
+
+      .run-db-menu-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 12px 28px rgba(11, 30, 45, 0.08);
+      }
+
+      .run-db-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 36px;
+        padding: 0 2px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      .run-db-option input {
+        margin: 0;
       }
 
       .run-location {
@@ -2224,38 +2395,16 @@
         transform: none;
       }
 
-      .run-db-picker {
-        display: flex;
-        align-items: center;
-        gap: 10px;
+      .run-db-menu {
         min-height: 48px;
-        padding: 0 12px;
+      }
+
+      .run-db-menu-summary {
+        min-height: 48px;
+        padding: 0 14px;
         border-radius: 14px;
         background: #fff;
         border: 1px solid var(--border);
-      }
-
-      .run-db-picker label {
-        font-size: 12px;
-        font-weight: 600;
-        letter-spacing: 0;
-        text-transform: none;
-        color: var(--text-dim);
-      }
-
-      .run-db-select {
-        min-width: 124px;
-        border: none;
-        background: transparent;
-        color: var(--text);
-        font-size: 14px;
-        font-weight: 600;
-        padding: 0 28px 0 0;
-        box-shadow: none;
-      }
-
-      .run-db-select:focus {
-        outline: none;
       }
 
       @media (max-width: 1080px) {
@@ -2274,7 +2423,11 @@
           justify-content: flex-start;
         }
 
-        .run-db-picker {
+        .run-db-menu {
+          width: 100%;
+        }
+
+        .run-db-menu-summary {
           width: 100%;
           justify-content: space-between;
         }
@@ -2571,18 +2724,38 @@
                     <div class="run-control-copy">
                       <span class="run-control-label">Benchmark target</span>
                       <p class="run-control-help">
-                        Choose the database engine and run the current workload
-                        spec without leaving the overview panel.
+                        Choose one or more database engines and run the current
+                        workload spec without leaving the overview panel.
                       </p>
                     </div>
                     <div class="run-control-actions">
-                      <div class="run-db-picker">
-                        <label for="benchmarkDatabaseSelect">DB</label>
-                        <select id="benchmarkDatabaseSelect" class="run-db-select">
-                          <option value="rocksdb">rocksdb</option>
-                          <option value="printdb">printdb</option>
-                        </select>
-                      </div>
+                      <details class="run-db-menu">
+                        <summary class="run-db-menu-summary">
+                          <span class="run-db-menu-label">DBs</span>
+                          <span class="run-db-menu-value" id="benchmarkDatabaseSummary"
+                            >rocksdb</span
+                          >
+                        </summary>
+                        <div class="run-db-menu-panel">
+                          <label class="run-db-option">
+                            <input
+                              type="checkbox"
+                              name="benchmarkDatabase"
+                              value="rocksdb"
+                              checked
+                            />
+                            <span>rocksdb</span>
+                          </label>
+                          <label class="run-db-option">
+                            <input
+                              type="checkbox"
+                              name="benchmarkDatabase"
+                              value="printdb"
+                            />
+                            <span>printdb</span>
+                          </label>
+                        </div>
+                      </details>
                       <button class="btn btn-ghost" id="runWorkloadBtn">
                         Run Workload
                       </button>
@@ -2591,7 +2764,7 @@
                   <section class="benchmark-results-section" id="runsPanel" hidden>
                     <div class="benchmark-results-head">
                       <span class="benchmark-results-title">Benchmark results</span>
-                      <span class="benchmark-results-subtitle">Recent session runs</span>
+                      <span class="benchmark-results-subtitle">Parallel batches and recent runs</span>
                     </div>
                     <div class="runs-list" id="runsList">
                       <p class="runs-empty">

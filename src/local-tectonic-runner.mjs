@@ -30,6 +30,7 @@ const MAX_TIMEOUT_SECONDS = parseInteger(
   process.env.RUN_MAX_TIMEOUT_SECONDS,
   7200,
 );
+const MAX_PARALLEL_RUNS = parseInteger(process.env.RUN_MAX_PARALLEL_RUNS, 8);
 const DEFAULT_TIMEOUT_SECONDS = 7200;
 const MIN_TIMEOUT_SECONDS = 30;
 const WORKLOAD_FILENAME = "benchmark-output.txt";
@@ -283,69 +284,39 @@ async function handleStartRun(req, res) {
       body.value.run_options &&
       body.value.run_options.timeout_seconds,
   );
-  const database = normalizeDatabaseName(
+  const databases = normalizeDatabaseBatch(
+    body.value &&
+      body.value.run_options &&
+      body.value.run_options.databases,
     body.value &&
       body.value.run_options &&
       body.value.run_options.database,
   );
-  const createdAt = new Date().toISOString();
-  const runId = createRunId();
-  const runDir = path.join(RUNS_DIR, runId);
-  const specPath = path.join(runDir, SPEC_FILENAME);
-  const outputPath = path.join(runDir, WORKLOAD_FILENAME);
-  const workloadPath = outputPath;
+  const batchId = databases.length > 1 ? createBatchId() : null;
+  const startedRuns = [];
+  for (let index = 0; index < databases.length; index += 1) {
+    const run = await queueRun({
+      normalizedSpec,
+      specText,
+      timeoutSeconds,
+      database: databases[index],
+      batchId,
+      batchIndex: index + 1,
+      batchSize: databases.length,
+    });
+    startedRuns.push(run);
+  }
 
-  await fs.mkdir(runDir, { recursive: true });
-  await fs.writeFile(specPath, specText, "utf8");
-
-  const run = {
-    run_id: runId,
-    created_at: createdAt,
-    status: "starting",
-    progress_text: "Queued local benchmark run.",
-    progress: createRunProgress("Queued local benchmark run.", {
-      indeterminate: true,
-    }),
-    error: null,
-    spec_path: specPath,
-    workload_path: workloadPath,
-    output_path: outputPath,
-    run_dir: runDir,
-    latest_spec_path: LATEST_SPEC_PATH,
-    latest_workload_path: LATEST_WORKLOAD_PATH,
-    timeout_seconds: timeoutSeconds,
-    database,
-    benchmark_stats: null,
-    progress_context: buildRunProgressContext(normalizedSpec),
-    child: null,
-    timeout_timer: null,
-    started_at: null,
-  };
-  runs.set(runId, run);
-  await fs.copyFile(specPath, LATEST_SPEC_PATH);
-
-  startTectonicRun(run).catch((error) => {
-    console.error("Run execution failed unexpectedly:", error);
-    markRunFailed(
-      run,
-      "runner_execution_failed",
-      "Runner failed to execute tectonic-cli.",
-    );
-  });
+  if (startedRuns.length === 1) {
+    sendJson(res, 202, buildStartRunResponse(startedRuns[0]));
+    return;
+  }
 
   sendJson(res, 202, {
-    run_id: runId,
+    batch_id: batchId,
     status: "starting",
-    created_at: createdAt,
-    progress_text: run.progress_text,
-    progress: run.progress,
-    output_paths: buildOutputPaths(run),
-    downloads: {
-      spec_download_path:
-        "/api/workloads/runs/" + encodeURIComponent(runId) + "/download/spec",
-      output_download_path:
-        "/api/workloads/runs/" + encodeURIComponent(runId) + "/download/output",
-    },
+    requested_runs: databases.length,
+    runs: startedRuns.map((run) => buildStartRunResponse(run)),
   });
 }
 
@@ -385,6 +356,9 @@ async function handleRunStatus(res, runId) {
     ],
     links: buildRunLinks(run.run_id, run.status),
     created_at: run.created_at,
+    batch_id: run.batch_id || null,
+    batch_index: Number.isFinite(run.batch_index) ? run.batch_index : null,
+    batch_size: Number.isFinite(run.batch_size) ? run.batch_size : null,
     benchmark_stats:
       run.benchmark_stats && typeof run.benchmark_stats === "object"
         ? run.benchmark_stats
@@ -495,6 +469,92 @@ function buildOutputPaths(run) {
     latest_spec_path: run.latest_spec_path || LATEST_SPEC_PATH,
     latest_output_path: run.latest_workload_path || LATEST_WORKLOAD_PATH,
   };
+}
+
+function buildStartRunResponse(run) {
+  return {
+    run_id: run.run_id,
+    status: "starting",
+    created_at: run.created_at,
+    progress_text: run.progress_text,
+    progress: run.progress,
+    database: run.database,
+    batch_id: run.batch_id || null,
+    batch_index: Number.isFinite(run.batch_index) ? run.batch_index : null,
+    batch_size: Number.isFinite(run.batch_size) ? run.batch_size : null,
+    output_paths: buildOutputPaths(run),
+    links: buildRunLinks(run.run_id, "starting"),
+    downloads: {
+      spec_download_path:
+        "/api/workloads/runs/" +
+        encodeURIComponent(run.run_id) +
+        "/download/spec",
+      output_download_path:
+        "/api/workloads/runs/" +
+        encodeURIComponent(run.run_id) +
+        "/download/output",
+    },
+  };
+}
+
+async function queueRun({
+  normalizedSpec,
+  specText,
+  timeoutSeconds,
+  database,
+  batchId,
+  batchIndex,
+  batchSize,
+}) {
+  const createdAt = new Date().toISOString();
+  const runId = createRunId();
+  const runDir = path.join(RUNS_DIR, runId);
+  const specPath = path.join(runDir, SPEC_FILENAME);
+  const outputPath = path.join(runDir, WORKLOAD_FILENAME);
+  const workloadPath = outputPath;
+
+  await fs.mkdir(runDir, { recursive: true });
+  await fs.writeFile(specPath, specText, "utf8");
+
+  const run = {
+    run_id: runId,
+    created_at: createdAt,
+    status: "starting",
+    progress_text: "Queued local benchmark run.",
+    progress: createRunProgress("Queued local benchmark run.", {
+      indeterminate: true,
+    }),
+    error: null,
+    spec_path: specPath,
+    workload_path: workloadPath,
+    output_path: outputPath,
+    run_dir: runDir,
+    latest_spec_path: LATEST_SPEC_PATH,
+    latest_workload_path: LATEST_WORKLOAD_PATH,
+    timeout_seconds: timeoutSeconds,
+    database,
+    batch_id: batchId || null,
+    batch_index: Number.isFinite(batchIndex) ? batchIndex : null,
+    batch_size: Number.isFinite(batchSize) ? batchSize : null,
+    benchmark_stats: null,
+    progress_context: buildRunProgressContext(normalizedSpec),
+    child: null,
+    timeout_timer: null,
+    started_at: null,
+  };
+  runs.set(runId, run);
+  await fs.copyFile(specPath, LATEST_SPEC_PATH);
+
+  startTectonicRun(run).catch((error) => {
+    console.error("Run execution failed unexpectedly:", error);
+    markRunFailed(
+      run,
+      "runner_execution_failed",
+      "Runner failed to execute tectonic-cli.",
+    );
+  });
+
+  return run;
 }
 
 async function startTectonicRun(run) {
@@ -733,10 +793,26 @@ function createRunId() {
   return "run-" + randomUUID().replace(/-/g, "").slice(0, 20);
 }
 
+function createBatchId() {
+  return "batch-" + randomUUID().replace(/-/g, "").slice(0, 16);
+}
+
 function normalizeTimeoutSeconds(rawValue) {
   const parsed = parseInteger(rawValue, DEFAULT_TIMEOUT_SECONDS);
   const cappedMax = Math.max(MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS);
   return clamp(parsed, MIN_TIMEOUT_SECONDS, cappedMax);
+}
+
+function normalizeDatabaseBatch(rawValues, fallbackValue) {
+  const rawList = Array.isArray(rawValues) ? rawValues : [];
+  const normalizedList = rawList
+    .map((entry) => normalizeDatabaseName(entry))
+    .filter(Boolean);
+  const uniqueList = Array.from(new Set(normalizedList));
+  if (uniqueList.length > 0) {
+    return uniqueList.slice(0, Math.max(1, MAX_PARALLEL_RUNS));
+  }
+  return [normalizeDatabaseName(fallbackValue)];
 }
 
 function buildListenErrorMessage(error) {
@@ -963,7 +1039,20 @@ function buildBenchmarkCompletionText(stats) {
     );
   });
   if (throughput && typeof throughput.value === "string" && throughput.value) {
-    return "Benchmark completed. Throughput: " + throughput.value + " ops/ms.";
+    const parsedThroughputMs = Number.parseFloat(
+      String(throughput.value).replace(/,/g, "").trim(),
+    );
+    if (Number.isFinite(parsedThroughputMs)) {
+      const throughputSec = parsedThroughputMs * 1000;
+      return (
+        "Benchmark completed. Throughput: " +
+        throughputSec.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }) +
+        " ops/sec."
+      );
+    }
   }
   return "Benchmark completed. Stats are available below.";
 }

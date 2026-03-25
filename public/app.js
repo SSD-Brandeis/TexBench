@@ -33,8 +33,11 @@ const jsonSectionsPill = document.getElementById("jsonSectionsPill");
 const jsonOpsPill = document.getElementById("jsonOpsPill");
 const jsonBytesPill = document.getElementById("jsonBytesPill");
 const jsonSummary = document.getElementById("jsonSummary");
-const benchmarkDatabaseSelect = document.getElementById(
-  "benchmarkDatabaseSelect",
+const benchmarkDatabaseInputs = Array.from(
+  document.querySelectorAll('input[name="benchmarkDatabase"]'),
+);
+const benchmarkDatabaseSummary = document.getElementById(
+  "benchmarkDatabaseSummary",
 );
 const characterSetDescription = document.getElementById(
   "characterSetDescription",
@@ -626,6 +629,10 @@ async function initApp() {
   if (runsController) {
     runsController.init();
   }
+  updateBenchmarkDatabaseSummary();
+  benchmarkDatabaseInputs.forEach((input) => {
+    input.addEventListener("change", updateBenchmarkDatabaseSummary);
+  });
 
   if (workloadForm) {
     workloadForm.addEventListener("input", onFormChange);
@@ -1433,19 +1440,34 @@ function getWorkloadRunsPanelController() {
         runsList,
       },
       getCurrentWorkloadJson,
-      getSelectedDatabase() {
-        if (
-          benchmarkDatabaseSelect &&
-          typeof benchmarkDatabaseSelect.value === "string" &&
-          benchmarkDatabaseSelect.value.trim()
-        ) {
-          return benchmarkDatabaseSelect.value.trim();
-        }
-        return "rocksdb";
+      getSelectedDatabases() {
+        return benchmarkDatabaseInputs
+          .filter((input) => input && input.checked)
+          .map((input) => String(input.value || "").trim())
+          .filter(Boolean);
       },
       setValidationStatus,
     });
   return workloadRunsPanelController;
+}
+
+function updateBenchmarkDatabaseSummary() {
+  if (!benchmarkDatabaseSummary) {
+    return;
+  }
+  const selected = benchmarkDatabaseInputs
+    .filter((input) => input && input.checked)
+    .map((input) => String(input.value || "").trim())
+    .filter(Boolean);
+  if (selected.length === 0) {
+    benchmarkDatabaseSummary.textContent = "none selected";
+    return;
+  }
+  if (selected.length === 1) {
+    benchmarkDatabaseSummary.textContent = selected[0];
+    return;
+  }
+  benchmarkDatabaseSummary.textContent = String(selected.length) + " selected";
 }
 
 function clearOperationFormState() {

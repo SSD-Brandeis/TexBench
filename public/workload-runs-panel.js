@@ -13,11 +13,11 @@
         : function getCurrentWorkloadJsonFallback() {
             return null;
           };
-    const getSelectedDatabase =
-      typeof config.getSelectedDatabase === "function"
-        ? config.getSelectedDatabase
-        : function getSelectedDatabaseFallback() {
-            return "rocksdb";
+    const getSelectedDatabases =
+      typeof config.getSelectedDatabases === "function"
+        ? config.getSelectedDatabases
+        : function getSelectedDatabasesFallback() {
+            return ["rocksdb"];
           };
     const setValidationStatus =
       typeof config.setValidationStatus === "function"
@@ -31,7 +31,7 @@
         return;
       }
       refs.runWorkloadBtn.disabled = !!isBusy;
-      refs.runWorkloadBtn.textContent = isBusy ? "Running..." : "Run Workload";
+      refs.runWorkloadBtn.textContent = isBusy ? "Launching..." : "Run Workload";
     }
 
     function init() {
@@ -73,8 +73,17 @@
         return;
       }
 
+      const databases = getSelectedDatabases();
+      if (!Array.isArray(databases) || databases.length === 0) {
+        setValidationStatus(
+          "Select at least one database before running the workload.",
+          "invalid",
+        );
+        return;
+      }
+
       await runsController.startRun(specJson, {
-        database: getSelectedDatabase(),
+        databases,
       });
     }
 
