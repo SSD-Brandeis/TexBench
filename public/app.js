@@ -3436,6 +3436,149 @@ function buildOperationSpec(op, characterSet) {
   return config;
 }
 
+function distributionNameFromExpression(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const keys = Object.keys(value);
+  return keys.length === 1 ? keys[0] : null;
+}
+
+function buildSelectionDistributionSpecFromStoredOperation(op, spec) {
+  const defaults = OPERATION_DEFAULTS[op] || {};
+  const rawExpression = sanitizeTypedExpression(
+    spec && spec.selection,
+    "distribution",
+  );
+  let distributionName =
+    spec && typeof spec.selection_distribution === "string"
+      ? spec.selection_distribution
+      : distributionNameFromExpression(rawExpression);
+  const validValues = getSelectionDistributionValues();
+  if (!distributionName || !validValues.includes(distributionName)) {
+    return rawExpression;
+  }
+
+  const distributionParamKeys =
+    getSelectionParamsForDistribution(distributionName);
+  const rawParams =
+    rawExpression &&
+    typeof rawExpression === "object" &&
+    rawExpression[distributionName] &&
+    typeof rawExpression[distributionName] === "object"
+      ? rawExpression[distributionName]
+      : {};
+  const params = {};
+
+  distributionParamKeys.forEach((fieldName) => {
+    const defaultValue =
+      defaults[fieldName] === undefined || defaults[fieldName] === null
+        ? SELECTION_PARAM_DEFAULTS[fieldName]
+        : defaults[fieldName];
+    const paramKey =
+      fieldName === "selection_n"
+        ? "n"
+        : fieldName.replace(/^selection_/, "");
+    const rawValue =
+      spec && spec[fieldName] !== undefined && spec[fieldName] !== null
+        ? spec[fieldName]
+        : rawParams[paramKey];
+    if (fieldName === "selection_n") {
+      params.n = intOrDefault(rawValue, defaultValue || 1);
+      return;
+    }
+    params[paramKey] = numberOrDefault(rawValue, defaultValue);
+  });
+
+  return { [distributionName]: params };
+}
+
+function sanitizeStoredOperationSpecForJson(op, spec) {
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+    return null;
+  }
+
+  const sanitized = {};
+
+  if (typeof spec.character_set === "string" && spec.character_set.trim()) {
+    sanitized.character_set = spec.character_set.trim();
+  }
+
+  if (formOpsWithOpCountFields.has(op)) {
+    const opCount = sanitizeTypedExpression(spec.op_count, "number_expr");
+    if (opCount !== null) {
+      sanitized.op_count = opCount;
+    }
+  }
+
+  if (formOpsWithSortedFields.has(op)) {
+    const k = sanitizeTypedExpression(spec.k, "number_expr");
+    const l = sanitizeTypedExpression(spec.l, "number_expr");
+    if (k !== null) {
+      sanitized.k = k;
+    }
+    if (l !== null) {
+      sanitized.l = l;
+    }
+  }
+
+  if (formOpsWithKeyFields.has(op)) {
+    const key = sanitizeTypedExpression(spec.key, "string_expr");
+    if (key !== null) {
+      sanitized.key = key;
+    }
+  }
+
+  if (formOpsWithValueFields.has(op)) {
+    const val = sanitizeTypedExpression(spec.val, "string_expr");
+    if (val !== null) {
+      sanitized.val = val;
+    }
+  }
+
+  if (formOpsWithSelectionFields.has(op)) {
+    const selection = buildSelectionDistributionSpecFromStoredOperation(op, spec);
+    if (selection !== null) {
+      sanitized.selection = selection;
+    }
+  }
+
+  if (formOpsWithRangeFields.has(op)) {
+    const selectivity = sanitizeTypedExpression(spec.selectivity, "number_expr");
+    if (selectivity !== null) {
+      sanitized.selectivity = selectivity;
+    }
+    if (typeof spec.range_format === "string" && spec.range_format) {
+      sanitized.range_format = spec.range_format;
+    }
+  }
+
+  return sanitized;
+}
+
+function sanitizeStoredGroupSpecForJson(group) {
+  if (!group || typeof group !== "object" || Array.isArray(group)) {
+    return {};
+  }
+
+  const sanitized = {};
+  if (typeof group.character_set === "string" && group.character_set.trim()) {
+    sanitized.character_set = group.character_set.trim();
+  }
+
+  operationOrder.forEach((op) => {
+    if (!Object.prototype.hasOwnProperty.call(group, op)) {
+      return;
+    }
+    const spec = sanitizeStoredOperationSpecForJson(op, group[op]);
+    if (spec && Object.keys(spec).length > 0) {
+      sanitized[op] = spec;
+    }
+  });
+
+  return sanitized;
+}
+
 function buildJsonFromForm() {
   const json = {};
   const characterSet = formCharacterSet.value.trim();
@@ -3451,7 +3594,7 @@ function buildJsonFromForm() {
   const sections = workloadStructureState.map((sectionState) => {
     const section = {
       groups: Array.isArray(sectionState.groups)
-        ? sectionState.groups.map((group) => cloneJsonValue(group))
+        ? sectionState.groups.map((group) => sanitizeStoredGroupSpecForJson(group))
         : [],
     };
     if (

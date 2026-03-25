@@ -266,6 +266,43 @@ test(
 );
 
 test(
+  "single-turn regression: read-heavy scans prompt creates interleaved range and point queries",
+  { skip: !LIVE_PROVIDER.binding, timeout: 180000 },
+  async () => {
+    const result = await requestAssist(
+      "Generate a specification for a read-heavy workload that inserts 1M unique key-value pairs following a skewed distribution, and then perform 1K scans with a scan length of 1000 keys interleaved with 10K point queries.",
+      createFormState({}),
+    );
+    const state = applyPatchToState(createFormState({}), result.patch);
+
+    assert.equal(state.sections_count, 1);
+    assert.equal(state.groups_per_section, 2);
+    assert.deepEqual(configuredOperations(state.sections[0].groups[0]), ["inserts"]);
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[1]),
+      ["point_queries", "range_queries"],
+    );
+    assert.equal(state.sections[0].groups[0].inserts.op_count, 1000000);
+    assert.equal(state.sections[0].groups[1].range_queries.op_count, 1000);
+    assert.equal(state.sections[0].groups[1].point_queries.op_count, 10000);
+    assert.equal(state.sections[0].groups[1].range_queries.range_format, "StartCount");
+    assert.equal(state.sections[0].groups[1].range_queries.selectivity, 1000 / 1000000);
+    assert.deepEqual(state.sections[0].groups[1].point_queries.selection, {
+      zipf: {
+        n: 1000000,
+        s: 1.5,
+      },
+    });
+    assert.deepEqual(state.sections[0].groups[1].range_queries.selection, {
+      zipf: {
+        n: 1000000,
+        s: 1.5,
+      },
+    });
+  },
+);
+
+test(
   "multi-turn regression: scale all operation counts by one order of magnitude",
   { skip: !LIVE_PROVIDER.binding, timeout: 240000 },
   async (t) => {

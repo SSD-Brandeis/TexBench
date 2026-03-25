@@ -48,7 +48,7 @@ const SELECTION_DISTRIBUTION_ALIASES = {
   uniform: ["uniform"],
   normal: ["normal", "gaussian"],
   beta: ["beta"],
-  zipf: ["zipf", "zipfian"],
+  zipf: ["zipf", "zipfian", "skewed", "skew"],
   exponential: ["exponential"],
   log_normal: ["log_normal", "log-normal", "log normal"],
   poisson: ["poisson"],
@@ -4732,18 +4732,6 @@ function extractPromptRangeScanLengthHint(prompt) {
 
 function resolveRangeScanPromptTarget(formState, prompt, schemaHints) {
   const lowerPrompt = String(prompt || "").toLowerCase();
-  const mentionedRangeOps = getMentionedOperationsFromPrompt(
-    lowerPrompt,
-    schemaHints,
-  ).filter((operationName) =>
-    ["range_queries", "range_deletes"].includes(operationName),
-  );
-  if (mentionedRangeOps.length === 1) {
-    return {
-      operation: mentionedRangeOps[0],
-    };
-  }
-
   const sections = normalizeCurrentSectionsForIntentChecks(formState, schemaHints);
   const groupMatches = [];
   sections.forEach((section, sectionIndex) => {
@@ -4762,6 +4750,18 @@ function resolveRangeScanPromptTarget(formState, prompt, schemaHints) {
   });
   if (groupMatches.length === 1) {
     return groupMatches[0];
+  }
+
+  const mentionedRangeOps = getMentionedOperationsFromPrompt(
+    lowerPrompt,
+    schemaHints,
+  ).filter((operationName) =>
+    ["range_queries", "range_deletes"].includes(operationName),
+  );
+  if (mentionedRangeOps.length === 1) {
+    return {
+      operation: mentionedRangeOps[0],
+    };
   }
 
   const enabledMatches = ["range_queries", "range_deletes"].filter(
@@ -5073,7 +5073,128 @@ function deriveStructuredSectionsFromPrompt(prompt, schemaHints) {
     }
   }
 
+  applyStructuredPromptSelectionHints(groups, text, schemaHints);
+  applyStructuredPromptScanLengthHints(groups, text);
+
   return [{ groups }];
+}
+
+function applyStructuredPromptSelectionHints(groups, prompt, schemaHints) {
+  const lowerPrompt = String(prompt || "").toLowerCase();
+  if (!/\bskew(?:ed)?\s+distribution\b|\bskewed\b/.test(lowerPrompt)) {
+    return;
+  }
+  if (!Array.isArray(groups) || groups.length === 0) {
+    return;
+  }
+
+  let priorInsertedKeys = 0;
+  groups.forEach((group) => {
+    if (!group || typeof group !== "object") {
+      return;
+    }
+
+    const inserts =
+      group.inserts && typeof group.inserts === "object" ? group.inserts : null;
+    const insertedThisGroup =
+      inserts && Number.isFinite(inserts.op_count) && inserts.op_count > 0
+        ? inserts.op_count
+        : 0;
+
+    Object.entries(group).forEach(([operationName, operationPatch]) => {
+      const capabilities =
+        schemaHints.capabilities && schemaHints.capabilities[operationName]
+          ? schemaHints.capabilities[operationName]
+          : {};
+      if (!capabilities.has_selection || !isPlainObject(operationPatch)) {
+        return;
+      }
+
+      const explicitSelection = normalizeDistributionValue(
+        operationPatch.selection,
+        schemaHints.selection_distributions || [],
+      );
+      const currentDistribution =
+        (typeof operationPatch.selection_distribution === "string" &&
+          operationPatch.selection_distribution.trim()) ||
+        distributionNameFromValue(explicitSelection) ||
+        null;
+      if (explicitSelection && currentDistribution !== "zipf") {
+        return;
+      }
+
+      const validKeyCount = Math.max(
+        1,
+        priorInsertedKeys > 0
+          ? priorInsertedKeys
+          : insertedThisGroup > 0
+            ? insertedThisGroup
+            : SELECTION_PARAM_DEFAULTS.selection_n,
+      );
+      const zipfS =
+        Number.isFinite(operationPatch.selection_s) &&
+        operationPatch.selection_s >= 0
+          ? Number(operationPatch.selection_s)
+          : SELECTION_PARAM_DEFAULTS.selection_s;
+
+      operationPatch.selection_distribution = "zipf";
+      operationPatch.selection_n = validKeyCount;
+      operationPatch.selection_s = zipfS;
+      operationPatch.selection = {
+        zipf: {
+          n: validKeyCount,
+          s: zipfS,
+        },
+      };
+    });
+
+    priorInsertedKeys += insertedThisGroup;
+  });
+}
+
+function applyStructuredPromptScanLengthHints(groups, prompt) {
+  if (!Array.isArray(groups) || groups.length === 0) {
+    return;
+  }
+  const scanLength = extractPromptRangeScanLengthHint(prompt);
+  if (scanLength === null) {
+    return;
+  }
+
+  let priorInsertedKeys = 0;
+  groups.forEach((group) => {
+    if (!group || typeof group !== "object") {
+      return;
+    }
+
+    const inserts =
+      group.inserts && typeof group.inserts === "object" ? group.inserts : null;
+    const insertedThisGroup =
+      inserts && Number.isFinite(inserts.op_count) && inserts.op_count > 0
+        ? inserts.op_count
+        : 0;
+
+    const targetOperation = group.range_queries
+      ? "range_queries"
+      : group.range_deletes
+        ? "range_deletes"
+        : null;
+    if (targetOperation) {
+      const validKeyCount = Math.max(
+        1,
+        priorInsertedKeys > 0 ? priorInsertedKeys : insertedThisGroup,
+      );
+      const targetSpec =
+        group[targetOperation] && typeof group[targetOperation] === "object"
+          ? group[targetOperation]
+          : {};
+      targetSpec.range_format = "StartCount";
+      targetSpec.selectivity = Math.min(1, scanLength / validKeyCount);
+      group[targetOperation] = targetSpec;
+    }
+
+    priorInsertedKeys += insertedThisGroup;
+  });
 }
 
 function splitPromptIntoPhaseClauses(prompt) {
@@ -5122,7 +5243,7 @@ function extractOperationAmountHints(text, operations) {
     }
     const amountPatternSource =
       operationName === "range_queries" || operationName === "range_deletes"
-        ? `(?:short\\s+|long\\s+)?(?:${patternSource})`
+        ? `(?:short\\s+|long\\s+)?(?:${patternSource}|scan(?:s)?)`
         : patternSource;
     const patterns = [
       new RegExp(
@@ -6091,7 +6212,24 @@ function promptMentionsOperation(lowerPrompt, operationName) {
   ) {
     return true;
   }
+  if (operationName === "range_queries" && promptMentionsScanIntent(lowerPrompt)) {
+    return true;
+  }
   return false;
+}
+
+function promptMentionsScanIntent(lowerPrompt) {
+  const text = String(lowerPrompt || "");
+  if (!text) {
+    return false;
+  }
+  const patterns = [
+    /\b\d[\d,]*(?:\.\d+)?(?:\s*(?:k|m|b|thousand|million|billion))?\s+scan(?:s)?\b/,
+    /\b(?:perform|run|issue|do|interleave|execut(?:e|ing))\b[\s\S]{0,24}\bscan(?:s)?\b/,
+    /\bscan(?:s)?\b[\s\S]{0,24}\b(?:scan|range)\s+length\b/,
+    /\bscan(?:s)?\b[\s\S]{0,16}\bkeys?\s+per\s+scan\b/,
+  ];
+  return patterns.some((pattern) => pattern.test(text));
 }
 
 function buildEffectiveState(patch, formState, schemaHints) {
