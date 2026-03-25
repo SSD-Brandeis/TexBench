@@ -82,6 +82,29 @@
         font-size: 15px;
       }
 
+      .header-intro {
+        max-width: 880px;
+        margin: 14px auto 0;
+        padding: 14px 18px;
+        border: 1px solid var(--border-strong);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.78);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.85),
+          0 10px 24px rgba(11, 30, 45, 0.06);
+        text-align: left;
+      }
+
+      .header-intro p {
+        font-size: 15px;
+        line-height: 1.55;
+        color: var(--text-dim);
+      }
+
+      .header-intro p + p {
+        margin-top: 6px;
+      }
+
       main {
         min-height: 0;
         flex: 1;
@@ -2240,10 +2263,34 @@
       }
 
       @media (min-width: 980px) {
+        body {
+          overflow: hidden;
+        }
+
+        .app-shell {
+          height: 100vh;
+          overflow: hidden;
+        }
+
+        main {
+          min-height: 0;
+          overflow: hidden;
+        }
+
         .workspace {
-          min-height: calc(100vh - 120px);
+          min-height: 0;
+          height: 100%;
           grid-template-columns: minmax(360px, 0.92fr) minmax(420px, 1.08fr);
           align-items: start;
+        }
+
+        .workspace-column {
+          min-height: 0;
+          max-height: 100%;
+          overflow: auto;
+          overscroll-behavior: contain;
+          scrollbar-gutter: stable;
+          padding-right: 6px;
         }
 
         #builderPanel,
@@ -2259,6 +2306,10 @@
       }
 
       @media (max-width: 768px) {
+        body {
+          overflow: auto;
+        }
+
         .app-shell {
           padding: 20px 12px;
         }
@@ -2533,6 +2584,21 @@
         <p class="header-subtitle">
           Generate JSON configurations for your workload specifications
         </p>
+        <div class="header-intro">
+          <p>
+            This demo turns natural-language workload requests into editable
+            benchmark specifications.
+          </p>
+          <p>
+            You can start from a preset or describe the workload you want, then
+            refine sections, phases, operations, and advanced fields directly in
+            the builder.
+          </p>
+          <p>
+            Once the spec looks right, run it against one or more databases and
+            compare the resulting benchmark metrics side by side.
+          </p>
+        </div>
       </header>
       <main>
         <div class="workspace">
