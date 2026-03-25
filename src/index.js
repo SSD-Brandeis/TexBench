@@ -13,6 +13,7 @@ import {
   getOllamaModels,
   isOllamaAssistProvider,
 } from "./ollama-assist-provider.mjs";
+import { createPromptParser } from "./prompt-parser.mjs";
 
 const DEFAULT_MAX_TOKENS = 700;
 const DEFAULT_RETRY_ATTEMPTS = 2;
@@ -174,6 +175,26 @@ const WRITE_HEAVY_DEFAULT_SPLIT = {
   write: 80,
   read: 20,
 };
+const promptParser = createPromptParser({
+  defaultSelectionDistributions: DEFAULT_SELECTION_DISTRIBUTIONS,
+  selectionDistributionParamKeys: SELECTION_DISTRIBUTION_PARAM_KEYS,
+  selectionParamDefaults: SELECTION_PARAM_DEFAULTS,
+  rangeQuerySelectivityProfiles: RANGE_QUERY_SELECTIVITY_PROFILES,
+  writeHeavyDefaultSplit: WRITE_HEAVY_DEFAULT_SPLIT,
+  structuredWorkloadPattern: STRUCTURED_WORKLOAD_PATTERN,
+  distributionRequiredKeys: DISTRIBUTION_REQUIRED_KEYS,
+  parseHumanCountToken,
+  positiveIntegerOrNull,
+  normalizedFinitePositiveNumber,
+  numberOrNull,
+  normalizeDistributionValue,
+  distributionNameFromValue,
+  uniqueStrings,
+  operationPatchHasConfiguredValues,
+  getOperationCapabilities,
+  escapeRegExp,
+  isPlainObject,
+});
 const TOP_LEVEL_BINDING_FIELDS = new Set([
   "character_set",
   "sections_count",
@@ -3789,6 +3810,7 @@ function promptRequestsExplicitGroupAppend(prompt) {
 }
 
 function parsePromptOrdinalIndex(token) {
+  return promptParser.parsePromptOrdinalIndex(token);
   const normalized = String(token || "")
     .toLowerCase()
     .trim()
@@ -4553,6 +4575,7 @@ function applyDeleteOperationDisambiguation(
 }
 
 function promptLikelySetsOperationCount(lowerPrompt) {
+  return promptParser.promptLikelySetsOperationCount(lowerPrompt);
   const text = String(lowerPrompt || "").toLowerCase();
   if (!text) {
     return false;
@@ -4570,6 +4593,7 @@ function promptLikelySetsOperationCount(lowerPrompt) {
 }
 
 function promptMentionsDistributionChange(lowerPrompt) {
+  return promptParser.promptMentionsDistributionChange(lowerPrompt);
   const text = String(lowerPrompt || "").toLowerCase();
   if (!text) {
     return false;
@@ -4715,6 +4739,7 @@ function applyPromptOperationFieldFallback(
 }
 
 function promptRequestsAllOperationCountScaling(lowerPrompt) {
+  return promptParser.promptRequestsAllOperationCountScaling(lowerPrompt);
   const text = String(lowerPrompt || "");
   return (
     /\b(?:all|every|each)\b[\s\S]{0,32}\b(?:operation counts?|op counts?|counts?)\b/.test(
@@ -4728,6 +4753,7 @@ function promptRequestsAllOperationCountScaling(lowerPrompt) {
 }
 
 function extractPromptOperationCountScaleFactor(lowerPrompt) {
+  return promptParser.extractPromptOperationCountScaleFactor(lowerPrompt);
   const text = String(lowerPrompt || "");
   if (!text) {
     return null;
@@ -4791,6 +4817,7 @@ function extractPromptOperationCountScaleFactor(lowerPrompt) {
 }
 
 function extractPromptRangeScanLengthHint(prompt) {
+  return promptParser.extractPromptRangeScanLengthHint(prompt);
   const text = String(prompt || "");
   if (!text) {
     return null;
@@ -4813,6 +4840,7 @@ function extractPromptRangeScanLengthHint(prompt) {
 }
 
 function extractPromptRangeSelectivityHint(prompt) {
+  return promptParser.extractPromptRangeSelectivityHint(prompt);
   const text = String(prompt || "");
   if (!text) {
     return null;
@@ -4851,6 +4879,7 @@ function extractPromptRangeSelectivityHint(prompt) {
 }
 
 function extractPromptSelectionParameterHints(prompt) {
+  return promptParser.extractPromptSelectionParameterHints(prompt);
   const text = String(prompt || "");
   if (!text) {
     return {};
@@ -4930,6 +4959,7 @@ function extractPromptSelectionParameterHints(prompt) {
 }
 
 function buildSelectionDistributionValue(distributionName, source) {
+  return promptParser.buildSelectionDistributionValue(distributionName, source);
   const distribution =
     typeof distributionName === "string" ? distributionName.trim() : "";
   if (!distribution) {
@@ -4957,6 +4987,12 @@ function applyDetectedSelectionDistributionToOperationPatch(
   prompt,
   distributionName,
 ) {
+  return promptParser.applyDetectedSelectionDistributionToOperationPatch(
+    operationPatch,
+    currentState,
+    prompt,
+    distributionName,
+  );
   if (!operationPatch || typeof operationPatch !== "object" || !distributionName) {
     return false;
   }
@@ -5354,6 +5390,7 @@ function buildDeterministicPercentMixWorkloadPayload(
 }
 
 function buildStructuredGroupsFromPromptText(text, schemaHints) {
+  return promptParser.buildStructuredGroupsFromPromptText(text, schemaHints);
   const rawClauses = splitPromptIntoPhaseClauses(text);
   const clauses = [];
   rawClauses.forEach((clause) => {
@@ -5395,6 +5432,7 @@ function buildStructuredGroupsFromPromptText(text, schemaHints) {
 }
 
 function splitPromptIntoSectionClauses(prompt) {
+  return promptParser.splitPromptIntoSectionClauses(prompt);
   const text = String(prompt || "");
   if (!text) {
     return null;
@@ -5427,6 +5465,7 @@ function splitPromptIntoSectionClauses(prompt) {
 }
 
 function deriveStructuredSectionsFromPrompt(prompt, schemaHints) {
+  return promptParser.deriveStructuredSectionsFromPrompt(prompt, schemaHints);
   const text = typeof prompt === "string" ? prompt.trim() : "";
   if (!text || !STRUCTURED_WORKLOAD_PATTERN.test(text)) {
     return null;
@@ -5483,6 +5522,11 @@ function deriveStructuredSectionsFromPrompt(prompt, schemaHints) {
 }
 
 function applyStructuredPromptSelectionHints(groups, prompt, schemaHints) {
+  return promptParser.applyStructuredPromptSelectionHints(
+    groups,
+    prompt,
+    schemaHints,
+  );
   const lowerPrompt = String(prompt || "").toLowerCase();
   if (!/\bskew(?:ed)?\s+distribution\b|\bskewed\b/.test(lowerPrompt)) {
     return;
@@ -5556,6 +5600,7 @@ function applyStructuredPromptSelectionHints(groups, prompt, schemaHints) {
 }
 
 function applyStructuredPromptScanLengthHints(groups, prompt) {
+  return promptParser.applyStructuredPromptScanLengthHints(groups, prompt);
   if (!Array.isArray(groups) || groups.length === 0) {
     return;
   }
@@ -5601,6 +5646,7 @@ function applyStructuredPromptScanLengthHints(groups, prompt) {
 }
 
 function splitPromptIntoPhaseClauses(prompt) {
+  return promptParser.splitPromptIntoPhaseClauses(prompt);
   const groupAppendMarker =
     "(?:an?\\s+)?(?:another|new|next|second|third|2nd|3rd)\\s+group";
   const normalized = String(prompt || "")
@@ -5637,6 +5683,7 @@ function splitPromptIntoPhaseClauses(prompt) {
 }
 
 function extractOperationAmountHints(text, operations) {
+  return promptParser.extractOperationAmountHints(text, operations);
   const lowerText = String(text || "").toLowerCase();
   const hints = {};
   operations.forEach((operationName) => {
@@ -5685,6 +5732,7 @@ function extractOperationAmountHints(text, operations) {
 }
 
 function detectRangeQueryProfile(lowerPrompt) {
+  return promptParser.detectRangeQueryProfile(lowerPrompt);
   const text = String(lowerPrompt || "");
   if (/\bshort\s+range\s+quer(?:y|ie|ies)\b/.test(text)) {
     return "short";
@@ -5696,6 +5744,11 @@ function detectRangeQueryProfile(lowerPrompt) {
 }
 
 function deriveStructuredGroupFromClause(clause, schemaHints, options = {}) {
+  return promptParser.deriveStructuredGroupFromClause(
+    clause,
+    schemaHints,
+    options,
+  );
   const text = String(clause || "").trim();
   if (!text) {
     return null;
@@ -5823,6 +5876,7 @@ function deriveStructuredGroupFromClause(clause, schemaHints, options = {}) {
 }
 
 function extractPromptCountHint(prompt) {
+  return promptParser.extractPromptCountHint(prompt);
   const text = String(prompt || "");
   if (!text) {
     return null;
@@ -6581,6 +6635,10 @@ function inferOperationEnabledFromPatch(operationPatch, op, schemaHints) {
 }
 
 function detectSelectionDistribution(lowerPrompt, allowedDistributions) {
+  return promptParser.detectSelectionDistribution(
+    lowerPrompt,
+    allowedDistributions,
+  );
   const candidates =
     Array.isArray(allowedDistributions) && allowedDistributions.length > 0
       ? allowedDistributions
@@ -6602,14 +6660,21 @@ function detectSelectionDistribution(lowerPrompt, allowedDistributions) {
 }
 
 function getOperationPromptPatternSource(operationName) {
+  return promptParser.getOperationPromptPatternSource(operationName);
   return OPERATION_PROMPT_PATTERN_SOURCES[operationName] || null;
 }
 
 function getOperationPromptBlockedPrefixes(operationName) {
+  return promptParser.getOperationPromptBlockedPrefixes(operationName);
   return OPERATION_PROMPT_BLOCKED_PREFIXES[operationName] || [];
 }
 
 function operationPatternMatchesWithPrefixGuards(text, regex, blockedPrefixes) {
+  return promptParser.operationPatternMatchesWithPrefixGuards(
+    text,
+    regex,
+    blockedPrefixes,
+  );
   if (!regex) {
     return false;
   }
@@ -6634,6 +6699,7 @@ function operationPatternMatchesWithPrefixGuards(text, regex, blockedPrefixes) {
 }
 
 function promptExplicitlyRestrictsToOperation(prompt, operationName) {
+  return promptParser.promptExplicitlyRestrictsToOperation(prompt, operationName);
   const lowerPrompt = String(prompt || "").toLowerCase();
   const patternSource = getOperationPromptPatternSource(operationName);
   if (!lowerPrompt || !patternSource) {
@@ -6655,6 +6721,7 @@ function promptExplicitlyRestrictsToOperation(prompt, operationName) {
 }
 
 function promptMentionsOperation(lowerPrompt, operationName) {
+  return promptParser.promptMentionsOperation(lowerPrompt, operationName);
   const text = String(lowerPrompt || "").toLowerCase();
   const escapedOperationName = escapeRegExp(operationName.toLowerCase());
   if (new RegExp(`\\b${escapedOperationName}\\b`).test(text)) {
@@ -6678,6 +6745,7 @@ function promptMentionsOperation(lowerPrompt, operationName) {
 }
 
 function promptMentionsScanIntent(lowerPrompt) {
+  return promptParser.promptMentionsScanIntent(lowerPrompt);
   const text = String(lowerPrompt || "").toLowerCase();
   if (!text) {
     return false;
@@ -6969,6 +7037,10 @@ function keyValueDistributionIntent(lowerPrompt) {
 }
 
 function getMentionedOperationsFromPrompt(lowerPrompt, schemaHints) {
+  return promptParser.getMentionedOperationsFromPrompt(
+    lowerPrompt,
+    schemaHints,
+  );
   const text = String(lowerPrompt || "").toLowerCase();
   if (!text) {
     return [];
@@ -6979,6 +7051,10 @@ function getMentionedOperationsFromPrompt(lowerPrompt, schemaHints) {
 }
 
 function shouldTreatPromptAsStringDistribution(lowerPrompt, schemaHints) {
+  return promptParser.shouldTreatPromptAsStringDistribution(
+    lowerPrompt,
+    schemaHints,
+  );
   const text = String(lowerPrompt || "");
   if (!keyValueDistributionIntent(text)) {
     return false;
