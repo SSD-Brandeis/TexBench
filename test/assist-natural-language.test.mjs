@@ -1099,6 +1099,62 @@ test("worker assist endpoint maps GET to point queries in fresh percentage-only 
   );
 });
 
+test("worker assist endpoint preserves explicit beta distribution parameters in sequential fresh workloads", async () => {
+  const request = new Request("https://example.com/api/assist", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      prompt:
+        "Generate an insert-heavy workload with 1M writes followed by 100K point queries following a beta distribution with alpha as 0.5 and beta as 0.2.",
+      form_state: createFormState({}),
+      schema_hints: SCHEMA_HINTS,
+      current_json: null,
+      conversation: [],
+      answers: {},
+    }),
+  });
+
+  const response = await workerEntrypoint.fetch(request, {
+    AI: {
+      run: async () => ({
+        response: JSON.stringify({
+          summary: "Create the workload.",
+          patch: {},
+          clarifications: [],
+          assumptions: [],
+        }),
+      }),
+    },
+    ASSETS: {
+      fetch: async () => new Response("not found", { status: 404 }),
+    },
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.source, "ai");
+  assert.equal(body.patch.sections_count, 1);
+  assert.equal(body.patch.groups_per_section, 2);
+  assert.deepEqual(
+    sortedKeys(body.patch.sections[0].groups[0]),
+    ["inserts"],
+  );
+  assert.deepEqual(
+    sortedKeys(body.patch.sections[0].groups[1]),
+    ["point_queries"],
+  );
+  assert.equal(body.patch.sections[0].groups[0].inserts.op_count, 1000000);
+  assert.equal(body.patch.sections[0].groups[1].point_queries.op_count, 100000);
+  assert.deepEqual(body.patch.sections[0].groups[1].point_queries.selection, {
+    beta: {
+      alpha: 0.5,
+      beta: 0.2,
+    },
+  });
+});
+
 test("worker assist endpoint falls back to deterministic phased parsing when AI output is truncated", async () => {
   const request = new Request("https://example.com/api/assist", {
     method: "POST",

@@ -164,7 +164,7 @@ const STRING_PATTERN_DEFAULTS = {
   val_hot_probability: 0.8,
 };
 const STRUCTURED_WORKLOAD_PATTERN =
-  /\b(?:single[- ]shot|one[- ]phase|two[- ]phase|three[- ]phase|preload|interleave|interleaved|phase\s+[123]|(?:first|second|third|next|later)\s+phase|write[- ]heavy|write[- ]only)\b/i;
+  /\b(?:single[- ]shot|one[- ]phase|two[- ]phase|three[- ]phase|preload|interleave|interleaved|phase\s+[123]|(?:first|second|third|next|later)\s+phase|write[- ]heavy|write[- ]only|followed\s+by)\b/i;
 const RANGE_QUERY_SELECTIVITY_PROFILES = {
   short: 0.001,
   long: 0.1,
@@ -4687,25 +4687,12 @@ function applyPromptOperationFieldFallback(
     !shouldTreatPromptAsStringDistribution(lowerPrompt, schemaHints) &&
     opPatch.enabled !== false
   ) {
-    opPatch.selection = null;
-    opPatch.selection_distribution = detectedDistribution;
-    const requiredParams =
-      SELECTION_DISTRIBUTION_PARAM_KEYS[detectedDistribution] || [];
-    requiredParams.forEach((fieldName) => {
-      const currentValue = currentState[fieldName];
-      if (currentValue !== null && currentValue !== undefined) {
-        opPatch[fieldName] = currentValue;
-        return;
-      }
-      if (
-        Object.prototype.hasOwnProperty.call(
-          SELECTION_PARAM_DEFAULTS,
-          fieldName,
-        )
-      ) {
-        opPatch[fieldName] = SELECTION_PARAM_DEFAULTS[fieldName];
-      }
-    });
+    applyDetectedSelectionDistributionToOperationPatch(
+      opPatch,
+      currentState,
+      prompt,
+      detectedDistribution,
+    );
     changed = true;
   }
 
@@ -4851,6 +4838,149 @@ function extractPromptRangeSelectivityHint(prompt) {
     }
   }
   return null;
+}
+
+function extractPromptSelectionParameterHints(prompt) {
+  const text = String(prompt || "");
+  if (!text) {
+    return {};
+  }
+
+  const numericValuePattern =
+    "([0-9][0-9,]*(?:\\.\\d+)?(?:\\s*(?:k|m|b|thousand|million|billion))?)";
+  const separatorPattern = "(?:\\s+(?:as|is|of))?\\s*[:=]?\\s*";
+  const fieldPatterns = {
+    selection_min: [
+      new RegExp(`\\bmin(?:imum)?\\b${separatorPattern}${numericValuePattern}`, "i"),
+    ],
+    selection_max: [
+      new RegExp(`\\bmax(?:imum)?\\b${separatorPattern}${numericValuePattern}`, "i"),
+    ],
+    selection_mean: [
+      new RegExp(`\\bmean\\b${separatorPattern}${numericValuePattern}`, "i"),
+    ],
+    selection_std_dev: [
+      new RegExp(
+        `\\bstandard\\s+deviation\\b${separatorPattern}${numericValuePattern}`,
+        "i",
+      ),
+      new RegExp(
+        `\\bstd(?:\\.?\\s*dev|_?dev|_?deviation)?\\b${separatorPattern}${numericValuePattern}`,
+        "i",
+      ),
+    ],
+    selection_alpha: [
+      new RegExp(`\\balpha\\b${separatorPattern}${numericValuePattern}`, "i"),
+    ],
+    selection_beta: [
+      new RegExp(`\\bbeta\\b${separatorPattern}${numericValuePattern}`, "i"),
+    ],
+    selection_lambda: [
+      new RegExp(`\\blambda\\b${separatorPattern}${numericValuePattern}`, "i"),
+    ],
+    selection_scale: [
+      new RegExp(`\\bscale\\b${separatorPattern}${numericValuePattern}`, "i"),
+    ],
+    selection_shape: [
+      new RegExp(`\\bshape\\b${separatorPattern}${numericValuePattern}`, "i"),
+    ],
+    selection_n: [
+      new RegExp(
+        `\\b(?:parameter\\s+n|zipf\\s+n)\\b${separatorPattern}${numericValuePattern}`,
+        "i",
+      ),
+    ],
+    selection_s: [
+      new RegExp(
+        `\\b(?:parameter\\s+s|zipf\\s+s)\\b${separatorPattern}${numericValuePattern}`,
+        "i",
+      ),
+    ],
+  };
+
+  const hints = {};
+  Object.entries(fieldPatterns).forEach(([fieldName, patterns]) => {
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (!match || !match[1]) {
+        continue;
+      }
+      const rawValue = match[1].replace(/,/g, "");
+      const parsed =
+        fieldName === "selection_n"
+          ? positiveIntegerOrNull(parseHumanCountToken(rawValue))
+          : numberOrNull(rawValue);
+      if (parsed !== null && parsed !== undefined) {
+        hints[fieldName] = parsed;
+        break;
+      }
+    }
+  });
+  return hints;
+}
+
+function buildSelectionDistributionValue(distributionName, source) {
+  const distribution =
+    typeof distributionName === "string" ? distributionName.trim() : "";
+  if (!distribution) {
+    return null;
+  }
+  const requiredKeys = DISTRIBUTION_REQUIRED_KEYS[distribution] || [];
+  if (requiredKeys.length === 0) {
+    return null;
+  }
+  const payload = {};
+  for (const key of requiredKeys) {
+    const fieldName = `selection_${key}`;
+    const value = source ? source[fieldName] : null;
+    if (value === null || value === undefined) {
+      return null;
+    }
+    payload[key] = value;
+  }
+  return { [distribution]: payload };
+}
+
+function applyDetectedSelectionDistributionToOperationPatch(
+  operationPatch,
+  currentState,
+  prompt,
+  distributionName,
+) {
+  if (!operationPatch || typeof operationPatch !== "object" || !distributionName) {
+    return false;
+  }
+  const current =
+    currentState && typeof currentState === "object" ? currentState : {};
+  const paramHints = extractPromptSelectionParameterHints(prompt);
+  operationPatch.selection = null;
+  operationPatch.selection_distribution = distributionName;
+  const requiredParams =
+    SELECTION_DISTRIBUTION_PARAM_KEYS[distributionName] || [];
+  requiredParams.forEach((fieldName) => {
+    if (paramHints[fieldName] !== null && paramHints[fieldName] !== undefined) {
+      operationPatch[fieldName] = paramHints[fieldName];
+      return;
+    }
+    const currentValue = current[fieldName];
+    if (currentValue !== null && currentValue !== undefined) {
+      operationPatch[fieldName] = currentValue;
+      return;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(SELECTION_PARAM_DEFAULTS, fieldName)
+    ) {
+      operationPatch[fieldName] = SELECTION_PARAM_DEFAULTS[fieldName];
+    }
+  });
+  const selectionValue = buildSelectionDistributionValue(
+    distributionName,
+    operationPatch,
+  );
+  if (selectionValue) {
+    operationPatch.selection = selectionValue;
+  }
+  return true;
 }
 
 function resolveRangeScanPromptTarget(formState, prompt, schemaHints) {
@@ -5537,6 +5667,7 @@ function deriveStructuredGroupFromClause(clause, schemaHints, options = {}) {
 
   operations.forEach((operationName) => {
     const amountHint = amountHints[operationName] || null;
+    const capabilities = getOperationCapabilities(schemaHints, operationName);
     let opCount = null;
     if (amountHint && amountHint.type === "count") {
       opCount = amountHint.value;
@@ -5561,6 +5692,22 @@ function deriveStructuredGroupFromClause(clause, schemaHints, options = {}) {
     const spec = {};
     if (opCount !== null) {
       spec.op_count = opCount;
+    }
+    const detectedDistribution =
+      capabilities.has_selection &&
+      !shouldTreatPromptAsStringDistribution(lowerClause, schemaHints)
+        ? detectSelectionDistribution(
+            lowerClause,
+            schemaHints.selection_distributions,
+          )
+        : null;
+    if (detectedDistribution) {
+      applyDetectedSelectionDistributionToOperationPatch(
+        spec,
+        {},
+        text,
+        detectedDistribution,
+      );
     }
     if (
       operationName === "range_queries" ||
