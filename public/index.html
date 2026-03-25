@@ -2011,70 +2011,147 @@
       }
 
       .run-db-menu {
-        display: inline-flex;
+        display: flex;
         flex-direction: column;
         gap: 8px;
+        width: 100%;
       }
 
       .run-db-menu[open] {
-        min-width: 220px;
+        min-width: 0;
       }
 
       .run-db-menu-summary {
         list-style: none;
-        display: inline-flex;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
         align-items: center;
-        gap: 8px;
-        padding: 6px 10px;
-        border: 1px solid #d6e7ef;
-        border-radius: 999px;
-        background: #f7fbfd;
+        gap: 12px;
+        min-height: 72px;
+        padding: 14px 16px;
+        border: 1px solid #d4e2eb;
+        border-radius: 18px;
+        background: linear-gradient(180deg, #fbfdfe 0%, #f3f8fb 100%);
         color: #16364d;
         cursor: pointer;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.82),
+          0 10px 24px rgba(11, 30, 45, 0.05);
       }
 
       .run-db-menu-summary::-webkit-details-marker {
         display: none;
       }
 
+      .run-db-menu-summary-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+
       .run-db-menu-label {
-        font-size: 11px;
+        font-size: 12px;
         font-weight: 700;
         letter-spacing: 0.04em;
         text-transform: uppercase;
         color: #688091;
       }
 
-      .run-db-menu-value {
+      .run-db-menu-prompt {
         font-size: 12px;
-        font-weight: 600;
-        color: #16364d;
+        line-height: 1.35;
+        color: #6a7f8f;
+      }
+
+      .run-db-menu-value {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .run-db-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid #c9dde8;
+        background: #ffffff;
+        color: #173a52;
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .run-db-chip.more {
+        background: #eef5f9;
+        color: #527083;
+      }
+
+      .run-db-chip.empty {
+        border-style: dashed;
+        color: #718596;
+        background: #f7fbfd;
+      }
+
+      .run-db-menu-chevron {
+        font-size: 14px;
+        color: #6c8292;
+        transition: transform 0.18s ease;
+      }
+
+      .run-db-menu[open] .run-db-menu-chevron {
+        transform: rotate(180deg);
       }
 
       .run-db-menu-panel {
         display: flex;
         flex-direction: column;
-        gap: 8px;
-        padding: 10px;
-        border: 1px solid var(--border);
-        border-radius: 14px;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid #d4e2eb;
+        border-radius: 18px;
         background: #fff;
-        box-shadow: 0 12px 28px rgba(11, 30, 45, 0.08);
+        box-shadow: 0 14px 30px rgba(11, 30, 45, 0.08);
+      }
+
+      .run-db-menu-help {
+        font-size: 12px;
+        line-height: 1.4;
+        color: #678091;
       }
 
       .run-db-option {
         display: flex;
         align-items: center;
-        gap: 8px;
-        min-height: 36px;
-        padding: 0 2px;
+        gap: 10px;
+        min-height: 48px;
+        padding: 0 12px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: linear-gradient(180deg, #ffffff 0%, #f7fbfd 100%);
         font-size: 13px;
         font-weight: 600;
         color: var(--text);
+        cursor: pointer;
+        transition:
+          border-color 0.15s ease,
+          background 0.15s ease,
+          transform 0.15s ease;
+      }
+
+      .run-db-option:hover {
+        border-color: #bed2df;
+        background: linear-gradient(180deg, #ffffff 0%, #f2f8fb 100%);
       }
 
       .run-db-option input {
         margin: 0;
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
       }
 
       .run-location {
@@ -2389,9 +2466,9 @@
         background: linear-gradient(180deg, #f8fbfd 0%, #ffffff 100%);
         padding: 16px;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 14px;
-        align-items: stretch;
+        grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+        gap: 18px;
+        align-items: center;
         box-shadow:
           inset 0 1px 0 rgba(255, 255, 255, 0.76),
           0 10px 22px rgba(11, 30, 45, 0.05);
@@ -2412,17 +2489,17 @@
       }
 
       .run-control-help {
-        font-size: 13px;
-        line-height: 1.45;
+        font-size: 14px;
+        line-height: 1.55;
         color: var(--text-dim);
+        max-width: 620px;
       }
 
       .run-control-actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        justify-content: flex-end;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        justify-items: stretch;
       }
 
       .preview-action-btn {
@@ -2431,31 +2508,30 @@
       }
 
       #runWorkloadBtn {
-        background: #edf8f5;
-        color: var(--accent);
-        border: 1px solid #cfe1dc;
+        background: #ffffff;
+        color: var(--text-dim);
+        border: 1px solid var(--border);
         box-shadow: none;
-        min-height: 48px;
-        padding: 0 20px;
+        min-height: 44px;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 500;
+        border-radius: 8px;
       }
 
       #runWorkloadBtn:hover {
-        background: #e3f4ef;
-        border-color: #bdd8d1;
-        color: var(--accent-hover);
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+        color: #ffffff;
         transform: none;
       }
 
       .run-db-menu {
-        min-height: 48px;
+        min-height: 0;
       }
 
       .run-db-menu-summary {
-        min-height: 48px;
-        padding: 0 14px;
-        border-radius: 14px;
-        background: #fff;
-        border: 1px solid var(--border);
+        width: 100%;
       }
 
       @media (max-width: 1080px) {
@@ -2471,7 +2547,7 @@
 
         .preview-header-actions,
         .run-control-actions {
-          justify-content: flex-start;
+          justify-items: stretch;
         }
 
         .run-db-menu {
@@ -2480,7 +2556,6 @@
 
         .run-db-menu-summary {
           width: 100%;
-          justify-content: space-between;
         }
       }
       body {
@@ -2714,7 +2789,6 @@
                     <label class="field">
                       <span id="formCharacterSetLabel">Character Set</span>
                       <select id="formCharacterSet">
-                        <option value="">(unset)</option>
                         <option value="alphanumeric">alphanumeric</option>
                         <option value="alphabetic">alphabetic</option>
                         <option value="numeric">numeric</option>
@@ -2801,18 +2875,33 @@
                       <span class="run-control-label">Benchmark target</span>
                       <p class="run-control-help">
                         Choose one or more database engines and run the current
-                        workload spec without leaving the overview panel.
+                        workload spec.
                       </p>
                     </div>
                     <div class="run-control-actions">
                       <details class="run-db-menu">
                         <summary class="run-db-menu-summary">
-                          <span class="run-db-menu-label">DBs</span>
-                          <span class="run-db-menu-value" id="benchmarkDatabaseSummary"
-                            >rocksdb</span
+                          <div class="run-db-menu-summary-copy">
+                            <span class="run-db-menu-label">Databases</span>
+                            <span class="run-db-menu-prompt"
+                              >Select one or more engines</span
+                            >
+                          </div>
+                          <span
+                            class="run-db-menu-value"
+                            id="benchmarkDatabaseSummary"
+                          >
+                            <span class="run-db-chip">rocksdb</span>
+                          </span>
+                          <span class="run-db-menu-chevron" aria-hidden="true"
+                            >▾</span
                           >
                         </summary>
                         <div class="run-db-menu-panel">
+                          <p class="run-db-menu-help">
+                            Run the same workload in parallel across the selected
+                            database engines.
+                          </p>
                           <label class="run-db-option">
                             <input
                               type="checkbox"

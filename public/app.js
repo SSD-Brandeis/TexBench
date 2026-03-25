@@ -541,12 +541,9 @@ function populateCharacterSetOptions() {
 
   const currentValue = formCharacterSet.value;
   const values = Array.isArray(characterSetEnum) ? characterSetEnum : [];
+  const defaultCharacterSet = getDefaultCharacterSetValue();
 
   formCharacterSet.innerHTML = "";
-  const unsetOption = document.createElement("option");
-  unsetOption.value = "";
-  unsetOption.textContent = "(unset)";
-  formCharacterSet.appendChild(unsetOption);
 
   values.forEach((value) => {
     const option = document.createElement("option");
@@ -558,7 +555,7 @@ function populateCharacterSetOptions() {
   if (values.includes(currentValue)) {
     formCharacterSet.value = currentValue;
   } else {
-    formCharacterSet.value = "";
+    formCharacterSet.value = defaultCharacterSet;
   }
 }
 
@@ -571,6 +568,39 @@ function getDefaultCharacterSetValue() {
     return "alphanumeric";
   }
   return characterSetEnum[0];
+}
+
+function getDisplayedWorkloadCharacterSet() {
+  if (
+    formCharacterSet &&
+    typeof formCharacterSet.value === "string" &&
+    formCharacterSet.value.trim()
+  ) {
+    return formCharacterSet.value.trim();
+  }
+  return getDefaultCharacterSetValue();
+}
+
+function getOperationCharacterSetOptionLabel() {
+  const characterSet = getDisplayedWorkloadCharacterSet();
+  return characterSet
+    ? characterSet + " (workload default)"
+    : "workload default";
+}
+
+function refreshOperationCharacterSetOptionLabels() {
+  if (!operationConfigContainer) {
+    return;
+  }
+  const labelText = getOperationCharacterSetOptionLabel();
+  operationConfigContainer
+    .querySelectorAll('select[data-field="character_set"]')
+    .forEach((select) => {
+      const defaultOption = select.querySelector('option[value=""]');
+      if (defaultOption) {
+        defaultOption.textContent = labelText;
+      }
+    });
 }
 
 function reportUiIssue(prefix, errorLike) {
@@ -757,6 +787,9 @@ function onFormChange(event) {
     loadActiveStructureIntoForm();
     updateJsonFromForm();
     return;
+  }
+  if (eventTarget === formCharacterSet) {
+    refreshOperationCharacterSetOptionLabels();
   }
   markFieldAsUserLocked(eventTarget);
   clearAdvancedStateForFormEdit(eventTarget);
@@ -1457,19 +1490,30 @@ function updateBenchmarkDatabaseSummary() {
   if (!benchmarkDatabaseSummary) {
     return;
   }
+  benchmarkDatabaseSummary.replaceChildren();
   const selected = benchmarkDatabaseInputs
     .filter((input) => input && input.checked)
     .map((input) => String(input.value || "").trim())
     .filter(Boolean);
   if (selected.length === 0) {
-    benchmarkDatabaseSummary.textContent = "none selected";
+    const emptyChip = document.createElement("span");
+    emptyChip.className = "run-db-chip empty";
+    emptyChip.textContent = "Select databases";
+    benchmarkDatabaseSummary.appendChild(emptyChip);
     return;
   }
-  if (selected.length === 1) {
-    benchmarkDatabaseSummary.textContent = selected[0];
-    return;
+  selected.slice(0, 2).forEach((name) => {
+    const chip = document.createElement("span");
+    chip.className = "run-db-chip";
+    chip.textContent = name;
+    benchmarkDatabaseSummary.appendChild(chip);
+  });
+  if (selected.length > 2) {
+    const moreChip = document.createElement("span");
+    moreChip.className = "run-db-chip more";
+    moreChip.textContent = "+" + String(selected.length - 2) + " more";
+    benchmarkDatabaseSummary.appendChild(moreChip);
   }
-  benchmarkDatabaseSummary.textContent = String(selected.length) + " selected";
 }
 
 function clearOperationFormState() {
@@ -1499,7 +1543,7 @@ function loadPresetIntoBuilder(presetJson) {
     );
     formCharacterSet.value = options.includes(presetCharacterSet)
       ? presetCharacterSet
-      : "";
+      : getDefaultCharacterSetValue();
   }
 
   workloadStructureState =
@@ -1593,7 +1637,7 @@ function restorePersistedCustomBuilderState() {
     );
     formCharacterSet.value = options.includes(restoredCharacterSet)
       ? restoredCharacterSet
-      : "";
+      : getDefaultCharacterSetValue();
   }
 
   workloadStructureState = restoredSections;
@@ -1746,6 +1790,7 @@ function loadActiveStructureIntoForm() {
     setOperationChecked(op, true);
     applyOperationSpecToForm(op, spec);
   });
+  refreshOperationCharacterSetOptionLabels();
 }
 
 function buildActiveGroupSpecFromForm(characterSet, existingGroup = null) {
@@ -2687,7 +2732,7 @@ function createOperationCharacterSetField(op, defaultValue, description = "") {
 
   const unsetOption = document.createElement("option");
   unsetOption.value = "";
-  unsetOption.textContent = "(inherit)";
+  unsetOption.textContent = getOperationCharacterSetOptionLabel();
   select.appendChild(unsetOption);
 
   characterSetEnum.forEach((value) => {
@@ -4582,6 +4627,7 @@ function updateInteractiveStats(json) {
 
 function updateJsonFromForm() {
   const generated = buildJsonFromForm();
+  refreshOperationCharacterSetOptionLabels();
   if (customWorkloadMode) {
     renderStructureSelectors();
   }

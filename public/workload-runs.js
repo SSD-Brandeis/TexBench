@@ -257,7 +257,8 @@
       "Throughput (using start and end time) (ops/ms)": "Throughput",
       "Throughput (using aggregate operation times) (ops/ms)":
         "Throughput (CPU time)",
-      "Total Time Spent (using start and end time)": "Wall Time",
+      "Total Time Spent (using start and end time)":
+        "Workload Execution latency",
       "Aggregate Operation Time": "Aggregate Op Time",
     };
     return replacements[normalized] || normalized;
