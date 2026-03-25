@@ -38,7 +38,7 @@
         selectionLabel.textContent =
           "Editing Section " +
           (activeSectionIndex + 1) +
-          " / Group " +
+          " / Phase " +
           (activeGroupIndex + 1);
       }
 
@@ -68,7 +68,7 @@
         chip.className = "structure-chip";
         chip.textContent = section.skip_key_contains_check
           ? "skip contains check"
-          : section.groups.length + " group(s)";
+          : section.groups.length + " phase(s)";
         title.appendChild(chip);
         head.appendChild(title);
 
@@ -78,7 +78,7 @@
         const addGroupButton = document.createElement("button");
         addGroupButton.type = "button";
         addGroupButton.className = "structure-mini-btn";
-        addGroupButton.textContent = "Add Group";
+        addGroupButton.textContent = "Add Phase";
         addGroupButton.addEventListener("click", () => {
           onAddGroup(sectionIndex, section);
         });
@@ -116,7 +116,7 @@
           const opDescription =
             opCount > 0 ? describeGroupOperations(group) : "empty";
           groupBtn.textContent =
-            "Group " +
+            "Phase " +
             (groupIndex + 1) +
             " • " +
             opDescription;

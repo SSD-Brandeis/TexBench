@@ -1189,7 +1189,7 @@ function renderStructureSelectors() {
     activeSection.groups.forEach((_, index) => {
       const option = document.createElement("option");
       option.value = String(index + 1);
-      option.textContent = "Group " + (index + 1);
+      option.textContent = "Phase " + (index + 1);
       formGroups.appendChild(option);
     });
     formGroups.value = String(activeGroupIndex + 1);
@@ -2238,7 +2238,7 @@ function applySchemaDescriptions() {
     getTopLevelDescription("sections"),
   ]);
   const groupsHelp = combineDescriptions([
-    "Groups inside a section share valid keys. Use different groups when operations share keys but are not interleaved; put interleaved operations in the same group.",
+    "Phases inside a section share valid keys. Use different phases when operations share keys but are not interleaved; put interleaved operations in the same phase.",
     getSectionDescription("groups"),
   ]);
   const skipKeyContainsHelp = getSectionDescription("skip_key_contains_check");
@@ -2249,7 +2249,7 @@ function applySchemaDescriptions() {
     characterSetHelp,
   );
   setInlineLabelWithHelp(formSectionsLabel, "Active Section", sectionsHelp);
-  setInlineLabelWithHelp(formGroupsLabel, "Active Group", groupsHelp);
+  setInlineLabelWithHelp(formGroupsLabel, "Active Phase", groupsHelp);
   setInlineLabelWithHelp(
     skipKeyContainsCheckLabel,
     "Skip Key Contains Check",
@@ -2262,7 +2262,7 @@ function applySchemaDescriptions() {
     operationsTitle,
     "Operations",
     combineDescriptions([
-      "Configure the operations that belong to the active group.",
+      "Configure the operations that belong to the active phase.",
       groupsHelp,
     ]),
   );
@@ -4165,8 +4165,8 @@ function buildWorkloadSummaryModel(json) {
       );
       const label =
         sections.length === 1
-          ? "Group " + (groupIndex + 1)
-          : "Section " + (sectionIndex + 1) + ", group " + (groupIndex + 1);
+          ? "Phase " + (groupIndex + 1)
+          : "Section " + (sectionIndex + 1) + ", phase " + (groupIndex + 1);
       const verb = configuredOperations.length > 1 ? "interleaves " : "runs ";
       if (configuredOperations.length === 0) {
         groupDescriptions.push(label + " is empty.");
@@ -4258,7 +4258,7 @@ function buildWorkloadSummaryModel(json) {
       (sections.length === 1 ? "" : "s") +
       ", " +
       formatCount(totalGroups) +
-      " group" +
+      " phase" +
       (totalGroups === 1 ? "" : "s") +
       ", and " +
       formatCount(totalOperations) +
@@ -4277,7 +4277,7 @@ function buildWorkloadSummaryModel(json) {
 
   if (inheritedCharacterSetUsed) {
     assumptions.push(
-      'Operations without an explicit character set inherit it from the nearest group, section, or workload setting' +
+      'Operations without an explicit character set inherit it from the nearest phase, section, or workload setting' +
         (typeof json.character_set === "string" && json.character_set
           ? ', with "' + json.character_set + '" as the workload default.'
           : "."),
@@ -4285,7 +4285,7 @@ function buildWorkloadSummaryModel(json) {
   }
   if (operationsNeedingExistingKeys) {
     assumptions.push(
-      "Read, update, merge, and delete operations are assumed to target keys created by earlier write phases or by inserts interleaved in the same group.",
+      "Read, update, merge, and delete operations are assumed to target keys created by earlier write phases or by inserts interleaved in the same phase.",
     );
   }
   if (insertedKeyspaceNarrationUsed) {
