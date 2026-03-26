@@ -69,6 +69,9 @@ class FakeElement {
     this.disabled = false;
     this.focused = false;
     this.value = "";
+    this.checked = false;
+    this.dataset = {};
+    this.attributes = new Map();
     this.children = [];
     this.listeners = new Map();
     this.scrollHeight = 0;
@@ -114,6 +117,10 @@ class FakeElement {
 
   addEventListener(type, handler) {
     this.listeners.set(type, handler);
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(String(name), String(value));
   }
 
   focus() {
@@ -282,7 +289,7 @@ test("assistant panel renders a natural assistant reply with assumptions and for
   }
 });
 
-test("assistant panel rewrites a first-turn update summary to generated", async () => {
+test("assistant panel rewrites a first-turn generic summary into a specific generated summary", async () => {
   globalThis.document = { createElement };
   globalThis.HTMLSelectElement = FakeSelectElement;
   globalThis.window = {
@@ -341,7 +348,7 @@ test("assistant panel rewrites a first-turn update summary to generated", async 
     const assistantTurn = refs.assistantTimeline.children[1];
     const renderedText = flattenText(assistantTurn);
 
-    assert.match(renderedText, /Generated the workload\./);
+    assert.match(renderedText, /Generated the workload with 1M inserts\./);
     assert.doesNotMatch(renderedText, /Updated the workload\./);
     assert.match(
       renderedText,
@@ -356,7 +363,7 @@ test("assistant panel rewrites a first-turn update summary to generated", async 
   }
 });
 
-test("assistant panel keeps updated summaries for follow-up edits", async () => {
+test("assistant panel describes follow-up operation adds as added", async () => {
   globalThis.document = { createElement };
   globalThis.HTMLSelectElement = FakeSelectElement;
   globalThis.window = {
@@ -422,8 +429,113 @@ test("assistant panel keeps updated summaries for follow-up edits", async () => 
     const assistantTurn = refs.assistantTimeline.children[1];
     const renderedText = flattenText(assistantTurn);
 
-    assert.match(renderedText, /Updated the workload\./);
+    assert.match(renderedText, /Added 50K point queries to the workload\./);
     assert.doesNotMatch(renderedText, /Generated the workload\./);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("assistant panel renders single-choice delete clarification as checkboxes", async () => {
+  globalThis.document = { createElement };
+  globalThis.HTMLSelectElement = FakeSelectElement;
+  globalThis.window = {
+    sessionStorage: {
+      store: new Map(),
+      getItem(key) {
+        return this.store.has(key) ? this.store.get(key) : null;
+      },
+      setItem(key, value) {
+        this.store.set(key, String(value));
+      },
+    },
+  };
+
+  await import("../public/assistant-panel.js");
+
+  const refs = createRefs();
+  const appliedAnswers = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        patch: {},
+        summary: "Updated the workload.",
+        assumptions: [],
+        clarifications: [
+          {
+            id: "clarify.operations.deletes",
+            text: "Which deletes should be added or removed?",
+            required: true,
+            binding: { type: "operations_set" },
+            input: "multi_enum",
+            options: ["point_deletes", "range_deletes", "empty_point_deletes"],
+            validation: { min_items: 1, max_items: 1 },
+          },
+        ],
+      };
+    },
+  });
+
+  try {
+    const controller = globalThis.TectonicAssistantPanel.createController({
+      refs,
+      applyAssistantPatch() {},
+      applyClarificationAnswerToForm(clarification, value) {
+        appliedAnswers.push({ clarification, value });
+      },
+      getActivePresetJson() {
+        return null;
+      },
+      getCurrentFormState() {
+        return {
+          operations: {
+            inserts: {
+              enabled: true,
+              op_count: 1000000,
+            },
+          },
+        };
+      },
+      getCurrentWorkloadJson() {
+        return {};
+      },
+      getSchemaHintsForAssist() {
+        return {};
+      },
+      getSelectedOperations() {
+        return ["inserts"];
+      },
+      updateJsonFromForm() {},
+    });
+
+    refs.assistantInput.value = "Add 1k deletes";
+    await controller.handleApply();
+
+    const clarificationsWrap = refs.assistantTimeline.children[2];
+    const clarificationBlock = clarificationsWrap.children[0];
+    const checkboxGroup = clarificationBlock.children[1];
+
+    assert.equal(Array.isArray(checkboxGroup._checkboxOptions), true);
+    assert.equal(checkboxGroup._checkboxOptions.length, 3);
+    assert.match(
+      flattenText(clarificationBlock),
+      /Select one operation here to continue\./,
+    );
+
+    const firstOption = checkboxGroup._checkboxOptions[0].checkbox;
+    const secondOption = checkboxGroup._checkboxOptions[1].checkbox;
+
+    firstOption.checked = true;
+    firstOption.listeners.get("change")();
+    assert.deepEqual(appliedAnswers.at(-1).value, ["point_deletes"]);
+
+    secondOption.checked = true;
+    secondOption.listeners.get("change")();
+    assert.equal(firstOption.checked, false);
+    assert.equal(secondOption.checked, true);
+    assert.deepEqual(appliedAnswers.at(-1).value, ["range_deletes"]);
   } finally {
     globalThis.fetch = originalFetch;
   }

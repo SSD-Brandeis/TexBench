@@ -71,6 +71,21 @@
     let presetCatalog = [];
     const SCALE_ERROR_MESSAGE = "Scale must be a positive integer.";
 
+    function syncPresetScaleInputState() {
+      if (!refs.presetScaleInput) {
+        return;
+      }
+      const hasFamily =
+        refs.presetFamilySelect &&
+        typeof refs.presetFamilySelect.value === "string" &&
+        refs.presetFamilySelect.value.trim() !== "";
+      const hasFile =
+        refs.presetFileSelect &&
+        typeof refs.presetFileSelect.value === "string" &&
+        refs.presetFileSelect.value.trim() !== "";
+      refs.presetScaleInput.disabled = !(hasFamily && hasFile);
+    }
+
     function parsePositiveInteger(rawValue) {
       const text =
         typeof rawValue === "string" || typeof rawValue === "number"
@@ -182,6 +197,7 @@
         refs.presetFileSelect.value = "";
         refs.presetFileSelect.disabled = true;
       }
+      syncPresetScaleInputState();
       clearPresetSelectionNote();
     }
 
@@ -327,6 +343,7 @@
       });
       refs.presetFileSelect.value = "";
       refs.presetFileSelect.disabled = matchingPresets.length === 0;
+      syncPresetScaleInputState();
     }
 
     async function loadPresetCatalog() {
@@ -349,6 +366,7 @@
         : [];
       renderPresetFamilyOptions();
       renderPresetFileOptions("");
+      syncPresetScaleInputState();
     }
 
     function handlePresetFamilyChange(event) {
@@ -359,6 +377,7 @@
       setActivePresetJson(null);
       renderPresetFileOptions(family);
       clearPresetSelectionNote();
+      syncPresetScaleInputState();
       syncLandingUi();
     }
 
@@ -391,6 +410,7 @@
           refs.presetFamilySelect ? refs.presetFamilySelect.value : "",
           "",
         );
+        syncPresetScaleInputState();
         syncLandingUi();
         return;
       }
@@ -401,6 +421,7 @@
       if (!preset) {
         setActivePresetJson(null);
         clearPresetSelectionNote();
+        syncPresetScaleInputState();
         syncLandingUi();
         return;
       }
@@ -431,6 +452,7 @@
           refs.presetFileSelect.value = preset.id;
           refs.presetFileSelect.disabled = false;
         }
+        syncPresetScaleInputState();
         setCustomWorkloadMode(true);
         setActivePresetJson(cloneJsonValue(loadedJson));
         loadPresetIntoBuilder(scaledJson);
@@ -440,6 +462,7 @@
       } catch (error) {
         setActivePresetJson(null);
         clearPresetSelectionNote();
+        syncPresetScaleInputState();
         setValidationStatus(
           error && error.message ? error.message : "Failed to load workload JSON.",
           "invalid",

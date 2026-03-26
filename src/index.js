@@ -3119,6 +3119,7 @@ function buildAmbiguousOperationClarification(
       binding: { type: "operations_set" },
       input: "multi_enum",
       options: ["point_deletes", "range_deletes", "empty_point_deletes"],
+      validation: { min_items: 1, max_items: 1 },
       default_behavior: "wait_for_user",
     };
   }

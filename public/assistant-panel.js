@@ -9,6 +9,10 @@
     const operationOrder = Array.isArray(config.operationOrder)
       ? config.operationOrder
       : [];
+    const operationLabels =
+      config.operationLabels && typeof config.operationLabels === "object"
+        ? config.operationLabels
+        : {};
     const characterSetEnum = Array.isArray(config.characterSetEnum)
       ? config.characterSetEnum
       : [];
@@ -339,38 +343,281 @@
       });
     }
 
+    function formatCompactCount(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return "";
+      }
+      const abs = Math.abs(numeric);
+      if (abs >= 1000000) {
+        const scaled = Math.round((numeric / 1000000) * 10) / 10;
+        return (
+          (Number.isInteger(scaled) ? String(scaled) : String(scaled)) + "M"
+        );
+      }
+      if (abs >= 1000) {
+        const scaled = Math.round((numeric / 1000) * 10) / 10;
+        return (
+          (Number.isInteger(scaled) ? String(scaled) : String(scaled)) + "K"
+        );
+      }
+      return String(numeric);
+    }
+
+    function joinPhrases(parts) {
+      const values = Array.isArray(parts)
+        ? parts.filter(function filterValue(value) {
+            return typeof value === "string" && value.trim();
+          })
+        : [];
+      if (values.length === 0) {
+        return "";
+      }
+      if (values.length === 1) {
+        return values[0];
+      }
+      if (values.length === 2) {
+        return values[0] + " and " + values[1];
+      }
+      return (
+        values.slice(0, -1).join(", ") + ", and " + values[values.length - 1]
+      );
+    }
+
+    function humanizeOperationName(operationName, spec) {
+      if (
+        (operationName === "range_queries" || operationName === "range_deletes") &&
+        spec &&
+        typeof spec === "object"
+      ) {
+        const selectivity = Number(spec.selectivity);
+        if (Number.isFinite(selectivity)) {
+          if (Math.abs(selectivity - 0.001) < 1e-9) {
+            return operationName === "range_queries"
+              ? "short range queries"
+              : "short range deletes";
+          }
+          if (Math.abs(selectivity - 0.01) < 1e-9) {
+            return operationName === "range_queries"
+              ? "long range queries"
+              : "long range deletes";
+          }
+        }
+      }
+      if (
+        typeof operationLabels[operationName] === "string" &&
+        operationLabels[operationName].trim()
+      ) {
+        return operationLabels[operationName].trim().toLowerCase();
+      }
+      return String(operationName || "").replace(/_/g, " ");
+    }
+
+    function buildOperationPhrase(operationName, spec) {
+      if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+        return "";
+      }
+      if (
+        Object.prototype.hasOwnProperty.call(spec, "enabled") &&
+        spec.enabled === false
+      ) {
+        return "";
+      }
+      const label = humanizeOperationName(operationName, spec);
+      if (!label) {
+        return "";
+      }
+      if (Number.isFinite(spec.op_count)) {
+        return formatCompactCount(spec.op_count) + " " + label;
+      }
+      return label;
+    }
+
+    function appendOperationPhrasesFromGroup(target, group) {
+      if (!group || typeof group !== "object") {
+        return;
+      }
+      const orderedOperations =
+        operationOrder.length > 0 ? operationOrder : Object.keys(group);
+      orderedOperations.forEach(function appendOperation(operationName) {
+        if (!Object.prototype.hasOwnProperty.call(group, operationName)) {
+          return;
+        }
+        const phrase = buildOperationPhrase(operationName, group[operationName]);
+        if (phrase) {
+          target.push(phrase);
+        }
+      });
+    }
+
+    function extractPatchOperationPhrases(patch) {
+      if (!patch || typeof patch !== "object") {
+        return [];
+      }
+      const phrases = [];
+      if (Array.isArray(patch.sections) && patch.sections.length > 0) {
+        patch.sections.forEach(function appendSection(section) {
+          const groups =
+            section && Array.isArray(section.groups) ? section.groups : [];
+          groups.forEach(function appendGroup(group) {
+            appendOperationPhrasesFromGroup(phrases, group);
+          });
+        });
+      }
+      if (phrases.length > 0) {
+        return phrases;
+      }
+      if (patch.operations && typeof patch.operations === "object") {
+        appendOperationPhrasesFromGroup(phrases, patch.operations);
+      }
+      return phrases;
+    }
+
+    function extractPatchedOperationEntries(patch) {
+      if (!patch || typeof patch !== "object") {
+        return [];
+      }
+      const operations =
+        patch.operations && typeof patch.operations === "object"
+          ? patch.operations
+          : null;
+      if (!operations) {
+        return [];
+      }
+      const orderedOperations =
+        operationOrder.length > 0 ? operationOrder : Object.keys(operations);
+      return orderedOperations
+        .filter(function hasOperation(operationName) {
+          return Object.prototype.hasOwnProperty.call(operations, operationName);
+        })
+        .map(function mapOperation(operationName) {
+          return {
+            operationName: operationName,
+            spec: operations[operationName],
+          };
+        });
+    }
+
+    function hasConfiguredNonEnabledFields(spec) {
+      if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+        return false;
+      }
+      return Object.entries(spec).some(function hasConfiguredField(entry) {
+        return entry[0] !== "enabled" && entry[1] !== null && entry[1] !== undefined;
+      });
+    }
+
+    function isGenericSummary(summary) {
+      const text = String(summary || "").trim();
+      if (!text) {
+        return true;
+      }
+      return [
+        /^(?:generated|created|built|made|updated)(?: the)? (?:workload|form)(?: from your request| based on your request)?[.!]?$/i,
+        /^applied(?: the ai response| your request| prompt)?(?: to the form)?[.!]?$/i,
+      ].some(function matches(pattern) {
+        return pattern.test(text);
+      });
+    }
+
+    function buildSpecificSummary(context) {
+      const patch = context && context.patch && typeof context.patch === "object"
+        ? context.patch
+        : null;
+      const formStateBeforeApply =
+        context &&
+        context.formStateBeforeApply &&
+        typeof context.formStateBeforeApply === "object"
+          ? context.formStateBeforeApply
+          : {};
+      const phrases = extractPatchOperationPhrases(patch);
+      const patchedOperationEntries = extractPatchedOperationEntries(patch);
+      const isInitialGeneration =
+        !context || context.hadConfiguredWorkloadBeforeApply !== true;
+      const defaultVerb = isInitialGeneration ? "Generated" : "Updated";
+      if (phrases.length === 0) {
+        return isInitialGeneration
+          ? "Generated the workload from your request."
+          : "Updated the workload.";
+      }
+
+      if (!isInitialGeneration && patchedOperationEntries.length > 0) {
+        const added = [];
+        const removed = [];
+        const updated = [];
+
+        patchedOperationEntries.forEach(function classifyOperation(entry) {
+          const operationName = entry.operationName;
+          const spec = entry.spec;
+          const currentState =
+            formStateBeforeApply &&
+            formStateBeforeApply.operations &&
+            formStateBeforeApply.operations[operationName] &&
+            typeof formStateBeforeApply.operations[operationName] === "object"
+              ? formStateBeforeApply.operations[operationName]
+              : {};
+          const wasEnabled = currentState.enabled === true;
+          const phrase =
+            buildOperationPhrase(operationName, spec) ||
+            humanizeOperationName(operationName, spec);
+
+          if (
+            spec &&
+            typeof spec === "object" &&
+            Object.prototype.hasOwnProperty.call(spec, "enabled") &&
+            spec.enabled === false &&
+            wasEnabled
+          ) {
+            removed.push(humanizeOperationName(operationName, spec));
+            return;
+          }
+          if (
+            spec &&
+            typeof spec === "object" &&
+            spec.enabled === true &&
+            !wasEnabled
+          ) {
+            added.push(phrase);
+            return;
+          }
+          if (hasConfiguredNonEnabledFields(spec)) {
+            updated.push(phrase);
+          }
+        });
+
+        if (added.length > 0 && removed.length === 0 && updated.length === 0) {
+          return "Added " + joinPhrases(added) + " to the workload.";
+        }
+        if (removed.length > 0 && added.length === 0 && updated.length === 0) {
+          return "Removed " + joinPhrases(removed) + " from the workload.";
+        }
+        if (updated.length > 0 && added.length === 0 && removed.length === 0) {
+          return "Updated the workload with " + joinPhrases(updated) + ".";
+        }
+      }
+
+      if (phrases.length <= 3) {
+        return defaultVerb + " the workload with " + joinPhrases(phrases) + ".";
+      }
+      return (
+        defaultVerb +
+        " the workload with " +
+        joinPhrases(phrases.slice(0, 3)) +
+        " and " +
+        String(phrases.length - 3) +
+        " other operation type" +
+        (phrases.length - 3 === 1 ? "" : "s") +
+        "."
+      );
+    }
+
     function normalizeSummaryText(rawSummary, context) {
       const summary =
         typeof rawSummary === "string" && rawSummary.trim()
           ? rawSummary.trim()
           : "";
-      const isInitialGeneration =
-        !context || context.hadConfiguredWorkloadBeforeApply !== true;
-      if (!summary) {
-        return isInitialGeneration
-          ? "Generated the workload from your request."
-          : "Updated the form based on your request.";
-      }
-      if (!isInitialGeneration) {
-        return summary;
-      }
-
-      const rewriteRules = [
-        [/^updated the workload\b/i, "Generated the workload"],
-        [/^update the workload\b/i, "Generated the workload"],
-        [/^created the workload\b/i, "Generated the workload"],
-        [/^create the workload\b/i, "Generated the workload"],
-        [/^built the workload\b/i, "Generated the workload"],
-        [/^made the workload\b/i, "Generated the workload"],
-        [/^updated the form\b/i, "Generated the workload"],
-        [/^applied the ai response to the form\b/i, "Generated the workload from your request"],
-        [/^applied your request to the form\b/i, "Generated the workload from your request"],
-        [/^applied prompt\b/i, "Generated the workload from your request"],
-      ];
-      for (const rule of rewriteRules) {
-        if (rule[0].test(summary)) {
-          return summary.replace(rule[0], rule[1]);
-        }
+      if (isGenericSummary(summary)) {
+        return buildSpecificSummary(context);
       }
       return summary;
     }
@@ -601,6 +848,16 @@
         return null;
       }
       if (clarification.input === "multi_enum") {
+        if (Array.isArray(inputEl._checkboxOptions)) {
+          return inputEl._checkboxOptions
+            .filter(function filterChecked(option) {
+              return option && option.checkbox && option.checkbox.checked;
+            })
+            .map(function mapChecked(option) {
+              return String(option.value || "").trim();
+            })
+            .filter(Boolean);
+        }
         if (!(inputEl instanceof HTMLSelectElement)) {
           return [];
         }
@@ -835,6 +1092,14 @@
         return;
       }
       if (!hasAnswerValue(value)) {
+        if (clarification.input === "multi_enum" && Array.isArray(inputEl._checkboxOptions)) {
+          inputEl._checkboxOptions.forEach(function clearCheckbox(option) {
+            if (option && option.checkbox) {
+              option.checkbox.checked = false;
+            }
+          });
+          return;
+        }
         if (
           clarification.input === "multi_enum" &&
           inputEl instanceof HTMLSelectElement
@@ -845,6 +1110,18 @@
         } else {
           inputEl.value = "";
         }
+        return;
+      }
+      if (
+        clarification.input === "multi_enum" &&
+        Array.isArray(inputEl._checkboxOptions)
+      ) {
+        const asArray = Array.isArray(value) ? value : [];
+        inputEl._checkboxOptions.forEach(function setCheckbox(option) {
+          if (option && option.checkbox) {
+            option.checkbox.checked = asArray.includes(option.value);
+          }
+        });
         return;
       }
       if (
@@ -863,6 +1140,50 @@
         return;
       }
       inputEl.value = String(value);
+    }
+
+    function clarificationUsesSingleChoiceCheckboxes(clarification) {
+      if (!clarification || clarification.input !== "multi_enum") {
+        return false;
+      }
+      const validation =
+        clarification.validation && typeof clarification.validation === "object"
+          ? clarification.validation
+          : {};
+      return Number(validation.max_items) === 1;
+    }
+
+    function createSingleChoiceCheckboxGroup(clarification) {
+      const wrapper = document.createElement("div");
+      wrapper.className =
+        "assistant-clarification-input assistant-clarification-choice-list";
+      wrapper._checkboxOptions = [];
+
+      clarification.options.forEach(function appendCheckboxOption(optionValue, index) {
+        const row = document.createElement("label");
+        row.className = "assistant-clarification-choice";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = optionValue;
+        checkbox.name = clarification.id || "assistant-clarification-choice";
+        checkbox.setAttribute("aria-label", optionValue);
+        checkbox.dataset.optionIndex = String(index);
+
+        const text = document.createElement("span");
+        text.className = "assistant-clarification-choice-label";
+        text.textContent = optionValue;
+
+        row.appendChild(checkbox);
+        row.appendChild(text);
+        wrapper.appendChild(row);
+        wrapper._checkboxOptions.push({
+          value: optionValue,
+          checkbox: checkbox,
+        });
+      });
+
+      return wrapper;
     }
 
     function createClarificationInput(clarification) {
@@ -886,6 +1207,9 @@
         return inputEl;
       }
       if (clarification.input === "multi_enum") {
+        if (clarificationUsesSingleChoiceCheckboxes(clarification)) {
+          return createSingleChoiceCheckboxGroup(clarification);
+        }
         inputEl = document.createElement("select");
         inputEl.className = "assistant-clarification-input";
         inputEl.multiple = true;
@@ -947,12 +1271,22 @@
         return "";
       }
       if (clarification.binding.type === "operations_set") {
+        const maxItems =
+          clarification.validation &&
+          typeof clarification.validation === "object" &&
+          Number.isFinite(clarification.validation.max_items)
+            ? Number(clarification.validation.max_items)
+            : null;
         if (clarification.required) {
           return resolved
             ? "Operations are selected. You can keep refining them."
-            : "Select one or more operations here to continue.";
+            : maxItems === 1
+              ? "Select one operation here to continue."
+              : "Select one or more operations here to continue.";
         }
-        return "Select one or more operations here.";
+        return maxItems === 1
+          ? "Select one operation here."
+          : "Select one or more operations here.";
       }
       if (clarification.required) {
         return resolved ? "Required answer provided." : "Required for next prompt.";
@@ -1127,7 +1461,26 @@
                 validateAndRenderClarificationState();
               };
 
-              if (inputEl.tagName === "SELECT") {
+              if (Array.isArray(inputEl._checkboxOptions)) {
+                inputEl._checkboxOptions.forEach(function bindCheckboxOption(option) {
+                  if (!option || !option.checkbox) {
+                    return;
+                  }
+                  option.checkbox.addEventListener("change", function onCheckboxChange() {
+                    if (
+                      option.checkbox.checked &&
+                      clarificationUsesSingleChoiceCheckboxes(clarification)
+                    ) {
+                      inputEl._checkboxOptions.forEach(function clearOther(other) {
+                        if (other && other.checkbox && other.checkbox !== option.checkbox) {
+                          other.checkbox.checked = false;
+                        }
+                      });
+                    }
+                    applyFromInput();
+                  });
+                });
+              } else if (inputEl.tagName === "SELECT") {
                 inputEl.addEventListener("change", applyFromInput);
               } else {
                 inputEl.addEventListener("input", applyFromInput);
@@ -1251,8 +1604,9 @@
       setComposerHint("Updating the form and summarizing the assumptions...");
 
       try {
+        const formStateBeforeApply = getCurrentFormState();
         const hadConfiguredWorkloadBeforeApply = hasConfiguredWorkloadState(
-          getCurrentFormState(),
+          formStateBeforeApply,
         );
         const selectedOpsBeforeApply = getSelectedOperations();
         const result = await requestPatch(promptText);
@@ -1263,6 +1617,8 @@
         updateJsonFromForm();
 
         const normalizedResult = normalizeResponse(result, {
+          patch: result.patch,
+          formStateBeforeApply,
           hadConfiguredWorkloadBeforeApply,
         });
         addTimelineTurn({

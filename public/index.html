@@ -463,6 +463,39 @@
         box-shadow: 0 0 0 3px rgba(220, 56, 44, 0.12);
       }
 
+      .assistant-clarification-choice-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .assistant-clarification-choice {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border: 1px solid #d8e6ef;
+        border-radius: 8px;
+        background: #fff;
+        cursor: pointer;
+      }
+
+      .assistant-clarification-choice:hover {
+        border-color: #bfd8d5;
+        background: #f7fcfb;
+      }
+
+      .assistant-clarification-choice input[type="checkbox"] {
+        accent-color: var(--accent);
+        margin: 0;
+      }
+
+      .assistant-clarification-choice-label {
+        font-size: 13px;
+        color: var(--text);
+        line-height: 1.35;
+      }
+
       .assistant-clarification-hint {
         font-size: 11px;
         color: #5a6e82;
@@ -2724,6 +2757,7 @@
                         inputmode="numeric"
                         pattern="[1-9][0-9]*"
                         value="1"
+                        disabled
                       />
                     </label>
                   </div>

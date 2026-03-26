@@ -1,0 +1,206 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+class FakeClassList {
+  constructor() {
+    this.tokens = new Set();
+  }
+
+  add(...tokens) {
+    tokens.forEach((token) => {
+      if (token) {
+        this.tokens.add(token);
+      }
+    });
+  }
+
+  remove(...tokens) {
+    tokens.forEach((token) => {
+      this.tokens.delete(token);
+    });
+  }
+
+  toggle(token, force) {
+    if (force === undefined) {
+      if (this.tokens.has(token)) {
+        this.tokens.delete(token);
+        return false;
+      }
+      this.tokens.add(token);
+      return true;
+    }
+    if (force) {
+      this.tokens.add(token);
+      return true;
+    }
+    this.tokens.delete(token);
+    return false;
+  }
+}
+
+class FakeElement {
+  constructor(tagName = "div") {
+    this.tagName = String(tagName || "div").toUpperCase();
+    this.hidden = false;
+    this.disabled = false;
+    this.value = "";
+    this.textContent = "";
+    this.children = [];
+    this.focused = false;
+    this.classList = new FakeClassList();
+    this._innerHTML = "";
+    this.validationMessage = "";
+  }
+
+  appendChild(child) {
+    this.children.push(child);
+    return child;
+  }
+
+  replaceChildren(...nextChildren) {
+    this.children = nextChildren;
+  }
+
+  focus() {
+    this.focused = true;
+  }
+
+  setCustomValidity(message) {
+    this.validationMessage = String(message || "");
+  }
+
+  reportValidity() {
+    return this.validationMessage === "";
+  }
+
+  get innerHTML() {
+    return this._innerHTML;
+  }
+
+  set innerHTML(value) {
+    this._innerHTML = String(value || "");
+    this.children = [];
+  }
+}
+
+function createTestContext() {
+  const refs = {
+    appHeader: new FakeElement("header"),
+    appShell: new FakeElement("div"),
+    assistantInput: new FakeElement("textarea"),
+    builderPanel: new FakeElement("section"),
+    copyBtn: new FakeElement("button"),
+    downloadJsonBtn: new FakeElement("button"),
+    newWorkloadBtn: new FakeElement("button"),
+    presetFamilySelect: new FakeElement("select"),
+    presetFileSelect: new FakeElement("select"),
+    presetScaleInput: new FakeElement("input"),
+    presetSelectionNote: new FakeElement("p"),
+    previewPanel: new FakeElement("section"),
+    runWorkloadBtn: new FakeElement("button"),
+    runsPanel: new FakeElement("section"),
+    validationResult: new FakeElement("p"),
+  };
+  refs.presetScaleInput.value = "1";
+
+  let activePresetJson = null;
+
+  const fakeFetch = async (url) => {
+    if (url === "/presets/index.json") {
+      return {
+        ok: true,
+        async json() {
+          return [
+            {
+              id: "scale-001m",
+              family: "scale",
+              label: "001m.spec.json",
+              path: "/presets/scale/001m.spec.json",
+            },
+          ];
+        },
+      };
+    }
+    if (url === "/presets/scale/001m.spec.json") {
+      return {
+        ok: true,
+        async json() {
+          return { sections: [{ groups: [{ inserts: { op_count: 1000 } }] }] };
+        },
+      };
+    }
+    throw new Error("Unexpected fetch URL: " + url);
+  };
+
+  return {
+    fakeFetch,
+    refs,
+    state: {
+      getActivePresetJson() {
+        return activePresetJson;
+      },
+      setActivePresetJson(value) {
+        activePresetJson = value;
+      },
+      getCustomWorkloadMode() {
+        return false;
+      },
+      setCustomWorkloadMode() {},
+      hasConfiguredWorkload() {
+        return false;
+      },
+    },
+  };
+}
+
+test("preset scale stays disabled until both family and file are selected", async () => {
+  globalThis.document = {
+    createElement(tagName) {
+      return new FakeElement(tagName);
+    },
+  };
+
+  await import("../public/preset-flow.js");
+
+  const ctx = createTestContext();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ctx.fakeFetch;
+
+  try {
+    const controller = globalThis.TectonicPresetFlow.createController({
+      refs: ctx.refs,
+      state: ctx.state,
+      cloneJsonValue(value) {
+        return JSON.parse(JSON.stringify(value));
+      },
+      ensureWorkloadStructureState() {},
+      loadActiveStructureIntoForm() {},
+      loadPresetIntoBuilder() {},
+      updateJsonFromForm() {},
+      clearWorkloadRuns() {},
+      setValidationStatus() {},
+    });
+
+    await controller.loadPresetCatalog();
+
+    assert.equal(ctx.refs.presetScaleInput.disabled, true);
+
+    ctx.refs.presetFamilySelect.value = "scale";
+    controller.handlePresetFamilyChange({ target: { value: "scale" } });
+
+    assert.equal(ctx.refs.presetFileSelect.disabled, false);
+    assert.equal(ctx.refs.presetScaleInput.disabled, true);
+
+    ctx.refs.presetFileSelect.value = "scale-001m";
+    await controller.handlePresetFileChange({ target: { value: "scale-001m" } });
+
+    assert.equal(ctx.refs.presetScaleInput.disabled, false);
+
+    ctx.refs.presetFileSelect.value = "";
+    await controller.handlePresetFileChange({ target: { value: "" } });
+
+    assert.equal(ctx.refs.presetScaleInput.disabled, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
