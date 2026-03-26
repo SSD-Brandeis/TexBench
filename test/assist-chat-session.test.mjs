@@ -622,3 +622,93 @@ test(
     );
   },
 );
+
+test(
+  "continuous chat session: generic deletes resolve to point deletes when inserted keys exist",
+  { skip: !LIVE_PROVIDER.binding, timeout: 240000 },
+  async () => {
+    let state = createFormState({});
+    let conversation = [];
+
+    const first = await applyAssistTurn({
+      prompt: "Generate a workload with 1M inserts",
+      state,
+      conversation,
+    });
+    state = first.nextState;
+    conversation = first.nextConversation;
+
+    const second = await applyAssistTurn({
+      prompt: "Add 5k point queries",
+      state,
+      conversation,
+    });
+    state = second.nextState;
+    conversation = second.nextConversation;
+
+    const third = await applyAssistTurn({
+      prompt: "Add 1k deletes",
+      state,
+      conversation,
+    });
+    state = third.nextState;
+
+    assert.equal(third.result.clarifications.length, 0);
+    assert.equal(state.sections_count, 1);
+    assert.equal(state.groups_per_section, 1);
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[0]),
+      ["inserts", "point_deletes", "point_queries"],
+    );
+    assert.equal(state.sections[0].groups[0].inserts.op_count, 1000000);
+    assert.equal(state.sections[0].groups[0].point_queries.op_count, 5000);
+    assert.equal(state.sections[0].groups[0].point_deletes.op_count, 1000);
+  },
+);
+
+test(
+  "continuous chat session: delaying the first point query splits the phase after the requested inserts",
+  { skip: !LIVE_PROVIDER.binding, timeout: 240000 },
+  async () => {
+    let state = createFormState({});
+    let conversation = [];
+
+    const first = await applyAssistTurn({
+      prompt: "Generate 1M inserts",
+      state,
+      conversation,
+    });
+    state = first.nextState;
+    conversation = first.nextConversation;
+
+    const second = await applyAssistTurn({
+      prompt: "Add 5k point queries",
+      state,
+      conversation,
+    });
+    state = second.nextState;
+    conversation = second.nextConversation;
+
+    const third = await applyAssistTurn({
+      prompt: "Make the first point query appear after 10k inserts",
+      state,
+      conversation,
+    });
+    state = third.nextState;
+
+    assert.equal(third.result.clarifications.length, 0);
+    assert.equal(state.sections_count, 1);
+    assert.equal(state.groups_per_section, 2);
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[0]),
+      ["inserts"],
+    );
+    assert.deepEqual(
+      configuredOperations(state.sections[0].groups[1]),
+      ["inserts", "point_queries"],
+    );
+    assert.equal(state.sections[0].groups[0].inserts.op_count, 10000);
+    assert.equal(state.sections[0].groups[1].inserts.op_count, 990000);
+    assert.equal(state.sections[0].groups[1].point_queries.op_count, 5000);
+  },
+);

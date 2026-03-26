@@ -584,8 +584,8 @@ function getDisplayedWorkloadCharacterSet() {
 function getOperationCharacterSetOptionLabel() {
   const characterSet = getDisplayedWorkloadCharacterSet();
   return characterSet
-    ? characterSet + " (workload default)"
-    : "workload default";
+    ? "Use workload default (" + characterSet + ")"
+    : "Use workload default";
 }
 
 function refreshOperationCharacterSetOptionLabels() {

@@ -2835,6 +2835,12 @@ function normalizeAssistPayload(
       prompt,
       schemaHints,
     );
+    applyPromptDelayedOperationStartFallback(
+      patch,
+      formState,
+      prompt,
+      schemaHints,
+    );
   }
   if (
     structuredLayoutEditRequested &&
@@ -2887,7 +2893,12 @@ function normalizeAssistPayload(
   const ambiguityClarification =
     answeredOperationsSet.length > 0
       ? null
-      : buildAmbiguousOperationClarification(prompt);
+      : buildAmbiguousOperationClarification(
+          prompt,
+          formState,
+          patch,
+          schemaHints,
+        );
   const effectiveClarifications = ambiguityClarification
     ? [ambiguityClarification]
     : (structuredPromptOwnsLayout || structuredLayoutEditApplied) &&
@@ -3037,7 +3048,12 @@ function promptRequestsStructuredLayoutEdit(prompt) {
   );
 }
 
-function buildAmbiguousOperationClarification(prompt) {
+function buildAmbiguousOperationClarification(
+  prompt,
+  formState = null,
+  patch = null,
+  schemaHints = null,
+) {
   const lowerPrompt = String(prompt || "").toLowerCase();
   if (!lowerPrompt) {
     return null;
@@ -3086,6 +3102,16 @@ function buildAmbiguousOperationClarification(prompt) {
     /\bdeletes?\b/.test(lowerPrompt) &&
     !mentionsSpecificDeleteOperation
   ) {
+    if (
+      canImplicitlyResolveGenericDeletePrompt(
+        prompt,
+        formState,
+        patch,
+        schemaHints,
+      )
+    ) {
+      return null;
+    }
     return {
       id: "clarify.operations.deletes",
       text: "Which deletes should be added or removed?",
@@ -4267,7 +4293,14 @@ function suppressRedundantOperationClarifications(
     lowerPrompt,
     schemaHints,
   );
-  const shouldSuppressOperationQuestion = mentionedOps.length > 0;
+  const shouldSuppressOperationQuestion =
+    mentionedOps.length > 0 ||
+    canImplicitlyResolveGenericDeletePrompt(
+      prompt,
+      formState,
+      patch,
+      schemaHints,
+    );
   const hasResolvedSections =
     (Array.isArray(patch && patch.sections) && patch.sections.length > 0) ||
     Number.isFinite(patch && patch.sections_count);
@@ -4572,6 +4605,152 @@ function applyDeleteOperationDisambiguation(
   patch.operations.empty_point_deletes = {
     enabled: false,
   };
+}
+
+function canImplicitlyResolveGenericDeletePrompt(
+  prompt,
+  formState,
+  patch,
+  schemaHints,
+) {
+  const lowerPrompt = String(prompt || "").toLowerCase();
+  if (!/\bdeletes?\b/.test(lowerPrompt)) {
+    return false;
+  }
+  if (
+    /\bempty\b|\bmissing\b|\bnon[-\s]?existent\b|\bnot\s+found\b/.test(
+      lowerPrompt,
+    ) ||
+    promptMentionsOperation(lowerPrompt, "empty_point_deletes") ||
+    promptMentionsOperation(lowerPrompt, "point_deletes") ||
+    promptMentionsOperation(lowerPrompt, "range_deletes")
+  ) {
+    return false;
+  }
+  const effectiveState = buildEffectiveState(
+    patch || { operations: {} },
+    formState || { operations: {} },
+    schemaHints,
+  );
+  return !!(
+    effectiveState &&
+    effectiveState.operations &&
+    effectiveState.operations.inserts &&
+    effectiveState.operations.inserts.enabled
+  );
+}
+
+function extractPromptDelayedOperationStartHint(prompt, schemaHints) {
+  const text = String(prompt || "").toLowerCase();
+  if (!text) {
+    return null;
+  }
+  const match = text.match(
+    /\b(?:make|have|let|set)\b[\s\S]{0,24}?\b(?:the\s+)?first\s+(.+?)\s+(?:appear|occur|happen|start|begin|show\s+up)\s+after\s+([0-9][0-9,]*(?:\.\d+)?(?:\s*(?:k|m|b|thousand|million|billion))?)\s+inserts?\b/,
+  );
+  if (!match) {
+    return null;
+  }
+  const operations = getMentionedOperationsFromPrompt(match[1], schemaHints);
+  if (operations.length !== 1) {
+    return null;
+  }
+  const afterInsertCount = positiveIntegerOrNull(
+    parseHumanCountToken(match[2]),
+  );
+  if (afterInsertCount === null) {
+    return null;
+  }
+  return {
+    operationName: operations[0],
+    afterInsertCount,
+  };
+}
+
+function applyPromptDelayedOperationStartFallback(
+  patch,
+  formState,
+  prompt,
+  schemaHints,
+) {
+  if (!patch || typeof patch !== "object") {
+    return false;
+  }
+  const delayHint = extractPromptDelayedOperationStartHint(prompt, schemaHints);
+  if (!delayHint) {
+    return false;
+  }
+  const currentSections = normalizeCurrentSectionsForIntentChecks(
+    formState,
+    schemaHints,
+  );
+  if (
+    currentSections.length !== 1 ||
+    !currentSections[0] ||
+    !Array.isArray(currentSections[0].groups) ||
+    currentSections[0].groups.length !== 1
+  ) {
+    return false;
+  }
+  const currentGroup =
+    currentSections[0].groups[0] &&
+    typeof currentSections[0].groups[0] === "object"
+      ? currentSections[0].groups[0]
+      : null;
+  if (!currentGroup || !currentGroup.inserts || !currentGroup[delayHint.operationName]) {
+    return false;
+  }
+  const configuredOps = configuredGroupOperationNames(currentGroup, schemaHints);
+  if (
+    configuredOps.length !== 2 ||
+    !configuredOps.includes("inserts") ||
+    !configuredOps.includes(delayHint.operationName)
+  ) {
+    return false;
+  }
+  const insertSpec =
+    currentGroup.inserts && typeof currentGroup.inserts === "object"
+      ? currentGroup.inserts
+      : null;
+  const insertCount = positiveIntegerOrNull(insertSpec && insertSpec.op_count);
+  if (
+    insertCount === null ||
+    delayHint.afterInsertCount >= insertCount
+  ) {
+    return false;
+  }
+
+  const prefixGroup = {
+    inserts: {
+      ...cloneJsonValue(insertSpec),
+      op_count: delayHint.afterInsertCount,
+    },
+  };
+  const remainingGroup = cloneJsonValue(currentGroup);
+  remainingGroup.inserts = {
+    ...cloneJsonValue(insertSpec),
+    op_count: insertCount - delayHint.afterInsertCount,
+  };
+
+  const nextSection = {
+    groups: [prefixGroup, remainingGroup],
+  };
+  if (
+    currentSections[0].character_set &&
+    typeof currentSections[0].character_set === "string"
+  ) {
+    nextSection.character_set = currentSections[0].character_set;
+  }
+  if (currentSections[0].skip_key_contains_check === true) {
+    nextSection.skip_key_contains_check = true;
+  }
+
+  patch.sections = [nextSection];
+  patch.sections_count = 1;
+  patch.groups_per_section = 2;
+  patch.operations = {};
+  patch.clear_operations = false;
+  return true;
 }
 
 function promptLikelySetsOperationCount(lowerPrompt) {
