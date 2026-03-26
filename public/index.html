@@ -1896,29 +1896,77 @@
       .benchmark-metric-chart-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 12px;
+        gap: 16px;
       }
 
       .benchmark-metric-chart-card {
-        border: 1px solid #dbe5ee;
-        border-radius: 16px;
-        background:
-          radial-gradient(circle at top right, rgba(220, 236, 248, 0.8) 0%, transparent 38%),
-          linear-gradient(180deg, #ffffff 0%, #f7fbfd 100%);
-        padding: 12px;
+        border: 1px solid #d7e3ed;
+        border-radius: 18px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbfd 100%);
+        padding: 16px;
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 12px;
         box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.82),
-          0 10px 24px rgba(11, 30, 45, 0.05);
+          inset 0 1px 0 rgba(255, 255, 255, 0.9),
+          0 14px 28px rgba(11, 30, 45, 0.045);
+      }
+
+      .benchmark-metric-chart-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
       }
 
       .benchmark-metric-chart-title {
-        font-size: 12px;
+        font-size: 15px;
         font-weight: 700;
-        letter-spacing: 0.02em;
+        letter-spacing: 0.01em;
         color: #30495d;
+      }
+
+      .benchmark-metric-chart-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .benchmark-metric-chart-trend,
+      .benchmark-metric-chart-best {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        line-height: 1.2;
+      }
+
+      .benchmark-metric-chart-trend {
+        border: 1px solid #d5e3ed;
+        background: #f5fafc;
+        color: #456073;
+        font-weight: 700;
+      }
+
+      .benchmark-metric-chart-trend-positive {
+        border-color: rgba(15, 118, 110, 0.22);
+        background: rgba(15, 118, 110, 0.08);
+        color: #0f625b;
+      }
+
+      .benchmark-metric-chart-trend-caution {
+        border-color: rgba(194, 122, 18, 0.22);
+        background: rgba(194, 122, 18, 0.1);
+        color: #8b5710;
+      }
+
+      .benchmark-metric-chart-best {
+        border: 1px solid #d8e3ec;
+        background: #ffffff;
+        color: #4c6477;
       }
 
       .benchmark-chart-wrap {
@@ -1932,10 +1980,46 @@
         height: auto;
         display: block;
         border: 1px solid #dfe7ef;
-        border-radius: 12px;
+        border-radius: 16px;
         background:
-          radial-gradient(circle at top, rgba(233, 242, 248, 0.9) 0%, transparent 42%),
-          linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 249, 252, 0.98) 100%);
+          linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(247, 251, 253, 0.98) 100%);
+      }
+
+      .benchmark-metric-chart-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 8px;
+      }
+
+      .benchmark-metric-chart-summary-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-width: 0;
+        padding: 9px 10px;
+        border: 1px solid #dbe6ee;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.92);
+      }
+
+      .benchmark-metric-chart-summary-item.is-best {
+        border-color: rgba(15, 118, 110, 0.24);
+        background: rgba(15, 118, 110, 0.08);
+      }
+
+      .benchmark-metric-chart-summary-label {
+        min-width: 0;
+        font-size: 12px;
+        font-weight: 700;
+        color: #395366;
+      }
+
+      .benchmark-metric-chart-summary-value {
+        font-size: 12px;
+        font-weight: 700;
+        color: #183144;
+        text-align: right;
       }
 
       .benchmark-chart-legend {
@@ -2029,12 +2113,14 @@
         font-family: "JetBrains Mono", monospace;
         font-size: 12px;
         color: #245272;
-        word-break: break-all;
+        white-space: nowrap;
+        word-break: normal;
       }
 
       .runs-table-output.active {
         font-family: inherit;
         color: inherit;
+        white-space: normal;
         word-break: normal;
       }
 
@@ -2372,6 +2458,20 @@
         display: grid;
         gap: 12px;
         margin-top: 10px;
+      }
+
+      .benchmark-stats-group {
+        display: grid;
+        gap: 10px;
+      }
+
+      .benchmark-stats-group-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #5b7285;
+        padding-left: 2px;
       }
 
       .benchmark-operations {

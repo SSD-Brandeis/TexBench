@@ -352,31 +352,95 @@
   }
 
   function formatThroughputLabel(value) {
-    return formatNumericString(value, 3) + " ops/ms";
+    return formatChartDecimalValue(value) + " ops/ms";
   }
 
-  function formatLatencyLabelMicros(value) {
-    return formatNumericString(value, 2) + " µs";
-  }
-
-  function formatMetricChartValue(metricKey, value) {
-    if (!Number.isFinite(value)) {
+  function formatChartDecimalValue(value, options = {}) {
+    const parsed = Number.parseFloat(value);
+    if (!Number.isFinite(parsed)) {
       return "—";
     }
+    if (
+      options.compact === true &&
+      Number.isInteger(parsed) &&
+      Math.abs(parsed) >= 1000
+    ) {
+      return new Intl.NumberFormat(undefined, {
+        notation: "compact",
+        maximumFractionDigits: 1,
+      }).format(parsed);
+    }
+    if (Number.isInteger(parsed)) {
+      return parsed.toLocaleString();
+    }
+    return parsed.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function chooseLatencyChartUnit(maxValueMicros) {
+    if (!Number.isFinite(maxValueMicros)) {
+      return { divisor: 1, unit: "µs" };
+    }
+    if (Math.abs(maxValueMicros) >= 1000000) {
+      return {
+        divisor: 1000000,
+        unit: "s",
+      };
+    }
+    if (Math.abs(maxValueMicros) >= 1000) {
+      return {
+        divisor: 1000,
+        unit: "ms",
+      };
+    }
+    return { divisor: 1, unit: "µs" };
+  }
+
+  function createMetricChartDescriptor(metricKey, maxValue) {
     const key = String(metricKey || "").trim().toLowerCase();
     if (
       key === "throughput_using_start_and_end_time_ops_ms" ||
       key === "throughput_using_start_and_end_time"
     ) {
-      return formatThroughputLabel(value);
+      return {
+        emphasis: "positive",
+        trendLabel: "Higher is better",
+        formatAxisValue(value) {
+          return formatChartDecimalValue(value) + " ops/ms";
+        },
+        formatValue(value) {
+          return formatThroughputLabel(value);
+        },
+      };
     }
     if (
       key.indexOf("latency") !== -1 ||
       key === "total_time_spent_using_start_and_end_time"
     ) {
-      return formatLatencyLabelMicros(value);
+      const latencyUnit = chooseLatencyChartUnit(maxValue);
+      return {
+        emphasis: "caution",
+        trendLabel: "Lower is better",
+        formatAxisValue(value) {
+          return formatChartDecimalValue(value / latencyUnit.divisor) + " " + latencyUnit.unit;
+        },
+        formatValue(value) {
+          return formatChartDecimalValue(value / latencyUnit.divisor) + " " + latencyUnit.unit;
+        },
+      };
     }
-    return formatNumericString(value, 2);
+    return {
+      emphasis: "neutral",
+      trendLabel: "Higher is better",
+      formatAxisValue(value) {
+        return formatChartDecimalValue(value, { compact: true });
+      },
+      formatValue(value) {
+        return formatChartDecimalValue(value);
+      },
+    };
   }
 
   function metricChartPalette(metricKey) {
@@ -463,14 +527,9 @@
     return grid;
   }
 
-  function buildBenchmarkStats(stats) {
-    if (!stats || typeof stats !== "object") {
-      return null;
-    }
-
-    const overallMetrics = normalizeMetricsList(stats.overall);
-    const operations = Array.isArray(stats.operations)
-      ? stats.operations.filter((entry) => {
+  function normalizeStatsBuckets(value) {
+    return Array.isArray(value)
+      ? value.filter((entry) => {
           return (
             entry &&
             typeof entry === "object" &&
@@ -479,8 +538,81 @@
           );
         })
       : [];
+  }
 
-    if (overallMetrics.length === 0 && operations.length === 0) {
+  function isPhaseStatsBucket(entry) {
+    const name =
+      entry && typeof entry.name === "string"
+        ? entry.name.trim().toLowerCase()
+        : "";
+    if (!name) {
+      return false;
+    }
+    return /\bphase\b|\bgroup\b/.test(name) || /\bsection\b/.test(name);
+  }
+
+  function formatStatsBucketTitle(name) {
+    return String(name || "")
+      .trim()
+      .replace(/_/g, " ")
+      .replace(/\s*\|\s*/g, " • ")
+      .replace(/\s*\/\s*/g, " • ");
+  }
+
+  function buildStatsBucketCollection(titleText, buckets) {
+    if (!Array.isArray(buckets) || buckets.length === 0) {
+      return null;
+    }
+
+    const section = document.createElement("section");
+    section.className = "benchmark-stats-group";
+
+    const title = document.createElement("div");
+    title.className = "benchmark-stats-group-title";
+    title.textContent = titleText;
+    section.appendChild(title);
+
+    const grid = document.createElement("div");
+    grid.className = "benchmark-operations";
+
+    buckets.forEach((bucket) => {
+      const item = document.createElement("section");
+      item.className = "benchmark-section";
+
+      const itemTitle = document.createElement("div");
+      itemTitle.className = "benchmark-section-title";
+      itemTitle.textContent = formatStatsBucketTitle(bucket.name);
+      item.appendChild(itemTitle);
+
+      item.appendChild(buildMetricGrid(normalizeMetricsList(bucket.metrics)));
+      grid.appendChild(item);
+    });
+
+    section.appendChild(grid);
+    return section;
+  }
+
+  function buildBenchmarkStats(stats) {
+    if (!stats || typeof stats !== "object") {
+      return null;
+    }
+
+    const overallMetrics = normalizeMetricsList(stats.overall);
+    const rawBuckets = normalizeStatsBuckets(stats.operations);
+    const explicitPhaseBuckets = normalizeStatsBuckets(stats.phases);
+    const phaseBuckets =
+      explicitPhaseBuckets.length > 0
+        ? explicitPhaseBuckets
+        : rawBuckets.filter((entry) => isPhaseStatsBucket(entry));
+    const operationBuckets = rawBuckets.filter(
+      (entry) => !isPhaseStatsBucket(entry),
+    );
+
+    if (
+      overallMetrics.length === 0 &&
+      phaseBuckets.length === 0 &&
+      operationBuckets.length === 0
+    ) {
       return null;
     }
 
@@ -493,27 +625,26 @@
 
       const title = document.createElement("div");
       title.className = "benchmark-section-title";
-      title.textContent = "Overall";
+      title.textContent = "Overall Stats";
       section.appendChild(title);
       section.appendChild(buildMetricGrid(overallMetrics));
       container.appendChild(section);
     }
 
-    if (operations.length > 0) {
-      const operationsWrap = document.createElement("div");
-      operationsWrap.className = "benchmark-operations";
-      operations.forEach((operation) => {
-        const section = document.createElement("section");
-        section.className = "benchmark-section";
+    const phasesSection = buildStatsBucketCollection(
+      "Phase-wise Stats",
+      phaseBuckets,
+    );
+    if (phasesSection) {
+      container.appendChild(phasesSection);
+    }
 
-        const title = document.createElement("div");
-        title.className = "benchmark-section-title";
-        title.textContent = operation.name.replace(/_/g, " ");
-        section.appendChild(title);
-        section.appendChild(buildMetricGrid(normalizeMetricsList(operation.metrics)));
-        operationsWrap.appendChild(section);
-      });
-      container.appendChild(operationsWrap);
+    const operationsSection = buildStatsBucketCollection(
+      "Per-operation Stats",
+      operationBuckets,
+    );
+    if (operationsSection) {
+      container.appendChild(operationsSection);
     }
 
     return container;
@@ -624,14 +755,15 @@
     }
 
     const width = Math.max(440, points.length * 88 + 120);
-    const height = 220;
-    const margin = { top: 18, right: 18, bottom: 42, left: 72 };
+    const height = 244;
+    const margin = { top: 24, right: 20, bottom: 48, left: 96 };
     const plotWidth = width - margin.left - margin.right;
     const plotHeight = height - margin.top - margin.bottom;
     const maxValue = Math.max(
       1,
       ...points.map((entry) => (Number.isFinite(entry.value) ? entry.value : 0)),
     );
+    const chartDescriptor = createMetricChartDescriptor(metricSeries.key, maxValue);
     const ns = "http://www.w3.org/2000/svg";
     const palette = metricChartPalette(metricSeries.key);
     const assetId =
@@ -667,13 +799,13 @@
     shadow.setAttribute("x", "-20%");
     shadow.setAttribute("y", "-20%");
     shadow.setAttribute("width", "140%");
-    shadow.setAttribute("height", "160%");
+    shadow.setAttribute("height", "150%");
     const blur = document.createElementNS(ns, "feDropShadow");
     blur.setAttribute("dx", "0");
-    blur.setAttribute("dy", "8");
-    blur.setAttribute("stdDeviation", "8");
+    blur.setAttribute("dy", "5");
+    blur.setAttribute("stdDeviation", "5");
     blur.setAttribute("flood-color", palette.start);
-    blur.setAttribute("flood-opacity", "0.15");
+    blur.setAttribute("flood-opacity", "0.12");
     shadow.appendChild(blur);
     defs.appendChild(shadow);
     svg.appendChild(defs);
@@ -683,9 +815,9 @@
     plotBg.setAttribute("y", String(margin.top));
     plotBg.setAttribute("width", String(plotWidth));
     plotBg.setAttribute("height", String(plotHeight));
-    plotBg.setAttribute("rx", "12");
-    plotBg.setAttribute("fill", "#fbfdff");
-    plotBg.setAttribute("stroke", "#e1eaf2");
+    plotBg.setAttribute("rx", "16");
+    plotBg.setAttribute("fill", "#fcfdff");
+    plotBg.setAttribute("stroke", "#dde8f1");
     svg.appendChild(plotBg);
 
     for (let index = 0; index <= 4; index += 1) {
@@ -696,18 +828,17 @@
       grid.setAttribute("x2", String(width - margin.right));
       grid.setAttribute("y1", String(y));
       grid.setAttribute("y2", String(y));
-      grid.setAttribute("stroke", "#dbe7ef");
+      grid.setAttribute("stroke", index === 4 ? "#ccd9e4" : "#e3ebf2");
       grid.setAttribute("stroke-width", "1");
       svg.appendChild(grid);
 
       const axisLabel = document.createElementNS(ns, "text");
-      axisLabel.setAttribute("x", String(margin.left - 8));
+      axisLabel.setAttribute("x", String(margin.left - 12));
       axisLabel.setAttribute("y", String(y + 4));
       axisLabel.setAttribute("text-anchor", "end");
-      axisLabel.setAttribute("font-size", "11");
-      axisLabel.setAttribute("fill", "#607588");
-      axisLabel.textContent = formatMetricChartValue(
-        metricSeries.key,
+      axisLabel.setAttribute("font-size", "12");
+      axisLabel.setAttribute("fill", "#5f7388");
+      axisLabel.textContent = chartDescriptor.formatAxisValue(
         maxValue * (1 - ratio),
       );
       svg.appendChild(axisLabel);
@@ -718,12 +849,12 @@
     baseline.setAttribute("x2", String(width - margin.right));
     baseline.setAttribute("y1", String(margin.top + plotHeight));
     baseline.setAttribute("y2", String(margin.top + plotHeight));
-    baseline.setAttribute("stroke", "#cfdce7");
+    baseline.setAttribute("stroke", "#bfd0dc");
     baseline.setAttribute("stroke-width", "1.5");
     svg.appendChild(baseline);
 
     const step = plotWidth / Math.max(points.length, 1);
-    const barWidth = Math.min(38, step * 0.52);
+    const barWidth = Math.min(52, step * 0.56);
 
     points.forEach((point, index) => {
       const centerX = margin.left + step * index + step / 2;
@@ -733,37 +864,88 @@
       rect.setAttribute("y", String(margin.top + (plotHeight - barHeight)));
       rect.setAttribute("width", String(barWidth));
       rect.setAttribute("height", String(barHeight));
-      rect.setAttribute("rx", "8");
+      rect.setAttribute("rx", "10");
       rect.setAttribute("fill", `url(#${assetId}-bar)`);
       rect.setAttribute("stroke", palette.stroke);
-      rect.setAttribute("stroke-opacity", "0.22");
+      rect.setAttribute("stroke-opacity", "0.16");
       rect.setAttribute("filter", `url(#${assetId}-shadow)`);
       svg.appendChild(rect);
 
-      const valueLabel = document.createElementNS(ns, "text");
-      valueLabel.setAttribute("x", String(centerX));
-      valueLabel.setAttribute(
-        "y",
-        String(Math.max(margin.top + 10, margin.top + (plotHeight - barHeight) - 6)),
-      );
-      valueLabel.setAttribute("text-anchor", "middle");
-      valueLabel.setAttribute("font-size", "10");
-      valueLabel.setAttribute("font-weight", "600");
-      valueLabel.setAttribute("fill", palette.text);
-      valueLabel.textContent = formatMetricChartValue(metricSeries.key, point.value);
-      svg.appendChild(valueLabel);
-
       const label = document.createElementNS(ns, "text");
       label.setAttribute("x", String(centerX));
-      label.setAttribute("y", String(height - 12));
+      label.setAttribute("y", String(height - 14));
       label.setAttribute("text-anchor", "middle");
-      label.setAttribute("font-size", "11");
-      label.setAttribute("fill", "#607588");
+      label.setAttribute("font-size", "12");
+      label.setAttribute("font-weight", "600");
+      label.setAttribute("fill", "#496276");
       label.textContent = point.label;
       svg.appendChild(label);
     });
 
     return svg;
+  }
+
+  function buildMetricChartSummary(metricSeries) {
+    const points =
+      metricSeries && Array.isArray(metricSeries.points)
+        ? metricSeries.points.filter(
+            (entry) => entry && Number.isFinite(entry.value),
+          )
+        : [];
+    if (points.length === 0) {
+      return null;
+    }
+    const maxValue = Math.max(...points.map((entry) => entry.value));
+    const descriptor = createMetricChartDescriptor(metricSeries.key, maxValue);
+    const bestValue = descriptor.emphasis === "caution"
+      ? Math.min(...points.map((entry) => entry.value))
+      : Math.max(...points.map((entry) => entry.value));
+
+    const list = document.createElement("div");
+    list.className = "benchmark-metric-chart-summary";
+    points.forEach((point) => {
+      const item = document.createElement("div");
+      item.className = "benchmark-metric-chart-summary-item";
+      if (point.value === bestValue) {
+        item.classList.add("is-best");
+      }
+
+      const label = document.createElement("span");
+      label.className = "benchmark-metric-chart-summary-label";
+      label.textContent = point.label;
+      item.appendChild(label);
+
+      const value = document.createElement("span");
+      value.className = "benchmark-metric-chart-summary-value";
+      value.textContent = descriptor.formatValue(point.value);
+      item.appendChild(value);
+
+      list.appendChild(item);
+    });
+    return list;
+  }
+
+  function selectBestMetricPoint(metricSeries) {
+    const points =
+      metricSeries && Array.isArray(metricSeries.points)
+        ? metricSeries.points.filter(
+            (entry) => entry && Number.isFinite(entry.value),
+          )
+        : [];
+    if (points.length === 0) {
+      return null;
+    }
+    const maxValue = Math.max(...points.map((entry) => entry.value));
+    const descriptor = createMetricChartDescriptor(metricSeries.key, maxValue);
+    return points.reduce((selected, point) => {
+      if (!selected) {
+        return point;
+      }
+      if (descriptor.emphasis === "caution") {
+        return point.value < selected.value ? point : selected;
+      }
+      return point.value > selected.value ? point : selected;
+    }, null);
   }
 
   function buildMetricChartGrid(batch) {
@@ -847,14 +1029,49 @@
       const card = document.createElement("section");
       card.className = "benchmark-metric-chart-card";
 
+      const head = document.createElement("div");
+      head.className = "benchmark-metric-chart-head";
+
       const title = document.createElement("div");
       title.className = "benchmark-metric-chart-title";
       title.textContent = series.label;
-      card.appendChild(title);
+      head.appendChild(title);
+
+      const seriesMaxValue = Math.max(...series.points.map((entry) => entry.value));
+      const chartDescriptor = createMetricChartDescriptor(series.key, seriesMaxValue);
+      const bestPoint = selectBestMetricPoint(series);
+
+      const meta = document.createElement("div");
+      meta.className = "benchmark-metric-chart-meta";
+
+      const trend = document.createElement("span");
+      trend.className =
+        "benchmark-metric-chart-trend benchmark-metric-chart-trend-" +
+        chartDescriptor.emphasis;
+      trend.textContent = chartDescriptor.trendLabel;
+      meta.appendChild(trend);
+
+      if (bestPoint) {
+        const best = document.createElement("span");
+        best.className = "benchmark-metric-chart-best";
+        best.textContent =
+          "Best: " +
+          bestPoint.label +
+          " • " +
+          chartDescriptor.formatValue(bestPoint.value);
+        meta.appendChild(best);
+      }
+
+      card.appendChild(head);
+      card.appendChild(meta);
 
       const chart = buildMetricBarChart(series);
       if (chart) {
         card.appendChild(chart);
+      }
+      const summary = buildMetricChartSummary(series);
+      if (summary) {
+        card.appendChild(summary);
       }
       grid.appendChild(card);
     });
