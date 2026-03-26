@@ -22,6 +22,8 @@ const presetFamilySelect = document.getElementById("presetFamilySelect");
 const presetFileSelect = document.getElementById("presetFileSelect");
 const presetScaleInput = document.getElementById("presetScaleInput");
 const presetSelectionNote = document.getElementById("presetSelectionNote");
+const builderPresetPanel = document.getElementById("builderPresetPanel");
+const builderDescribePanel = document.getElementById("builderDescribePanel");
 const operationToggles = document.getElementById("operationToggles");
 const operationConfigContainer = document.getElementById(
   "operationConfigContainer",
@@ -321,13 +323,53 @@ let stringPatternEnum = [...DEFAULT_STRING_PATTERNS];
 const operationAdvancedState = new Map();
 const lockedTopFields = new Set();
 const lockedOperationFields = new Map();
-let activePresetJson = null;
-let customWorkloadMode = false;
+const builderSession =
+  globalThis.TectonicBuilderSession &&
+  typeof globalThis.TectonicBuilderSession.createStore === "function"
+    ? globalThis.TectonicBuilderSession.createStore()
+    : {
+        getActivePresetJson() {
+          return null;
+        },
+        setActivePresetJson() {},
+        getCustomWorkloadMode() {
+          return false;
+        },
+        setCustomWorkloadMode() {},
+        getSelectedBuilderRoute() {
+          return null;
+        },
+        setSelectedBuilderRoute() {},
+      };
 let schemaValidatorPromise = null;
 let latestValidationToken = 0;
 let workloadStructureState = [];
 let activeSectionIndex = 0;
 let activeGroupIndex = 0;
+
+function getActivePresetJsonState() {
+  return builderSession.getActivePresetJson();
+}
+
+function setActivePresetJsonState(nextValue) {
+  builderSession.setActivePresetJson(nextValue);
+}
+
+function getCustomWorkloadModeState() {
+  return builderSession.getCustomWorkloadMode();
+}
+
+function setCustomWorkloadModeState(nextValue) {
+  builderSession.setCustomWorkloadMode(nextValue);
+}
+
+function getSelectedBuilderRouteState() {
+  return builderSession.getSelectedBuilderRoute();
+}
+
+function setSelectedBuilderRouteState(nextValue) {
+  builderSession.setSelectedBuilderRoute(nextValue);
+}
 
 let schema = null;
 const SCHEMA_ASSET_PATH = "/workload-schema.json";
@@ -1196,7 +1238,8 @@ function setPresetSelectionNote(message) {
 function clearLoadedPresetState() {
   const controller = getPresetFlowController();
   if (!controller) {
-    activePresetJson = null;
+    setActivePresetJsonState(null);
+    setSelectedBuilderRouteState(null);
     return;
   }
   controller.clearLoadedPresetState();
@@ -1363,6 +1406,8 @@ function getPresetFlowController() {
       appHeader,
       appShell,
       assistantInput,
+      builderPresetPanel,
+      builderDescribePanel,
       builderPanel,
       copyBtn,
       downloadJsonBtn,
@@ -1379,16 +1424,22 @@ function getPresetFlowController() {
     },
     state: {
       getActivePresetJson() {
-        return activePresetJson;
+        return getActivePresetJsonState();
       },
       setActivePresetJson(nextValue) {
-        activePresetJson = nextValue;
+        setActivePresetJsonState(nextValue);
       },
       getCustomWorkloadMode() {
-        return customWorkloadMode;
+        return getCustomWorkloadModeState();
       },
       setCustomWorkloadMode(nextValue) {
-        customWorkloadMode = nextValue === true;
+        setCustomWorkloadModeState(nextValue);
+      },
+      getSelectedBuilderRoute() {
+        return getSelectedBuilderRouteState();
+      },
+      setSelectedBuilderRoute(nextValue) {
+        setSelectedBuilderRouteState(nextValue);
       },
       hasConfiguredWorkload() {
         return hasConfiguredWorkloadStructure();
@@ -1441,7 +1492,7 @@ function getAssistantPanelController() {
       formOpsWithSelectionFields,
       formOpsWithValueFields,
       getActivePresetJson() {
-        return activePresetJson;
+        return getActivePresetJsonState();
       },
       getClarificationCurrentValue,
       getCurrentFormState,
@@ -1554,7 +1605,8 @@ function loadPresetIntoBuilder(presetJson) {
       : [createEmptySectionState()];
   activeSectionIndex = 0;
   activeGroupIndex = 0;
-  customWorkloadMode = true;
+  setCustomWorkloadModeState(true);
+  setSelectedBuilderRouteState("preset");
   clearAssistantThread();
   setAssistantStatus("Ready", "default");
   setRunButtonBusy(false);
@@ -1564,7 +1616,7 @@ function loadPresetIntoBuilder(presetJson) {
 }
 
 function persistCustomBuilderState() {
-  if (!customWorkloadMode) {
+  if (!getCustomWorkloadModeState()) {
     return;
   }
   ensureWorkloadStructureState();
@@ -1621,8 +1673,9 @@ function restorePersistedCustomBuilderState() {
     return false;
   }
 
-  activePresetJson = null;
-  customWorkloadMode = true;
+  setActivePresetJsonState(null);
+  setCustomWorkloadModeState(true);
+  setSelectedBuilderRouteState("scratch");
   clearFieldLocks();
   clearOperationFormState();
   clearAssistantThread();
@@ -1812,7 +1865,7 @@ function buildActiveGroupSpecFromForm(characterSet, existingGroup = null) {
 }
 
 function persistActiveStructureFromForm() {
-  if (!customWorkloadMode) {
+  if (!getCustomWorkloadModeState()) {
     return;
   }
   ensureWorkloadStructureState();
@@ -1870,7 +1923,8 @@ function syncLandingUi() {
 function enableCustomWorkloadMode() {
   const controller = getPresetFlowController();
   if (!controller) {
-    customWorkloadMode = true;
+    setCustomWorkloadModeState(true);
+    setSelectedBuilderRouteState("scratch");
     return;
   }
   controller.enableCustomWorkloadMode();
@@ -3654,7 +3708,7 @@ function buildJsonFromForm() {
     json.character_set = characterSet;
   }
 
-  if (customWorkloadMode) {
+  if (getCustomWorkloadModeState()) {
     persistActiveStructureFromForm();
   }
   ensureWorkloadStructureState();
@@ -4377,7 +4431,7 @@ function renderJsonSummary(json) {
   }
   const model = buildWorkloadSummaryModel(json);
   const workloadScale =
-    activePresetJson &&
+    getActivePresetJsonState() &&
     presetScaleInput &&
     /^[1-9]\d*$/.test(String(presetScaleInput.value || "").trim())
       ? Number.parseInt(String(presetScaleInput.value).trim(), 10)
@@ -4628,7 +4682,7 @@ function updateInteractiveStats(json) {
 function updateJsonFromForm() {
   const generated = buildJsonFromForm();
   refreshOperationCharacterSetOptionLabels();
-  if (customWorkloadMode) {
+  if (getCustomWorkloadModeState()) {
     renderStructureSelectors();
   }
   renderGeneratedJson(generated);
@@ -4917,7 +4971,7 @@ function toFiniteNumber(value) {
 }
 
 function getCurrentFormState() {
-  if (customWorkloadMode) {
+  if (getCustomWorkloadModeState()) {
     persistActiveStructureFromForm();
   }
   const operations = {};
@@ -5015,7 +5069,7 @@ function getCurrentFormState() {
       formSkipKeyContainsCheck && formSkipKeyContainsCheck.checked
     ),
     operations,
-    sections: customWorkloadMode
+    sections: getCustomWorkloadModeState()
       ? cloneJsonValue(workloadStructureState)
       : null,
   };
@@ -5057,7 +5111,8 @@ function applyAssistantPatch(patch) {
   if (!patch || typeof patch !== "object") {
     return;
   }
-  customWorkloadMode = true;
+  setCustomWorkloadModeState(true);
+  setSelectedBuilderRouteState("scratch");
 
   const scopeOp = deriveAssistantScopeOperation(context);
   const allowOperationSetChanges = assistantPromptHasOperationIntent(
@@ -5081,7 +5136,7 @@ function applyAssistantPatch(patch) {
     workloadStructureState = normalizePatchedStructureSections(patch.sections);
     activeSectionIndex = 0;
     activeGroupIndex = 0;
-    customWorkloadMode = true;
+    setCustomWorkloadModeState(true);
     syncLandingUi();
     loadActiveStructureIntoForm();
     return;
@@ -5409,7 +5464,8 @@ function resetFormInterface(options) {
       ? true
       : options.stayInBuilder !== false;
   workloadForm.reset();
-  customWorkloadMode = stayInBuilder;
+  setCustomWorkloadModeState(stayInBuilder);
+  setSelectedBuilderRouteState(null);
   clearLoadedPresetState();
   resetWorkloadStructureState();
   clearFieldLocks();

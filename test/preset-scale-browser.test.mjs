@@ -88,6 +88,8 @@ function createTestContext() {
     appHeader: new FakeElement("header"),
     appShell: new FakeElement("div"),
     assistantInput: new FakeElement("textarea"),
+    builderPresetPanel: new FakeElement("section"),
+    builderDescribePanel: new FakeElement("section"),
     builderPanel: new FakeElement("section"),
     copyBtn: new FakeElement("button"),
     downloadJsonBtn: new FakeElement("button"),
@@ -104,6 +106,8 @@ function createTestContext() {
   refs.presetScaleInput.value = "1";
 
   let activePresetJson = null;
+  let selectedBuilderRoute = null;
+  let hasConfiguredWorkload = false;
 
   const fakeFetch = async (url) => {
     if (url === "/presets/index.json") {
@@ -142,13 +146,22 @@ function createTestContext() {
       setActivePresetJson(value) {
         activePresetJson = value;
       },
+      getSelectedBuilderRoute() {
+        return selectedBuilderRoute;
+      },
+      setSelectedBuilderRoute(value) {
+        selectedBuilderRoute = value;
+      },
       getCustomWorkloadMode() {
         return false;
       },
       setCustomWorkloadMode() {},
       hasConfiguredWorkload() {
-        return false;
+        return hasConfiguredWorkload;
       },
+    },
+    setHasConfiguredWorkload(value) {
+      hasConfiguredWorkload = value === true;
     },
   };
 }
@@ -195,12 +208,61 @@ test("preset scale stays disabled until both family and file are selected", asyn
     await controller.handlePresetFileChange({ target: { value: "scale-001m" } });
 
     assert.equal(ctx.refs.presetScaleInput.disabled, false);
+    assert.equal(
+      ctx.refs.appShell.classList.tokens.has("preset-loaded"),
+      true,
+    );
+    assert.equal(ctx.refs.builderPresetPanel.hidden, false);
+    assert.equal(ctx.refs.builderDescribePanel.hidden, true);
 
     ctx.refs.presetFileSelect.value = "";
     await controller.handlePresetFileChange({ target: { value: "" } });
 
     assert.equal(ctx.refs.presetScaleInput.disabled, true);
+    assert.equal(
+      ctx.refs.appShell.classList.tokens.has("preset-loaded"),
+      false,
+    );
+    assert.equal(ctx.refs.builderPresetPanel.hidden, false);
+    assert.equal(ctx.refs.builderDescribePanel.hidden, false);
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("scratch route hides the preset option after a workload is established", async () => {
+  globalThis.document = {
+    createElement(tagName) {
+      return new FakeElement(tagName);
+    },
+  };
+
+  await import("../public/preset-flow.js");
+
+  const ctx = createTestContext();
+  ctx.setHasConfiguredWorkload(true);
+
+  const controller = globalThis.TectonicPresetFlow.createController({
+    refs: ctx.refs,
+    state: ctx.state,
+    cloneJsonValue(value) {
+      return JSON.parse(JSON.stringify(value));
+    },
+    ensureWorkloadStructureState() {},
+    loadActiveStructureIntoForm() {},
+    loadPresetIntoBuilder() {},
+    updateJsonFromForm() {},
+    clearWorkloadRuns() {},
+    setValidationStatus() {},
+  });
+
+  ctx.state.setSelectedBuilderRoute("scratch");
+  controller.syncLandingUi();
+
+  assert.equal(
+    ctx.refs.appShell.classList.tokens.has("scratch-selected"),
+    true,
+  );
+  assert.equal(ctx.refs.builderPresetPanel.hidden, true);
+  assert.equal(ctx.refs.builderDescribePanel.hidden, false);
 });

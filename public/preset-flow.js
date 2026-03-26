@@ -25,6 +25,16 @@
       typeof state.setCustomWorkloadMode === "function"
         ? state.setCustomWorkloadMode
         : function setCustomWorkloadModeFallback() {};
+    const getSelectedBuilderRoute =
+      typeof state.getSelectedBuilderRoute === "function"
+        ? state.getSelectedBuilderRoute
+        : function getSelectedBuilderRouteFallback() {
+            return null;
+          };
+    const setSelectedBuilderRoute =
+      typeof state.setSelectedBuilderRoute === "function"
+        ? state.setSelectedBuilderRoute
+        : function setSelectedBuilderRouteFallback() {};
     const hasConfiguredWorkload =
       typeof state.hasConfiguredWorkload === "function"
         ? state.hasConfiguredWorkload
@@ -188,6 +198,7 @@
 
     function clearLoadedPresetState() {
       setActivePresetJson(null);
+      setSelectedBuilderRoute(null);
       if (refs.presetFamilySelect) {
         refs.presetFamilySelect.value = "";
       }
@@ -236,12 +247,26 @@
 
     function syncLandingUi() {
       const showPreview = hasConfiguredWorkload();
+      const selectedBuilderRoute = getSelectedBuilderRoute();
+      const presetLoaded =
+        getActivePresetJson() !== null || selectedBuilderRoute === "preset";
+      const scratchSelected =
+        !presetLoaded && selectedBuilderRoute === "scratch";
 
       if (refs.appHeader) {
         refs.appHeader.hidden = false;
       }
       if (refs.appShell && refs.appShell.classList) {
         refs.appShell.classList.remove("landing");
+        refs.appShell.classList.toggle("builder-only", !showPreview);
+        refs.appShell.classList.toggle("preset-loaded", presetLoaded);
+        refs.appShell.classList.toggle("scratch-selected", scratchSelected);
+      }
+      if (refs.builderPresetPanel) {
+        refs.builderPresetPanel.hidden = scratchSelected;
+      }
+      if (refs.builderDescribePanel) {
+        refs.builderDescribePanel.hidden = presetLoaded;
       }
       if (refs.builderPanel) {
         refs.builderPanel.hidden = false;
@@ -274,6 +299,7 @@
 
     function enableCustomWorkloadMode() {
       setCustomWorkloadMode(true);
+      setSelectedBuilderRoute("scratch");
       ensureWorkloadStructureState();
       loadActiveStructureIntoForm();
       updateJsonFromForm();
@@ -375,6 +401,7 @@
           ? event.target.value
           : "";
       setActivePresetJson(null);
+      setSelectedBuilderRoute(null);
       renderPresetFileOptions(family);
       clearPresetSelectionNote();
       syncPresetScaleInputState();
@@ -406,6 +433,7 @@
           : "";
       if (!presetId) {
         setActivePresetJson(null);
+        setSelectedBuilderRoute(null);
         renderPresetSelectionNote(
           refs.presetFamilySelect ? refs.presetFamilySelect.value : "",
           "",
@@ -420,6 +448,7 @@
       });
       if (!preset) {
         setActivePresetJson(null);
+        setSelectedBuilderRoute(null);
         clearPresetSelectionNote();
         syncPresetScaleInputState();
         syncLandingUi();
@@ -433,6 +462,7 @@
             refs.presetScaleInput.reportValidity();
           }
           setActivePresetJson(null);
+          setSelectedBuilderRoute(null);
           clearPresetSelectionNote();
           setValidationStatus(SCALE_ERROR_MESSAGE, "invalid");
           syncLandingUi();
@@ -455,12 +485,14 @@
         syncPresetScaleInputState();
         setCustomWorkloadMode(true);
         setActivePresetJson(cloneJsonValue(loadedJson));
+        setSelectedBuilderRoute("preset");
         loadPresetIntoBuilder(scaledJson);
         clearWorkloadRuns();
         renderPresetSelectionNote(preset.family, preset.id);
         syncLandingUi();
       } catch (error) {
         setActivePresetJson(null);
+        setSelectedBuilderRoute(null);
         clearPresetSelectionNote();
         syncPresetScaleInputState();
         setValidationStatus(

@@ -20,7 +20,7 @@
       }
 
       :root {
-        --bg: #e6eef1;
+        --bg: #d6e0e6;
         --surface: #ffffff;
         --surface-soft: #f1f6f9;
         --surface-subtle: #eaf2f6;
@@ -38,9 +38,9 @@
       body {
         font-family: "DM Sans", system-ui, sans-serif;
         background:
-          radial-gradient(circle at 10% 10%, #c5e5df 0%, transparent 34%),
-          radial-gradient(circle at 90% 0%, #d6e4f4 0%, transparent 30%),
-          linear-gradient(160deg, #e6eef1 0%, #edf4f4 44%, #dde8eb 100%);
+          radial-gradient(circle at 8% 10%, rgba(143, 194, 182, 0.46) 0%, transparent 34%),
+          radial-gradient(circle at 92% 0%, rgba(163, 185, 221, 0.44) 0%, transparent 30%),
+          linear-gradient(160deg, #d5e0e5 0%, #dde7ea 38%, #c5d2d9 100%);
         color: var(--text);
         min-height: 100vh;
       }
@@ -127,7 +127,7 @@
         gap: 20px;
       }
 
-      #rightRail:has(#previewPanel[hidden]):has(#runsPanel[hidden]) {
+      .app-shell.builder-only #rightRail {
         display: none;
       }
 
@@ -139,8 +139,8 @@
         flex-direction: column;
         overflow: hidden;
         box-shadow:
-          0 1px 0 rgba(11, 30, 45, 0.04),
-          0 12px 28px rgba(11, 30, 45, 0.08);
+          0 1px 0 rgba(11, 30, 45, 0.05),
+          0 16px 34px rgba(11, 30, 45, 0.12);
         transition:
           box-shadow 0.2s ease,
           transform 0.2s ease;
@@ -149,7 +149,7 @@
       }
 
       .panel:hover {
-        box-shadow: 0 16px 32px rgba(11, 30, 45, 0.12);
+        box-shadow: 0 22px 42px rgba(11, 30, 45, 0.16);
       }
 
       .json-panel {
@@ -777,15 +777,149 @@
           0 10px 22px rgba(11, 30, 45, 0.05);
       }
 
-      .builder-entry-card > .builder-entry-panel + .builder-entry-panel {
-        border-top: 1px solid var(--divider);
-        padding-top: 14px;
+      .builder-entry-head {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 4px 2px 2px;
+      }
+
+      .builder-entry-eyebrow {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #1f6a63;
+      }
+
+      .builder-entry-heading {
+        font-size: 23px;
+        line-height: 1.08;
+        font-weight: 700;
+        color: #102b3b;
+      }
+
+      .builder-entry-subheading {
+        max-width: 760px;
+        font-size: 14px;
+        line-height: 1.55;
+        color: #567082;
+      }
+
+      .builder-entry-routes {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        align-items: start;
+      }
+
+      .app-shell.preset-loaded .builder-entry-routes {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .app-shell.scratch-selected .builder-entry-routes {
+        grid-template-columns: minmax(0, 1fr);
       }
 
       .builder-entry-panel {
         display: flex;
         flex-direction: column;
         gap: 12px;
+        min-width: 0;
+      }
+
+      .builder-route-card {
+        border: 1px solid #d3e0ea;
+        border-radius: 16px;
+        padding: 16px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, #f9fcfd 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.82),
+          0 12px 26px rgba(11, 30, 45, 0.05);
+      }
+
+      .builder-route-card.load-path {
+        background:
+          radial-gradient(circle at top left, rgba(16, 125, 111, 0.08), transparent 42%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, #f6fbfa 100%);
+      }
+
+      .builder-route-card.scratch-path {
+        background:
+          radial-gradient(circle at top right, rgba(85, 123, 207, 0.08), transparent 38%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, #f8fbfd 100%);
+      }
+
+      .builder-route-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .builder-route-kicker {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .builder-route-badge {
+        align-self: flex-start;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 34px;
+        height: 34px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(15, 118, 110, 0.18);
+        background: rgba(15, 118, 110, 0.08);
+        color: #0b5f59;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      .builder-route-label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+        color: #5b7384;
+      }
+
+      .builder-route-title {
+        font-size: 19px;
+        line-height: 1.15;
+        font-weight: 700;
+        color: #163246;
+      }
+
+      .builder-route-help {
+        font-size: 13px;
+        line-height: 1.5;
+        color: #5b7284;
+      }
+
+      .builder-route-note {
+        padding: 10px 12px;
+        border: 1px dashed #c8d9e4;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.78);
+        color: #577083;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .builder-route-note strong {
+        color: #163246;
+      }
+
+      .builder-preset-grid .field span,
+      .builder-entry-panel .assistant-composer-label {
+        font-weight: 600;
+        color: #30495c;
       }
 
       .builder-entry-copy {
@@ -2405,6 +2539,20 @@
           align-items: start;
         }
 
+        .app-shell.builder-only .workspace {
+          grid-template-columns: minmax(0, 1fr);
+          justify-items: center;
+        }
+
+        .app-shell.builder-only #leftRail {
+          width: min(1480px, 100%);
+          max-width: 1480px;
+        }
+
+        .app-shell.builder-only #builderPanel {
+          min-height: auto;
+        }
+
         .workspace-column {
           min-height: 0;
           max-height: 100%;
@@ -2450,6 +2598,18 @@
         }
         .assistant-timeline {
           max-height: 420px;
+        }
+
+        .builder-entry-routes {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .builder-entry-heading {
+          font-size: 20px;
+        }
+
+        .builder-route-card {
+          padding: 14px;
         }
         .assistant-card-footer {
           position: sticky;
@@ -2728,14 +2888,28 @@
             </div>
             <div class="panel-body">
               <div class="builder-entry-card">
-                <div class="builder-entry-panel" id="builderPresetPanel">
-                  <div class="builder-entry-copy">
-                    <span class="builder-entry-title">Start from a workload</span>
-                    <p class="builder-entry-help">
-                      Pick a workload family and file. The selected workload loads
-                      directly into the same editable builder below.
-                    </p>
+                <div class="builder-entry-head">
+                  <span class="builder-entry-eyebrow">Start Here</span>
+                  <h2 class="builder-entry-heading">Choose how to begin</h2>
+                  <p class="builder-entry-subheading">
+                    Load an existing workload or generate one from a prompt.
+                  </p>
+                </div>
+                <div class="builder-entry-routes">
+                <div
+                  class="builder-entry-panel builder-route-card load-path"
+                  id="builderPresetPanel"
+                >
+                  <div class="builder-route-head">
+                    <div class="builder-route-kicker">
+                      <span class="builder-route-label">Option 1</span>
+                      <span class="builder-route-title">Load a workload and customize it</span>
+                    </div>
+                    <span class="builder-route-badge">1</span>
                   </div>
+                  <p class="builder-route-help">
+                    Start from a known benchmark shape.
+                  </p>
                   <div class="builder-preset-grid">
                     <label class="field">
                       <span>Select benchmark</span>
@@ -2763,10 +2937,23 @@
                   </div>
                   <div class="preset-note" id="presetSelectionNote" hidden></div>
                 </div>
-                <div class="builder-entry-panel" id="builderDescribePanel">
+                <div
+                  class="builder-entry-panel builder-route-card scratch-path"
+                  id="builderDescribePanel"
+                >
+                  <div class="builder-route-head">
+                    <div class="builder-route-kicker">
+                      <span class="builder-route-label">Option 2</span>
+                      <span class="builder-route-title">Start from scratch and generate one</span>
+                    </div>
+                    <span class="builder-route-badge">2</span>
+                  </div>
+                  <p class="builder-route-help">
+                    Describe the workload you want in plain English.
+                  </p>
                   <div class="assistant-panel">
                     <div class="assistant-head">
-                      <span class="assistant-title">Describe Workload</span>
+                      <span class="assistant-title">Generate From Scratch</span>
                       <span
                         class="assistant-status"
                         id="assistantStatus"
@@ -2780,7 +2967,9 @@
                       aria-live="polite"
                     ></div>
                     <div class="assistant-composer">
-                      <label for="assistantInput" class="assistant-composer-label"></label>
+                      <label for="assistantInput" class="assistant-composer-label"
+                        >Describe your workload</label
+                      >
                       <textarea
                         id="assistantInput"
                         class="assistant-input"
@@ -2805,6 +2994,7 @@
                       <p class="assistant-composer-hint" id="assistantComposerHint"></p>
                     </div>
                   </div>
+                </div>
                 </div>
               </div>
                 <div class="structure-panel">
@@ -3016,6 +3206,7 @@
     <script src="/workload-runs.js"></script>
     <script src="/workload-runs-panel.js"></script>
     <script src="/ui-structured-normalization.js"></script>
+    <script src="/builder-session.js"></script>
     <script src="/preset-flow.js"></script>
     <script src="/structure-panel.js"></script>
     <script src="/json-tree-view.js"></script>
