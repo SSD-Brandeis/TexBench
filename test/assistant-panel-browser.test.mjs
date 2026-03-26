@@ -436,6 +436,81 @@ test("assistant panel describes follow-up operation adds as added", async () => 
   }
 });
 
+test("assistant panel applies chat edits on a loaded preset", async () => {
+  globalThis.document = { createElement };
+  globalThis.HTMLSelectElement = FakeSelectElement;
+  globalThis.window = {
+    sessionStorage: {
+      store: new Map(),
+      getItem(key) {
+        return this.store.has(key) ? this.store.get(key) : null;
+      },
+      setItem(key, value) {
+        this.store.set(key, String(value));
+      },
+    },
+  };
+
+  await import("../public/assistant-panel.js");
+
+  const refs = createRefs();
+  const applyCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        patch: { operations: { point_queries: { enabled: true, op_count: 5000 } } },
+        summary: "Added 5K point queries to the workload.",
+        clarifications: [],
+        assumptions: [],
+      };
+    },
+  });
+
+  try {
+    const controller = globalThis.TectonicAssistantPanel.createController({
+      refs,
+      applyAssistantPatch(patch) {
+        applyCalls.push(patch);
+      },
+      getActivePresetJson() {
+        return { sections: [{ groups: [{ inserts: { op_count: 100000 } }] }] };
+      },
+      getCurrentFormState() {
+        return {
+          operations: {
+            inserts: {
+              enabled: true,
+              op_count: 100000,
+            },
+          },
+        };
+      },
+      getCurrentWorkloadJson() {
+        return {};
+      },
+      getSchemaHintsForAssist() {
+        return {};
+      },
+      getSelectedOperations() {
+        return ["inserts"];
+      },
+      updateJsonFromForm() {},
+    });
+
+    refs.assistantInput.value = "Add 5k point queries";
+    await controller.handleApply();
+
+    assert.equal(applyCalls.length, 1);
+    assert.equal(refs.assistantStatus.textContent, "Applied");
+    const assistantTurn = refs.assistantTimeline.children[1];
+    assert.match(flattenText(assistantTurn), /Added 5K point queries to the workload\./);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("assistant panel renders single-choice delete clarification as checkboxes", async () => {
   globalThis.document = { createElement };
   globalThis.HTMLSelectElement = FakeSelectElement;

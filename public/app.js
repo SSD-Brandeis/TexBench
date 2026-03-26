@@ -7,7 +7,13 @@ const formSkipKeyContainsCheck = document.getElementById(
 );
 const addSectionBtn = document.getElementById("addSectionBtn");
 const structureTree = document.getElementById("structureTree");
-const structurePanel = document.querySelector(".structure-panel");
+const structurePanel = document.getElementById("structurePanel");
+const structurePanelToggleRow = document.getElementById(
+  "structurePanelToggleRow",
+);
+const toggleStructurePanelBtn = document.getElementById(
+  "toggleStructurePanelBtn",
+);
 const structureSelectionLabel = document.getElementById(
   "structureSelectionLabel",
 );
@@ -23,7 +29,13 @@ const presetFileSelect = document.getElementById("presetFileSelect");
 const presetScaleInput = document.getElementById("presetScaleInput");
 const presetSelectionNote = document.getElementById("presetSelectionNote");
 const builderPresetPanel = document.getElementById("builderPresetPanel");
+const builderPresetAssistantSlot = document.getElementById(
+  "builderPresetAssistantSlot",
+);
 const builderDescribePanel = document.getElementById("builderDescribePanel");
+const builderScratchAssistantSlot = document.getElementById(
+  "builderScratchAssistantSlot",
+);
 const operationToggles = document.getElementById("operationToggles");
 const operationConfigContainer = document.getElementById(
   "operationConfigContainer",
@@ -60,11 +72,15 @@ const presetBrowserBtn = document.getElementById("presetBrowserBtn");
 const assistantInput = document.getElementById("assistantInput");
 const assistantApplyBtn = document.getElementById("assistantApplyBtn");
 const assistantClearBtn = document.getElementById("assistantClearBtn");
+const assistantPanel = document.getElementById("assistantPanel");
+const assistantTitle = document.getElementById("assistantTitle");
+const assistantComposerLabel = document.getElementById("assistantComposerLabel");
 const assistantStatus = document.getElementById("assistantStatus");
 const assistantTimeline = document.getElementById("assistantTimeline");
 const assistantComposerHint = document.getElementById("assistantComposerHint");
 const appShell = document.getElementById("appShell");
 const appHeader = document.getElementById("appHeader");
+const headerIntro = document.getElementById("headerIntro");
 const builderPanel = document.getElementById("builderPanel");
 const previewPanel = document.getElementById("previewPanel");
 let pendingJsonFocusTarget = null;
@@ -341,11 +357,29 @@ const builderSession =
         },
         setSelectedBuilderRoute() {},
       };
+const rangeScanSupport =
+  globalThis.TectonicRangeScan &&
+  typeof globalThis.TectonicRangeScan.estimateValidKeyCount === "function" &&
+  typeof globalThis.TectonicRangeScan.scanLengthFromSelectivity === "function" &&
+  typeof globalThis.TectonicRangeScan.selectivityFromScanLength === "function"
+    ? globalThis.TectonicRangeScan
+    : {
+        estimateValidKeyCount() {
+          return null;
+        },
+        scanLengthFromSelectivity() {
+          return null;
+        },
+        selectivityFromScanLength() {
+          return null;
+        },
+      };
 let schemaValidatorPromise = null;
 let latestValidationToken = 0;
 let workloadStructureState = [];
 let activeSectionIndex = 0;
 let activeGroupIndex = 0;
+let structurePanelExpanded = false;
 
 function getActivePresetJsonState() {
   return builderSession.getActivePresetJson();
@@ -717,6 +751,12 @@ async function initApp() {
   if (newWorkloadBtn) {
     newWorkloadBtn.addEventListener("click", resetFormInterface);
   }
+  if (toggleStructurePanelBtn) {
+    toggleStructurePanelBtn.addEventListener(
+      "click",
+      toggleStructurePanelExpanded,
+    );
+  }
   if (toggleJsonPreviewBtn) {
     toggleJsonPreviewBtn.addEventListener("click", () => {
       setJsonPreviewVisible(!jsonPreviewVisible);
@@ -809,6 +849,9 @@ initApp().catch((initError) => {
 
 function onFormChange(event) {
   const eventTarget = event && event.target ? event.target : null;
+  if (handleRangeScanLengthFormEdit(eventTarget, event && event.type)) {
+    return;
+  }
   if (eventTarget === formSections) {
     persistActiveStructureFromForm();
     activeSectionIndex = Math.max(
@@ -861,6 +904,7 @@ function onFormChange(event) {
     refreshStringPatternVisibility(eventTarget.dataset.op);
   }
   updateJsonFromForm();
+  refreshVisibleRangeScanLengthFields();
 }
 
 function clearAdvancedStateForFormEdit(eventTarget) {
@@ -1085,6 +1129,7 @@ function applyDefaultsToOperation(op) {
   });
   refreshSelectionParamVisibility(op);
   refreshStringPatternVisibility(op);
+  refreshRangeScanLengthField(op);
 }
 
 function ensureOperationDefaultsIfEmpty(op) {
@@ -1297,14 +1342,43 @@ function hasConfiguredWorkloadStructure() {
     : false;
 }
 
+function syncStructurePanelToggleUi(showBuilderEditor) {
+  if (structurePanelToggleRow) {
+    structurePanelToggleRow.hidden = !showBuilderEditor;
+  }
+  if (!toggleStructurePanelBtn) {
+    return;
+  }
+  toggleStructurePanelBtn.hidden = !showBuilderEditor;
+  toggleStructurePanelBtn.textContent = structurePanelExpanded
+    ? "Hide Customization"
+    : "Customize Further";
+  toggleStructurePanelBtn.setAttribute(
+    "aria-expanded",
+    structurePanelExpanded ? "true" : "false",
+  );
+}
+
 function updateStructurePanelVisibility() {
   const showBuilderEditor = hasConfiguredWorkloadStructure();
+  if (!showBuilderEditor) {
+    structurePanelExpanded = false;
+  }
+  syncStructurePanelToggleUi(showBuilderEditor);
   if (structurePanel) {
-    structurePanel.hidden = !showBuilderEditor;
+    structurePanel.hidden = !(showBuilderEditor && structurePanelExpanded);
   }
   if (workloadForm) {
-    workloadForm.hidden = !showBuilderEditor;
+    workloadForm.hidden = !(showBuilderEditor && structurePanelExpanded);
   }
+}
+
+function toggleStructurePanelExpanded() {
+  if (!hasConfiguredWorkloadStructure()) {
+    return;
+  }
+  structurePanelExpanded = !structurePanelExpanded;
+  updateStructurePanelVisibility();
 }
 
 function renderStructureTree() {
@@ -1405,9 +1479,15 @@ function getPresetFlowController() {
     refs: {
       appHeader,
       appShell,
+      headerIntro,
       assistantInput,
+      assistantPanel,
+      assistantTitle,
+      assistantComposerLabel,
       builderPresetPanel,
+      builderPresetAssistantSlot,
       builderDescribePanel,
+      builderScratchAssistantSlot,
       builderPanel,
       copyBtn,
       downloadJsonBtn,
@@ -1605,6 +1685,7 @@ function loadPresetIntoBuilder(presetJson) {
       : [createEmptySectionState()];
   activeSectionIndex = 0;
   activeGroupIndex = 0;
+  structurePanelExpanded = false;
   setCustomWorkloadModeState(true);
   setSelectedBuilderRouteState("preset");
   clearAssistantThread();
@@ -1676,6 +1757,7 @@ function restorePersistedCustomBuilderState() {
   setActivePresetJsonState(null);
   setCustomWorkloadModeState(true);
   setSelectedBuilderRouteState("scratch");
+  structurePanelExpanded = false;
   clearFieldLocks();
   clearOperationFormState();
   clearAssistantThread();
@@ -1814,6 +1896,7 @@ function applyOperationSpecToForm(op, spec) {
 
   refreshSelectionParamVisibility(op);
   refreshStringPatternVisibility(op);
+  refreshRangeScanLengthField(op);
   refreshAdvancedExpressionSummary(op);
 }
 
@@ -2723,6 +2806,7 @@ function createOperationConfigCardCore(op, includeDescriptions) {
         includeDescriptions ? getUiFieldDescription(op, "selectivity") : "",
       ),
     );
+    grid.appendChild(createRangeScanLengthField(op));
     grid.appendChild(
       createRangeFormatField(
         op,
@@ -2805,6 +2889,33 @@ function createOperationCharacterSetField(op, defaultValue, description = "") {
     desc.textContent = description;
     label.appendChild(desc);
   }
+  return label;
+}
+
+function createRangeScanLengthField(op) {
+  const label = document.createElement("label");
+  label.className = "field";
+  const title = document.createElement("span");
+  appendTitleWithHelp(
+    title,
+    "Scanned Entries",
+    "Approximate number of keys scanned. Editing this recalculates selectivity using the current valid-key estimate for this phase or section.",
+  );
+  const input = document.createElement("input");
+  input.type = "number";
+  input.step = "1";
+  input.min = "1";
+  input.dataset.op = op;
+  input.dataset.field = "scan_length";
+
+  const note = document.createElement("small");
+  note.className = "field-inline-note";
+  note.dataset.op = op;
+  note.dataset.rangeNote = "scan_length";
+
+  label.appendChild(title);
+  label.appendChild(input);
+  label.appendChild(note);
   return label;
 }
 
@@ -3136,9 +3247,175 @@ function nonNegativeIntOrDefault(value, fallback) {
 }
 
 function readOperationField(op, field) {
-  const selector = '[data-op="' + op + '"][data-field="' + field + '"]';
-  const el = operationConfigContainer.querySelector(selector);
+  const el = getOperationFieldElement(op, field);
   return el ? el.value : "";
+}
+
+function getOperationFieldElement(op, field) {
+  const selector = '[data-op="' + op + '"][data-field="' + field + '"]';
+  return operationConfigContainer.querySelector(selector);
+}
+
+function getRangeScanLengthNoteElement(op) {
+  const selector =
+    '[data-op="' + op + '"][data-range-note="scan_length"]';
+  return operationConfigContainer.querySelector(selector);
+}
+
+function buildSectionsForRangeEstimate() {
+  const sections = Array.isArray(workloadStructureState)
+    ? cloneJsonValue(workloadStructureState)
+    : [];
+  if (
+    !sections[activeSectionIndex] ||
+    !Array.isArray(sections[activeSectionIndex].groups)
+  ) {
+    return sections;
+  }
+  const activeSection = sections[activeSectionIndex];
+  const existingGroup =
+    activeSection.groups[activeGroupIndex] &&
+    typeof activeSection.groups[activeGroupIndex] === "object"
+      ? activeSection.groups[activeGroupIndex]
+      : createEmptyGroupSpec();
+  activeSection.groups[activeGroupIndex] = buildActiveGroupSpecFromForm(
+    formCharacterSet ? formCharacterSet.value.trim() : "",
+    existingGroup,
+  );
+  return sections;
+}
+
+function estimateRangeScanValidKeyCountForActiveGroup() {
+  return rangeScanSupport.estimateValidKeyCount({
+    sections: buildSectionsForRangeEstimate(),
+    sectionIndex: activeSectionIndex,
+    groupIndex: activeGroupIndex,
+    fallbackInsertCount: readOperationField("inserts", "op_count"),
+  });
+}
+
+function getRangeScanLengthHelperText(validKeyCount, usesAdvancedSelectivity) {
+  if (usesAdvancedSelectivity) {
+    return "Clear the advanced selectivity expression to edit scanned entries in the form.";
+  }
+  if (!Number.isFinite(validKeyCount) || validKeyCount <= 0) {
+    return "Edit Selectivity directly, or add inserts in this phase or an earlier phase to derive scanned entries.";
+  }
+  return (
+    "Edit either Selectivity or Scanned Entries. Scanned Entries is approximated from " +
+    formatCount(validKeyCount) +
+    " valid keys in scope."
+  );
+}
+
+function refreshRangeScanLengthField(op) {
+  const input = getOperationFieldElement(op, "scan_length");
+  if (!input) {
+    return;
+  }
+  const note = getRangeScanLengthNoteElement(op);
+  const validKeyCount = estimateRangeScanValidKeyCountForActiveGroup();
+  const usesAdvancedSelectivity =
+    sanitizeTypedExpression(getAdvancedFieldValue(op, "selectivity"), "number_expr") !==
+    null;
+
+  input.setCustomValidity("");
+  input.disabled = usesAdvancedSelectivity;
+
+  if (usesAdvancedSelectivity) {
+    input.value = "";
+    if (note) {
+      note.textContent = getRangeScanLengthHelperText(
+        validKeyCount,
+        usesAdvancedSelectivity,
+      );
+    }
+    return;
+  }
+
+  const selectivity = Number(readOperationField(op, "selectivity"));
+  if (Number.isFinite(validKeyCount) && validKeyCount > 0) {
+    const scanLength = rangeScanSupport.scanLengthFromSelectivity(
+      selectivity,
+      validKeyCount,
+    );
+    input.value =
+      scanLength === null || scanLength === undefined ? "" : String(scanLength);
+  } else {
+    input.value = "";
+  }
+
+  if (note) {
+    note.textContent = getRangeScanLengthHelperText(validKeyCount, false);
+  }
+}
+
+function refreshVisibleRangeScanLengthFields() {
+  ["range_queries", "range_deletes"].forEach(function refreshRangeOp(op) {
+    refreshRangeScanLengthField(op);
+  });
+}
+
+function handleRangeScanLengthFormEdit(eventTarget, eventType) {
+  if (
+    !eventTarget ||
+    !eventTarget.dataset ||
+    eventTarget.dataset.field !== "scan_length" ||
+    !eventTarget.dataset.op
+  ) {
+    return false;
+  }
+
+  const op = eventTarget.dataset.op;
+  const rawValue = typeof eventTarget.value === "string" ? eventTarget.value.trim() : "";
+  if (!rawValue) {
+    eventTarget.setCustomValidity("");
+    refreshRangeScanLengthField(op);
+    return true;
+  }
+
+  const scanLength = parsePositiveInt(rawValue);
+  if (scanLength === null) {
+    eventTarget.setCustomValidity("Scanned entries must be a positive integer.");
+    if (
+      eventType === "change" &&
+      typeof eventTarget.reportValidity === "function"
+    ) {
+      eventTarget.reportValidity();
+    }
+    return true;
+  }
+
+  const validKeyCount = estimateRangeScanValidKeyCountForActiveGroup();
+  const nextSelectivity = rangeScanSupport.selectivityFromScanLength(
+    scanLength,
+    validKeyCount,
+  );
+  if (nextSelectivity === null) {
+    eventTarget.setCustomValidity(
+      "Add inserts in this phase or an earlier phase before setting scanned entries.",
+    );
+    if (
+      eventType === "change" &&
+      typeof eventTarget.reportValidity === "function"
+    ) {
+      eventTarget.reportValidity();
+    }
+    const note = getRangeScanLengthNoteElement(op);
+    if (note) {
+      note.textContent = getRangeScanLengthHelperText(validKeyCount, false);
+    }
+    return true;
+  }
+
+  eventTarget.setCustomValidity("");
+  clearAdvancedFieldValue(op, "selectivity");
+  lockOperationField(op, "selectivity");
+  setOperationInputValue(op, "selectivity", nextSelectivity);
+  setOperationInputValue(op, "range_format", "StartCount");
+  updateJsonFromForm();
+  refreshRangeScanLengthField(op);
+  return true;
 }
 
 function buildUniformStringExpr(len, characterSet) {
@@ -4688,6 +4965,7 @@ function updateJsonFromForm() {
   renderGeneratedJson(generated);
   syncLandingUi();
   updateStructurePanelVisibility();
+  refreshVisibleRangeScanLengthFields();
   if (pendingJsonFocusTarget) {
     scrollJsonOutputToGroupFocus(pendingJsonFocusTarget);
     pendingJsonFocusTarget = null;
@@ -5112,7 +5390,9 @@ function applyAssistantPatch(patch) {
     return;
   }
   setCustomWorkloadModeState(true);
-  setSelectedBuilderRouteState("scratch");
+  if (getActivePresetJsonState() === null) {
+    setSelectedBuilderRouteState("scratch");
+  }
 
   const scopeOp = deriveAssistantScopeOperation(context);
   const allowOperationSetChanges = assistantPromptHasOperationIntent(
@@ -5464,6 +5744,7 @@ function resetFormInterface(options) {
       ? true
       : options.stayInBuilder !== false;
   workloadForm.reset();
+  structurePanelExpanded = false;
   setCustomWorkloadModeState(stayInBuilder);
   setSelectedBuilderRouteState(null);
   clearLoadedPresetState();

@@ -1558,12 +1558,6 @@
     }
 
     async function handleApply() {
-      if (getActivePresetJson()) {
-        setStatus("Preset loaded", "warn");
-        setComposerHint("Clear Form before editing the loaded preset with chat.");
-        return;
-      }
-
       const promptText = refs.assistantInput ? refs.assistantInput.value.trim() : "";
       if (!promptText) {
         setStatus("Enter details to apply", "warn");

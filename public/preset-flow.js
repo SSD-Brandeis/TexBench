@@ -245,6 +245,38 @@
       syncLandingUi();
     }
 
+    function syncAssistantPanelPlacement(presetLoaded) {
+      const hasPanel =
+        refs.assistantPanel &&
+        refs.builderPresetAssistantSlot &&
+        refs.builderScratchAssistantSlot;
+      if (hasPanel) {
+        if (presetLoaded) {
+          refs.builderScratchAssistantSlot.replaceChildren();
+          refs.builderPresetAssistantSlot.replaceChildren(refs.assistantPanel);
+        } else {
+          refs.builderPresetAssistantSlot.replaceChildren();
+          refs.builderScratchAssistantSlot.replaceChildren(refs.assistantPanel);
+        }
+      }
+      if (refs.builderPresetAssistantSlot) {
+        refs.builderPresetAssistantSlot.hidden = !presetLoaded;
+      }
+      if (refs.builderScratchAssistantSlot) {
+        refs.builderScratchAssistantSlot.hidden = presetLoaded;
+      }
+      if (refs.assistantTitle) {
+        refs.assistantTitle.textContent = presetLoaded
+          ? "Add With Chat"
+          : "Generate From Scratch";
+      }
+      if (refs.assistantComposerLabel) {
+        refs.assistantComposerLabel.textContent = presetLoaded
+          ? "Add to this workload"
+          : "Describe your workload";
+      }
+    }
+
     function syncLandingUi() {
       const showPreview = hasConfiguredWorkload();
       const selectedBuilderRoute = getSelectedBuilderRoute();
@@ -252,9 +284,13 @@
         getActivePresetJson() !== null || selectedBuilderRoute === "preset";
       const scratchSelected =
         !presetLoaded && selectedBuilderRoute === "scratch";
+      const hideHeaderIntro = presetLoaded || scratchSelected || showPreview;
 
       if (refs.appHeader) {
         refs.appHeader.hidden = false;
+      }
+      if (refs.headerIntro) {
+        refs.headerIntro.hidden = hideHeaderIntro;
       }
       if (refs.appShell && refs.appShell.classList) {
         refs.appShell.classList.remove("landing");
@@ -268,6 +304,7 @@
       if (refs.builderDescribePanel) {
         refs.builderDescribePanel.hidden = presetLoaded;
       }
+      syncAssistantPanelPlacement(presetLoaded);
       if (refs.builderPanel) {
         refs.builderPanel.hidden = false;
       }

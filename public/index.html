@@ -697,6 +697,13 @@
         display: none;
       }
 
+      .field-inline-note {
+        font-size: 11px;
+        line-height: 1.35;
+        color: #5f7284;
+        min-height: 28px;
+      }
+
       .field:hover .field-description,
       .field:focus-within .field-description,
       .checkbox-item:hover .field-description,
@@ -826,6 +833,11 @@
         flex-direction: column;
         gap: 12px;
         min-width: 0;
+      }
+
+      .builder-assistant-slot {
+        display: flex;
+        flex-direction: column;
       }
 
       .builder-route-card {
@@ -1046,6 +1058,12 @@
 
       .structure-actions .btn {
         min-height: 38px;
+      }
+
+      .builder-structure-toggle-row {
+        display: flex;
+        justify-content: flex-start;
+        margin: 0 0 14px;
       }
 
       .structure-panel {
@@ -2863,7 +2881,7 @@
         <p class="header-subtitle">
           Generate JSON configurations for your workload specifications
         </p>
-        <div class="header-intro">
+        <div class="header-intro" id="headerIntro">
           <p>
             This demo turns natural-language workload requests into editable
             benchmark specifications.
@@ -2936,6 +2954,11 @@
                     </label>
                   </div>
                   <div class="preset-note" id="presetSelectionNote" hidden></div>
+                  <div
+                    class="builder-assistant-slot"
+                    id="builderPresetAssistantSlot"
+                    hidden
+                  ></div>
                 </div>
                 <div
                   class="builder-entry-panel builder-route-card scratch-path"
@@ -2951,9 +2974,10 @@
                   <p class="builder-route-help">
                     Describe the workload you want in plain English.
                   </p>
-                  <div class="assistant-panel">
+                  <div class="builder-assistant-slot" id="builderScratchAssistantSlot">
+                  <div class="assistant-panel" id="assistantPanel">
                     <div class="assistant-head">
-                      <span class="assistant-title">Generate From Scratch</span>
+                      <span class="assistant-title" id="assistantTitle">Generate From Scratch</span>
                       <span
                         class="assistant-status"
                         id="assistantStatus"
@@ -2967,7 +2991,10 @@
                       aria-live="polite"
                     ></div>
                     <div class="assistant-composer">
-                      <label for="assistantInput" class="assistant-composer-label"
+                      <label
+                        for="assistantInput"
+                        class="assistant-composer-label"
+                        id="assistantComposerLabel"
                         >Describe your workload</label
                       >
                       <textarea
@@ -2994,10 +3021,26 @@
                       <p class="assistant-composer-hint" id="assistantComposerHint"></p>
                     </div>
                   </div>
+                  </div>
                 </div>
                 </div>
               </div>
-                <div class="structure-panel">
+                <div
+                  class="builder-structure-toggle-row"
+                  id="structurePanelToggleRow"
+                  hidden
+                >
+                  <button
+                    type="button"
+                    class="btn btn-ghost"
+                    id="toggleStructurePanelBtn"
+                    aria-expanded="false"
+                    aria-controls="structurePanel workloadForm"
+                  >
+                    Customize Further
+                  </button>
+                </div>
+                <div class="structure-panel" id="structurePanel" hidden>
                   <div class="structure-panel-head">
                     <div>
                       <p class="structure-panel-title">Workload Structure</p>
@@ -3019,7 +3062,7 @@
                   </p>
                   <div class="structure-tree" id="structureTree"></div>
                 </div>
-                <form id="workloadForm" class="workload-form">
+                <form id="workloadForm" class="workload-form" hidden>
                   <div class="form-grid">
                     <label class="field">
                       <span id="formCharacterSetLabel">Character Set</span>
@@ -3207,6 +3250,7 @@
     <script src="/workload-runs-panel.js"></script>
     <script src="/ui-structured-normalization.js"></script>
     <script src="/builder-session.js"></script>
+    <script src="/range-scan.js"></script>
     <script src="/preset-flow.js"></script>
     <script src="/structure-panel.js"></script>
     <script src="/json-tree-view.js"></script>

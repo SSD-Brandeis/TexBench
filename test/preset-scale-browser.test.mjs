@@ -86,10 +86,16 @@ class FakeElement {
 function createTestContext() {
   const refs = {
     appHeader: new FakeElement("header"),
+    headerIntro: new FakeElement("div"),
     appShell: new FakeElement("div"),
     assistantInput: new FakeElement("textarea"),
+    assistantPanel: new FakeElement("section"),
+    assistantTitle: new FakeElement("span"),
+    assistantComposerLabel: new FakeElement("label"),
     builderPresetPanel: new FakeElement("section"),
+    builderPresetAssistantSlot: new FakeElement("div"),
     builderDescribePanel: new FakeElement("section"),
+    builderScratchAssistantSlot: new FakeElement("div"),
     builderPanel: new FakeElement("section"),
     copyBtn: new FakeElement("button"),
     downloadJsonBtn: new FakeElement("button"),
@@ -104,6 +110,7 @@ function createTestContext() {
     validationResult: new FakeElement("p"),
   };
   refs.presetScaleInput.value = "1";
+  refs.builderScratchAssistantSlot.replaceChildren(refs.assistantPanel);
 
   let activePresetJson = null;
   let selectedBuilderRoute = null;
@@ -197,6 +204,7 @@ test("preset scale stays disabled until both family and file are selected", asyn
     await controller.loadPresetCatalog();
 
     assert.equal(ctx.refs.presetScaleInput.disabled, true);
+    assert.equal(ctx.refs.headerIntro.hidden, false);
 
     ctx.refs.presetFamilySelect.value = "scale";
     controller.handlePresetFamilyChange({ target: { value: "scale" } });
@@ -214,6 +222,12 @@ test("preset scale stays disabled until both family and file are selected", asyn
     );
     assert.equal(ctx.refs.builderPresetPanel.hidden, false);
     assert.equal(ctx.refs.builderDescribePanel.hidden, true);
+    assert.equal(ctx.refs.builderPresetAssistantSlot.hidden, false);
+    assert.equal(ctx.refs.builderScratchAssistantSlot.hidden, true);
+    assert.equal(ctx.refs.builderPresetAssistantSlot.children[0], ctx.refs.assistantPanel);
+    assert.equal(ctx.refs.assistantTitle.textContent, "Add With Chat");
+    assert.equal(ctx.refs.assistantComposerLabel.textContent, "Add to this workload");
+    assert.equal(ctx.refs.headerIntro.hidden, true);
 
     ctx.refs.presetFileSelect.value = "";
     await controller.handlePresetFileChange({ target: { value: "" } });
@@ -225,6 +239,15 @@ test("preset scale stays disabled until both family and file are selected", asyn
     );
     assert.equal(ctx.refs.builderPresetPanel.hidden, false);
     assert.equal(ctx.refs.builderDescribePanel.hidden, false);
+    assert.equal(ctx.refs.builderPresetAssistantSlot.hidden, true);
+    assert.equal(ctx.refs.builderScratchAssistantSlot.hidden, false);
+    assert.equal(ctx.refs.builderScratchAssistantSlot.children[0], ctx.refs.assistantPanel);
+    assert.equal(ctx.refs.assistantTitle.textContent, "Generate From Scratch");
+    assert.equal(
+      ctx.refs.assistantComposerLabel.textContent,
+      "Describe your workload",
+    );
+    assert.equal(ctx.refs.headerIntro.hidden, false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -265,4 +288,8 @@ test("scratch route hides the preset option after a workload is established", as
   );
   assert.equal(ctx.refs.builderPresetPanel.hidden, true);
   assert.equal(ctx.refs.builderDescribePanel.hidden, false);
+  assert.equal(ctx.refs.builderPresetAssistantSlot.hidden, true);
+  assert.equal(ctx.refs.builderScratchAssistantSlot.hidden, false);
+  assert.equal(ctx.refs.builderScratchAssistantSlot.children[0], ctx.refs.assistantPanel);
+  assert.equal(ctx.refs.headerIntro.hidden, true);
 });
