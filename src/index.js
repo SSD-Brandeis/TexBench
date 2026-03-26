@@ -4502,6 +4502,44 @@ function suppressOperationPatchWhenSelectionIsAmbiguous(patch, clarifications) {
   patch.operations = {};
 }
 
+function buildEffectiveStateIgnoringOperationReset(
+  patch,
+  formState,
+  schemaHints,
+) {
+  const safePatch =
+    patch && typeof patch === "object"
+      ? {
+          ...patch,
+          clear_operations: false,
+          operations: isPlainObject(patch.operations)
+            ? cloneJsonValue(patch.operations)
+            : {},
+        }
+      : {
+          clear_operations: false,
+          operations: {},
+        };
+  return buildEffectiveState(
+    safePatch,
+    formState || { operations: {} },
+    schemaHints,
+  );
+}
+
+function effectiveStateHasKnownInsertedKeys(state) {
+  return !!(
+    state &&
+    state.operations &&
+    state.operations.inserts &&
+    state.operations.inserts.enabled
+  );
+}
+
+function promptHasConcreteGenericDeleteTarget(promptCount) {
+  return promptCount !== null && promptCount !== undefined;
+}
+
 function applyDeleteOperationDisambiguation(
   patch,
   formState,
@@ -4532,19 +4570,18 @@ function applyDeleteOperationDisambiguation(
   }
 
   const promptCount = extractPromptCountHint(prompt);
-  const effectiveBeforeRewrite = buildEffectiveState(
+  const effectiveBeforeRewrite = buildEffectiveStateIgnoringOperationReset(
     patch,
     formState,
     schemaHints,
   );
-  const hasKnownKeys = !!(
-    effectiveBeforeRewrite.operations &&
-    effectiveBeforeRewrite.operations.inserts &&
-    effectiveBeforeRewrite.operations.inserts.enabled
+  const hasKnownKeys = effectiveStateHasKnownInsertedKeys(
+    effectiveBeforeRewrite,
   );
-  if (!hasKnownKeys) {
+  if (!hasKnownKeys || !promptHasConcreteGenericDeleteTarget(promptCount)) {
     return;
   }
+  patch.clear_operations = false;
 
   const hasAnyDeletePatch = [
     "empty_point_deletes",
@@ -4628,16 +4665,15 @@ function canImplicitlyResolveGenericDeletePrompt(
   ) {
     return false;
   }
-  const effectiveState = buildEffectiveState(
+  const promptCount = extractPromptCountHint(prompt);
+  const effectiveState = buildEffectiveStateIgnoringOperationReset(
     patch || { operations: {} },
     formState || { operations: {} },
     schemaHints,
   );
-  return !!(
-    effectiveState &&
-    effectiveState.operations &&
-    effectiveState.operations.inserts &&
-    effectiveState.operations.inserts.enabled
+  return (
+    effectiveStateHasKnownInsertedKeys(effectiveState) &&
+    promptHasConcreteGenericDeleteTarget(promptCount)
   );
 }
 

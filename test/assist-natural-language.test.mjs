@@ -1332,3 +1332,66 @@ test("add prompts override mistaken disabled target operations from the model", 
   assert.equal(result.patch.operations.range_deletes.enabled, true);
   assert.equal(result.patch.operations.range_deletes.op_count, 50000);
 });
+
+test(
+  "generic delete prompts ignore mistaken operation resets when inserts already exist",
+  () => {
+    const formState = createFormState({
+      inserts: createInsertSeed(),
+      point_queries: createSelectionSeed("point_queries"),
+    });
+    const result = applyPrompt({
+      prompt: "Add 1k deletes",
+      formState,
+      rawPatch: {
+        clear_operations: true,
+        operations: {
+          point_deletes: {
+            enabled: true,
+            op_count: 1000,
+          },
+        },
+      },
+    });
+
+    assert.equal(result.clarifications.length, 0);
+    assert.equal(result.patch.clear_operations, false);
+    assert.deepEqual(sortedKeys(result.patch.operations), ["point_deletes"]);
+    assert.equal(result.patch.operations.point_deletes.enabled, true);
+    assert.equal(result.patch.operations.point_deletes.op_count, 1000);
+
+    const state = applyPatchToState(formState, result.patch);
+    assert.equal(state.operations.inserts.enabled, true);
+    assert.equal(state.operations.point_queries.op_count, 50000);
+    assert.equal(state.operations.point_queries.enabled, true);
+    assert.equal(state.operations.point_deletes.op_count, 1000);
+    assert.equal(state.operations.point_deletes.enabled, true);
+  },
+);
+
+test(
+  "generic delete prompts without a concrete count still require clarification",
+  () => {
+    const formState = createFormState({
+      inserts: createInsertSeed(),
+    });
+    const result = applyPrompt({
+      prompt: "Add deletes",
+      formState,
+      rawPatch: {
+        clear_operations: true,
+        operations: {
+          point_deletes: {
+            enabled: true,
+            op_count: 1000,
+          },
+        },
+      },
+    });
+
+    assert.equal(result.clarifications.length, 1);
+    assert.equal(result.clarifications[0].binding.type, "operations_set");
+    assert.deepEqual(result.patch.operations, {});
+    assert.equal(result.patch.clear_operations, false);
+  },
+);
