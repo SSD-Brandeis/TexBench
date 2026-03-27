@@ -1,90 +1,194 @@
 [
   {
     "id": "kvbench-i",
-    "family": "kvbench",
-    "label": "i.spec.json",
+    "family": "KVBench",
+    "label": "I: Empty PQ-heavy (preloading)",
     "path": "/presets/kvbench/i.spec.json",
     "source": "example-specs/kvbench/i.spec.json",
     "description": "Insert phase followed by point and empty-point reads."
   },
   {
     "id": "kvbench-ii",
-    "family": "kvbench",
-    "label": "ii.spec.json",
+    "family": "KVBench",
+    "label": "II: Interleaved inserts, deletes, PQs, updates",
     "path": "/presets/kvbench/ii.spec.json",
     "source": "example-specs/kvbench/ii.spec.json",
     "description": "Insert-heavy kvbench workload with deletes, empty reads, and updates."
   },
   {
     "id": "kvbench-iii",
-    "family": "kvbench",
-    "label": "iii.spec.json",
+    "family": "KVBench",
+    "label": "III: Multi-distribution update and PQ (preloading)",
     "path": "/presets/kvbench/iii.spec.json",
     "source": "example-specs/kvbench/iii.spec.json",
     "description": "Kvbench mix with updates, point queries, and empty-point queries."
   },
   {
     "id": "kvbench-iv",
-    "family": "kvbench",
-    "label": "iv.spec.json",
+    "family": "KVBench",
+    "label": "IV: Update and range delete-heavy (preloading)",
     "path": "/presets/kvbench/iv.spec.json",
     "source": "example-specs/kvbench/iv.spec.json",
     "description": "Kvbench workload combining updates with range deletes."
   },
   {
     "id": "kvbench-v",
-    "family": "kvbench",
-    "label": "v.spec.json",
+    "family": "KVBench",
+    "label": "V: Insert-heavy with skewed prefixes",
     "path": "/presets/kvbench/v.spec.json",
     "source": "example-specs/kvbench/v.spec.json",
     "description": "Single-group kvbench workload with inserts and point queries."
   },
   {
     "id": "ycsb-a",
-    "family": "ycsb",
-    "label": "a.spec.json",
+    "family": "YCSB",
+    "label": "A: Update heavy",
     "path": "/presets/ycsb/a.spec.json",
     "source": "example-specs/ycsb/a.spec.json",
     "description": "Balanced read and update workload with an initial insert phase."
   },
   {
     "id": "ycsb-b",
-    "family": "ycsb",
-    "label": "b.spec.json",
+    "family": "YCSB",
+    "label": "B: Read heavy",
     "path": "/presets/ycsb/b.spec.json",
     "source": "example-specs/ycsb/b.spec.json",
     "description": "Read-heavy workload with a small update slice."
   },
   {
     "id": "ycsb-c",
-    "family": "ycsb",
-    "label": "c.spec.json",
+    "family": "YCSB",
+    "label": "C: Read only",
     "path": "/presets/ycsb/c.spec.json",
     "source": "example-specs/ycsb/c.spec.json",
     "description": "Read-only YCSB workload after the initial insert phase."
   },
   {
     "id": "ycsb-d",
-    "family": "ycsb",
-    "label": "d.spec.json",
+    "family": "YCSB",
+    "label": "D: Read latest",
     "path": "/presets/ycsb/d.spec.json",
     "source": "example-specs/ycsb/d.spec.json",
     "description": "Read-latest YCSB workload with inserts and point queries."
   },
   {
     "id": "ycsb-e",
-    "family": "ycsb",
-    "label": "e.spec.json",
+    "family": "YCSB",
+    "label": "E: Short ranges",
     "path": "/presets/ycsb/e.spec.json",
     "source": "example-specs/ycsb/e.spec.json",
     "description": "Scan-heavy YCSB workload with inserts and range queries."
   },
   {
     "id": "ycsb-f",
-    "family": "ycsb",
-    "label": "f.spec.json",
+    "family": "YCSB",
+    "label": "F: Read-Modify-Writes",
     "path": "/presets/ycsb/f.spec.json",
     "source": "example-specs/ycsb/f.spec.json",
     "description": "Read-modify-write YCSB workload with point queries and merges."
+  },
+{
+    "id": "tec-1",
+    "family": "Tectonic",
+    "label": "1: Multi-phased dynamic",
+    "path": "/presets/tectonic/1.spec.json",
+    "source": "example-specs/tectonic/1.spec.json",
+    "description": "Three phases: 1) Zipfian inserts/deletes, 2) Uniform empty point queries, 3) 50/50 insert/range queries."
+  },
+  {
+    "id": "tec-2",
+    "family": "Tectonic",
+    "label": "2: Interleaved multi-distributional",
+    "path": "/presets/tectonic/2.spec.json",
+    "source": "example-specs/tectonic/2.spec.json",
+    "description": "Complex mix of inserts, point/range queries, and deletes using Zipfian, Normal, Uniform, and Pareto distributions."
+  },
+  {
+    "id": "tec-3",
+    "family": "Tectonic",
+    "label": "3: Near-sorted ingestion",
+    "path": "/presets/tectonic/3.spec.json",
+    "source": "example-specs/tectonic/3.spec.json",
+    "description": "100% insert workload designed to simulate nearly sorted data ingestion (K=1%, L=10%)."
+  },
+  {
+    "id": "tec-4",
+    "family": "Tectonic",
+    "label": "4: Slow phase transitioning",
+    "path": "/presets/tectonic/4.spec.json",
+    "source": "example-specs/tectonic/4.spec.json",
+    "description": "Gradual shift from insert-heavy to read-heavy across three phases with varying range query selectivity."
+  },
+  {
+    "id": "tec-5",
+    "family": "Tectonic",
+    "label": "5: Discrete phase transitioning",
+    "path": "/presets/tectonic/5.spec.json",
+    "source": "example-specs/tectonic/5.spec.json",
+    "description": "Sharp transition from a write-heavy (90% insert) phase to a read-heavy (70% point query) phase."
+  },
+  {
+    "id": "tec-6",
+    "family": "Tectonic",
+    "label": "6: Variable entry size",
+    "path": "/presets/tectonic/6.spec.json",
+    "source": "example-specs/tectonic/6.spec.json",
+    "description": "50/50 insert and point query mix where both keys and values vary significantly in size (32B–256B)."
+  },
+  {
+    "id": "tec-7",
+    "family": "Tectonic",
+    "label": "7: Skewed access",
+    "path": "/presets/tectonic/7.spec.json",
+    "source": "example-specs/tectonic/7.spec.json",
+    "description": "Workload with high temporal locality; 90% of queries target a 10% 'hot' keys."
+  },
+  {
+    "id": "dbbench-test-1",
+    "family": "db_bench",
+    "label": "Test 1: Bulk Load (Random Order)",
+    "path": "/presets/db_bench/1.spec.json",
+    "source": "/example-specs/db_bench/1.spec.json",
+    "description": "Loads 900M keys into an empty database in random order to measure raw ingestion performance."
+  },
+  {
+    "id": "dbbench-test-2",
+    "family": "db_bench",
+    "label": "Test 2: Random Read",
+    "path": "/presets/db_bench/2.spec.json",
+    "source": "/example-specs/db_bench/2.spec.json",
+    "description": "Measures performance of random point lookups on the 900M key dataset."
+  },
+  {
+    "id": "dbbench-test-3",
+    "family": "db_bench",
+    "label": "Test 3: Multi-Random Read",
+    "path": "/presets/db_bench/3.spec.json",
+    "source": "/example-specs/db_bench/3.spec.json",
+    "description": "Measures batched multi-get performance for existing keys."
+  },
+  {
+    "id": "dbbench-test-4",
+    "family": "db_bench",
+    "label": "Test 4: Range Scan (Forward)",
+    "path": "/presets/db_bench/4.spec.json",
+    "source": "/example-specs/db_bench/4.spec.json",
+    "description": "Randomly selects starting points and iterates forward over keys to measure scan performance."
+  },
+  {
+    "id": "dbbench-test-4b",
+    "family": "db_bench",
+    "label": "Test 4b: Reverse Range Scan",
+    "path": "/presets/db_bench/4b.spec.json",
+    "source": "/example-specs/db_bench/4b.spec.json",
+    "description": "Randomly selects starting points and iterates backwards through the key space."
+  },
+  {
+    "id": "dbbench-test-5",
+    "family": "db_bench",
+    "label": "Test 5: Overwrite",
+    "path": "/presets/db_bench/5.spec.json",
+    "source": "/example-specs/db_bench/5.spec.json",
+    "description": "Measures random overwrite performance on an existing database, triggering LSM-tree compactions."
   }
 ]
