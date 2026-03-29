@@ -350,7 +350,6 @@ bootstrap_prepare_cassandra_config() {
     text = replaceOrInsertScalar(text, "cdc_raw_directory", cdcDir);
     text = replaceOrInsertScalar(text, "listen_address", host);
     text = replaceOrInsertScalar(text, "rpc_address", host);
-    text = replaceOrInsertScalar(text, "native_transport_address", host);
     text = replaceOrInsertScalar(text, "native_transport_port", port);
     text = replaceOrInsertList(text, "data_file_directories", [dataDir]);
     fs.writeFileSync(configPath, text);

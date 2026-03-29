@@ -32,7 +32,6 @@ data_file_directories:
   assert.match(output, /^cdc_raw_directory: \/tmp\/cdc$/m);
   assert.match(output, /^listen_address: 127\.0\.0\.1$/m);
   assert.match(output, /^rpc_address: 127\.0\.0\.1$/m);
-  assert.match(output, /^native_transport_address: 127\.0\.0\.1$/m);
   assert.match(output, /^native_transport_port: 9042$/m);
   assert.match(output, /^data_file_directories:\n    - \/tmp\/data$/m);
 });
@@ -55,6 +54,5 @@ native_transport_port: 9042
   assert.match(output, /^hints_directory: \/tmp\/hints$/m);
   assert.match(output, /^cdc_raw_directory: \/tmp\/cdc$/m);
   assert.match(output, /^rpc_address: 127\.0\.0\.1$/m);
-  assert.match(output, /^native_transport_address: 127\.0\.0\.1$/m);
   assert.match(output, /^data_file_directories:\n    - \/tmp\/data$/m);
 });
