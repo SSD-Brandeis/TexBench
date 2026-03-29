@@ -18,6 +18,7 @@ HOST_PLATFORM="$BOOTSTRAP_PLATFORM"
 TECTONIC_CHECKOUT_READY=0
 SUCCESSFUL_PLATFORMS=()
 FAILED_PLATFORMS=()
+SKIPPED_PLATFORMS=()
 
 TMP_DIR="$(mktemp -d)"
 cleanup_tmp() {
@@ -77,6 +78,21 @@ resolve_cassandra_sys_lib_path() {
   fi
   default_value="$(bootstrap_default_cassandra_sys_lib_path "$platform")"
   printf '%s\n' "$default_value"
+}
+
+resolve_openssl_prefix() {
+  local platform brew_prefix
+  platform="$1"
+  case "$platform" in
+    darwin-*)
+      brew_prefix="$(bootstrap_brew_prefix openssl@3 || true)"
+      if [ -n "$brew_prefix" ] && [ -d "$brew_prefix/lib" ] && [ -d "$brew_prefix/include" ]; then
+        printf '%s\n' "$brew_prefix"
+        return
+      fi
+      ;;
+  esac
+  printf '\n'
 }
 
 ensure_rust_target_installed() {
@@ -197,6 +213,16 @@ package_should_skip_platform() {
   [ -f "$asset_path" ]
 }
 
+package_should_skip_for_host_constraints() {
+  local platform
+  platform="$1"
+  if [ "$HOST_PLATFORM" = "darwin-arm64" ] && [ "$platform" = "darwin-x64" ]; then
+    bootstrap_log "Skipping $platform on $HOST_PLATFORM because this host does not have x86_64 macOS native dependencies for Cassandra/OpenSSL."
+    return 0
+  fi
+  return 1
+}
+
 require_docker_buildx() {
   package_require_commands docker
   if package_is_dry_run; then
@@ -240,7 +266,7 @@ package_built_binary() {
 }
 
 build_host_platform() {
-  local platform rust_target asset_name asset_path built_bin cassandra_sys_lib_path
+  local platform rust_target asset_name asset_path built_bin cassandra_sys_lib_path openssl_prefix
   local target_env_key linker_var cc_var cxx_var ar_var cflags_var cxxflags_var
   local sdkroot apple_arch clang_bin clangxx_bin ar_bin
   platform="$1"
@@ -249,6 +275,7 @@ build_host_platform() {
   asset_name="$(bootstrap_tectonic_asset_name "$platform")"
   asset_path="$DIST_DIR/$asset_name"
   cassandra_sys_lib_path="$(resolve_cassandra_sys_lib_path "$platform")"
+  openssl_prefix="$(resolve_openssl_prefix "$platform")"
 
   package_require_commands cargo tar
   if [[ "$platform" == darwin-* ]]; then
@@ -261,6 +288,9 @@ build_host_platform() {
   if package_is_dry_run; then
     if [ -n "$cassandra_sys_lib_path" ]; then
       bootstrap_log "Would build with CASSANDRA_SYS_LIB_PATH=$cassandra_sys_lib_path"
+    fi
+    if [ -n "$openssl_prefix" ]; then
+      bootstrap_log "Would build with OPENSSL_DIR=$openssl_prefix"
     fi
     if [[ "$platform" == darwin-* ]]; then
       bootstrap_log "Would configure Apple SDK and target-specific clang flags for $platform"
@@ -276,6 +306,16 @@ build_host_platform() {
     if [ -n "$cassandra_sys_lib_path" ]; then
       export CASSANDRA_SYS_LIB_PATH="$cassandra_sys_lib_path"
       bootstrap_log "Using CASSANDRA_SYS_LIB_PATH=$CASSANDRA_SYS_LIB_PATH"
+    fi
+    if [ -n "$openssl_prefix" ]; then
+      export OPENSSL_DIR="$openssl_prefix"
+      export OPENSSL_ROOT_DIR="$openssl_prefix"
+      export OPENSSL_LIB_DIR="$openssl_prefix/lib"
+      export OPENSSL_INCLUDE_DIR="$openssl_prefix/include"
+      export PKG_CONFIG_PATH="$openssl_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+      export LDFLAGS="-L$openssl_prefix/lib${LDFLAGS:+ $LDFLAGS}"
+      export CPPFLAGS="-I$openssl_prefix/include${CPPFLAGS:+ $CPPFLAGS}"
+      bootstrap_log "Using OPENSSL_DIR=$OPENSSL_DIR"
     fi
     if [[ "$platform" == darwin-* ]]; then
       sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
@@ -296,8 +336,8 @@ build_host_platform() {
       export "$cc_var=$clang_bin"
       export "$cxx_var=$clangxx_bin"
       export "$ar_var=$ar_bin"
-      export "$cflags_var=-arch $apple_arch -isysroot $sdkroot"
-      export "$cxxflags_var=-arch $apple_arch -isysroot $sdkroot"
+      export "$cflags_var=-arch $apple_arch -isysroot $sdkroot${CPPFLAGS:+ $CPPFLAGS}"
+      export "$cxxflags_var=-arch $apple_arch -isysroot $sdkroot${CPPFLAGS:+ $CPPFLAGS}"
     fi
     cargo "+$BOOTSTRAP_TECTONIC_RUST_TOOLCHAIN" build --release --target "$rust_target" --all-features
   ); then
@@ -398,7 +438,11 @@ for platform in $PACKAGE_PLATFORMS; do
   [ -n "$platform" ] || continue
   if package_should_skip_platform "$platform"; then
     bootstrap_log "Skipping $platform because $(package_asset_path_for_platform "$platform") already exists"
-    SUCCESSFUL_PLATFORMS+=("$platform")
+    SKIPPED_PLATFORMS+=("$platform")
+    continue
+  fi
+  if package_should_skip_for_host_constraints "$platform"; then
+    SKIPPED_PLATFORMS+=("$platform")
     continue
   fi
   strategy="$(bootstrap_package_strategy "$platform" "$HOST_PLATFORM")"
@@ -420,6 +464,9 @@ IFS="$OLD_IFS"
 
 if [ "${#SUCCESSFUL_PLATFORMS[@]}" -gt 0 ]; then
   bootstrap_log "Packaged platforms: ${SUCCESSFUL_PLATFORMS[*]}"
+fi
+if [ "${#SKIPPED_PLATFORMS[@]}" -gt 0 ]; then
+  bootstrap_log "Skipped platforms: ${SKIPPED_PLATFORMS[*]}"
 fi
 if [ "${#FAILED_PLATFORMS[@]}" -gt 0 ]; then
   bootstrap_fail "Failed platforms: ${FAILED_PLATFORMS[*]}"

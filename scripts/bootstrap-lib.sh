@@ -310,6 +310,15 @@ bootstrap_brew_prefix() {
   "$brew_bin" --prefix "$formula" 2>/dev/null
 }
 
+bootstrap_brew_home_prefix() {
+  local brew_bin
+  brew_bin="$(bootstrap_existing_brew_bin || true)"
+  if [ -z "$brew_bin" ]; then
+    return 1
+  fi
+  "$brew_bin" --prefix 2>/dev/null
+}
+
 bootstrap_tectonic_asset_name() {
   local platform
   platform="${1:-$BOOTSTRAP_PLATFORM}"
@@ -391,13 +400,18 @@ bootstrap_existing_cqlsh_bin() {
 }
 
 bootstrap_default_cassandra_sys_lib_path() {
-  local platform brew_prefix
+  local platform brew_home_prefix brew_formula_prefix
   platform="${1:-$BOOTSTRAP_PLATFORM}"
   case "$platform" in
     darwin-arm64|darwin-x64)
-      brew_prefix="$(bootstrap_brew_prefix cassandra-cpp-driver || true)"
-      if [ -n "$brew_prefix" ] && [ -d "$brew_prefix/lib" ]; then
-        printf '%s/lib\n' "$brew_prefix"
+      brew_home_prefix="$(bootstrap_brew_home_prefix || true)"
+      if [ -n "$brew_home_prefix" ] && [ -d "$brew_home_prefix/lib" ]; then
+        printf '%s/lib\n' "$brew_home_prefix"
+        return
+      fi
+      brew_formula_prefix="$(bootstrap_brew_prefix cassandra-cpp-driver || true)"
+      if [ -n "$brew_formula_prefix" ] && [ -d "$brew_formula_prefix/lib" ]; then
+        printf '%s/lib\n' "$brew_formula_prefix"
         return
       fi
       case "$platform" in

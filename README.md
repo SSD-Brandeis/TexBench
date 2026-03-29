@@ -34,7 +34,6 @@ Use `Ctrl+C` to stop the app. If `make` started Cassandra or Ollama for this ses
 The bootstrap path currently targets:
 
 - macOS `arm64`
-- macOS `x86_64`
 - Linux `x86_64`
 - Linux `arm64`
 
@@ -148,10 +147,10 @@ To attempt the full platform matrix from macOS:
 make package-tectonic-all
 ```
 
-That target runs [scripts/package-tectonic-cli.sh](scripts/package-tectonic-cli.sh), which builds `tectonic-cli` with all currently available features enabled:
+That target runs [scripts/package-tectonic-cli.sh](scripts/package-tectonic-cli.sh), which builds the Tectonic workspace with all currently available features enabled and then packages the resulting `tectonic-cli` binary:
 
 ```bash
-cargo build --release -p tectonic-cli --all-features
+cargo build --release --all-features
 ```
 
 The managed Tectonic branch currently requires nightly Rust, so the packaging flow installs and uses the pinned `BOOTSTRAP_TECTONIC_RUST_TOOLCHAIN` value (default: `nightly`) for both host and Docker builds.
@@ -167,6 +166,7 @@ Packaging strategy:
 
 - macOS targets build on the macOS host with target-specific SDK/linker flags.
 - On macOS, the packaging script prefers `brew --prefix cassandra-cpp-driver` for `CASSANDRA_SYS_LIB_PATH` when that formula is installed.
+- On Apple Silicon macOS hosts, `darwin-x64` is skipped by default because the required x86_64 Cassandra/OpenSSL native dependencies are typically not present. `make package-tectonic-all` therefore produces `darwin-arm64`, `linux-arm64`, and `linux-x64` on those hosts unless you build the Intel macOS artifact on an actual Intel Mac.
 - Linux targets build in Docker buildx using [docker/tectonic-cli-linux-builder.Dockerfile](docker/tectonic-cli-linux-builder.Dockerfile), which installs the native RocksDB and Cassandra driver prerequisites inside the builder image.
 - The Linux builder defaults to conservative parallelism (`CPP_BUILD_JOBS=2`, `CARGO_BUILD_JOBS=2`) to avoid memory-pressure failures during the Cassandra driver compile. Override with `BOOTSTRAP_TECTONIC_DOCKER_CPP_JOBS` and `BOOTSTRAP_TECTONIC_DOCKER_CARGO_JOBS` if your machine can handle more.
 - `make package-tectonic-all` therefore expects Docker buildx to be available when run on macOS.
