@@ -49,7 +49,9 @@ RUN rustup toolchain install "${RUST_TOOLCHAIN}"
 RUN rustup target add --toolchain "${RUST_TOOLCHAIN}" "${TARGET_TRIPLE}"
 RUN cargo +"${RUST_TOOLCHAIN}" build --jobs "${CARGO_BUILD_JOBS}" --release --target "${TARGET_TRIPLE}" --all-features
 
-RUN install -D "target/${TARGET_TRIPLE}/release/tectonic-cli" /out/tectonic-cli
+RUN install -D "target/${TARGET_TRIPLE}/release/tectonic-cli" /out/tectonic-cli \
+  && mkdir -p /out/lib \
+  && cp -P /usr/local/lib/libcassandra.so* /out/lib/
 
 FROM scratch AS export
 COPY --from=builder /out/tectonic-cli /tectonic-cli

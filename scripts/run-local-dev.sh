@@ -9,6 +9,7 @@ BOOTSTRAP_DOWNLOADED_NPM_BIN="$(bootstrap_npm_bin)"
 BOOTSTRAP_DOWNLOADED_JAVA_HOME="$(bootstrap_java_home)"
 BOOTSTRAP_DOWNLOADED_JAVA_BIN="$(bootstrap_java_bin)"
 BOOTSTRAP_DOWNLOADED_TECTONIC_BIN="$(bootstrap_tectonic_bin)"
+BOOTSTRAP_DOWNLOADED_TECTONIC_LIB_DIR="$(bootstrap_tectonic_home)/lib"
 BOOTSTRAP_DOWNLOADED_CASSANDRA_HOME="$(bootstrap_cassandra_home)"
 BOOTSTRAP_DOWNLOADED_CASSANDRA_BIN="$(bootstrap_cassandra_bin)"
 BOOTSTRAP_DOWNLOADED_CQLSH_BIN="$(bootstrap_cqlsh_bin)"
@@ -25,6 +26,7 @@ BOOTSTRAP_JAVA_BIN=""
 BOOTSTRAP_JAVA_HOME=""
 BOOTSTRAP_TECTONIC_BIN=""
 BOOTSTRAP_TECTONIC_SOURCE=""
+BOOTSTRAP_TECTONIC_LIBRARY_PATH=""
 BOOTSTRAP_OLLAMA_BIN=""
 BOOTSTRAP_CASSANDRA_BIN=""
 BOOTSTRAP_CQLSH_BIN=""
@@ -181,12 +183,16 @@ bootstrap_select_tectonic_cli() {
   if [ -n "$explicit_bin" ]; then
     BOOTSTRAP_TECTONIC_BIN="$explicit_bin"
     BOOTSTRAP_TECTONIC_SOURCE="explicit"
+    BOOTSTRAP_TECTONIC_LIBRARY_PATH=""
     bootstrap_log "Using explicitly configured tectonic-cli at $BOOTSTRAP_TECTONIC_BIN"
     return
   fi
   if [ -x "$BOOTSTRAP_DOWNLOADED_TECTONIC_BIN" ]; then
     BOOTSTRAP_TECTONIC_BIN="$BOOTSTRAP_DOWNLOADED_TECTONIC_BIN"
     BOOTSTRAP_TECTONIC_SOURCE="repo-local"
+    if [ -d "$BOOTSTRAP_DOWNLOADED_TECTONIC_LIB_DIR" ]; then
+      BOOTSTRAP_TECTONIC_LIBRARY_PATH="$BOOTSTRAP_DOWNLOADED_TECTONIC_LIB_DIR"
+    fi
     bootstrap_log "Using repo-local tectonic-cli at $BOOTSTRAP_TECTONIC_BIN"
     return
   fi
@@ -194,12 +200,16 @@ bootstrap_select_tectonic_cli() {
   if [ -n "$path_bin" ]; then
     BOOTSTRAP_TECTONIC_BIN="$path_bin"
     BOOTSTRAP_TECTONIC_SOURCE="path"
+    BOOTSTRAP_TECTONIC_LIBRARY_PATH=""
     bootstrap_log "Using existing PATH tectonic-cli at $BOOTSTRAP_TECTONIC_BIN"
     return
   fi
   bootstrap_install_tectonic_cli
   BOOTSTRAP_TECTONIC_BIN="$BOOTSTRAP_DOWNLOADED_TECTONIC_BIN"
   BOOTSTRAP_TECTONIC_SOURCE="repo-local"
+  if [ -d "$BOOTSTRAP_DOWNLOADED_TECTONIC_LIB_DIR" ]; then
+    BOOTSTRAP_TECTONIC_LIBRARY_PATH="$BOOTSTRAP_DOWNLOADED_TECTONIC_LIB_DIR"
+  fi
 }
 
 bootstrap_install_ollama_if_missing() {
@@ -483,6 +493,7 @@ main() {
 
   bootstrap_log "Starting app on 0.0.0.0:8787"
   PATH="$(bootstrap_java_bin_dir):$(dirname "$BOOTSTRAP_NODE_BIN"):$PATH" \
+    LD_LIBRARY_PATH="${BOOTSTRAP_TECTONIC_LIBRARY_PATH:+$BOOTSTRAP_TECTONIC_LIBRARY_PATH}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
     JAVA_HOME="${BOOTSTRAP_JAVA_HOME:-}" \
     AI_PROVIDER=ollama \
     OLLAMA_MODEL="$BOOTSTRAP_OLLAMA_MODEL" \

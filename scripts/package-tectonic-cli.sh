@@ -252,17 +252,26 @@ prepare_linux_build_context() {
 }
 
 package_built_binary() {
-  local built_bin asset_path
+  local built_bin asset_path runtime_lib_glob runtime_lib_dir
   built_bin="$1"
   asset_path="$2"
+  runtime_lib_glob="${3:-}"
   if package_is_dry_run; then
     bootstrap_log "Would package $built_bin into $asset_path"
     return 0
   fi
-  rm -f "$TMP_DIR/tectonic-cli"
+  rm -rf "$TMP_DIR/package-root"
+  mkdir -p "$TMP_DIR/package-root"
   cp "$built_bin" "$TMP_DIR/tectonic-cli"
   chmod +x "$TMP_DIR/tectonic-cli"
-  tar -czf "$asset_path" -C "$TMP_DIR" tectonic-cli
+  mv "$TMP_DIR/tectonic-cli" "$TMP_DIR/package-root/tectonic-cli"
+  if [ -n "$runtime_lib_glob" ]; then
+    runtime_lib_dir="$TMP_DIR/package-root/lib"
+    mkdir -p "$runtime_lib_dir"
+    # shellcheck disable=SC2086
+    cp -P $runtime_lib_glob "$runtime_lib_dir/" 2>/dev/null || true
+  fi
+  tar -czf "$asset_path" -C "$TMP_DIR/package-root" .
 }
 
 build_host_platform() {
@@ -387,7 +396,7 @@ build_linux_platform_in_docker() {
       --build-arg "CARGO_BUILD_JOBS=$BOOTSTRAP_TECTONIC_DOCKER_CARGO_JOBS" \
       --output "type=local,dest=$out_dir" \
       "$context_dir"
-    package_built_binary "$out_dir/tectonic-cli" "$asset_path"
+    package_built_binary "$out_dir/tectonic-cli" "$asset_path" "$out_dir/lib/libcassandra.so*"
     SUCCESSFUL_PLATFORMS+=("$platform")
     return 0
   fi
@@ -410,7 +419,7 @@ build_linux_platform_in_docker() {
       FAILED_PLATFORMS+=("$platform")
       return 1
     fi
-    package_built_binary "$built_bin" "$asset_path"
+    package_built_binary "$built_bin" "$asset_path" "$out_dir/lib/libcassandra.so*"
     bootstrap_log "Created $asset_path"
     SUCCESSFUL_PLATFORMS+=("$platform")
     return 0
