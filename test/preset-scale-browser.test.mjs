@@ -293,3 +293,52 @@ test("scratch route hides the preset option after a workload is established", as
   assert.equal(ctx.refs.builderScratchAssistantSlot.children[0], ctx.refs.assistantPanel);
   assert.equal(ctx.refs.headerIntro.hidden, true);
 });
+
+test("preset scale accepts fractional values and scales op counts down", async () => {
+  globalThis.document = {
+    createElement(tagName) {
+      return new FakeElement(tagName);
+    },
+  };
+
+  await import("../public/preset-flow.js");
+
+  const ctx = createTestContext();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ctx.fakeFetch;
+  let loadedJson = null;
+
+  try {
+    const controller = globalThis.TectonicPresetFlow.createController({
+      refs: ctx.refs,
+      state: ctx.state,
+      cloneJsonValue(value) {
+        return JSON.parse(JSON.stringify(value));
+      },
+      ensureWorkloadStructureState() {},
+      loadActiveStructureIntoForm() {},
+      loadPresetIntoBuilder(value) {
+        loadedJson = value;
+      },
+      updateJsonFromForm() {},
+      clearWorkloadRuns() {},
+      setValidationStatus() {},
+    });
+
+    await controller.loadPresetCatalog();
+    ctx.refs.presetFamilySelect.value = "scale";
+    controller.handlePresetFamilyChange({ target: { value: "scale" } });
+    ctx.refs.presetScaleInput.value = "0.01";
+    ctx.refs.presetFileSelect.value = "scale-001m";
+
+    await controller.handlePresetFileChange({ target: { value: "scale-001m" } });
+
+    assert.equal(ctx.refs.presetScaleInput.validationMessage, "");
+    assert.equal(
+      loadedJson.sections[0].groups[0].inserts.op_count,
+      10,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

@@ -4730,11 +4730,14 @@ function renderJsonSummary(json) {
     return;
   }
   const model = buildWorkloadSummaryModel(json);
+  const presetScaleRaw = String(
+    (presetScaleInput && presetScaleInput.value) || "",
+  ).trim();
   const workloadScale =
     getActivePresetJsonState() &&
     presetScaleInput &&
-    /^[1-9]\d*$/.test(String(presetScaleInput.value || "").trim())
-      ? Number.parseInt(String(presetScaleInput.value).trim(), 10)
+    /^(?:\d+(?:\.\d+)?|\.\d+)$/.test(presetScaleRaw)
+      ? Number.parseFloat(presetScaleRaw)
       : null;
   jsonSummary.replaceChildren();
 
@@ -4752,7 +4755,7 @@ function renderJsonSummary(json) {
   overview.textContent = model.overview;
   jsonSummary.appendChild(overview);
 
-  if (Number.isSafeInteger(workloadScale) && workloadScale > 0) {
+  if (Number.isFinite(workloadScale) && workloadScale > 0) {
     const scaleSection = document.createElement("section");
     scaleSection.className = "json-summary-section";
 

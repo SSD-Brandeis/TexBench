@@ -79,7 +79,7 @@
         : "/presets/index.json";
 
     let presetCatalog = [];
-    const SCALE_ERROR_MESSAGE = "Scale must be a positive integer.";
+    const SCALE_ERROR_MESSAGE = "Scale must be a positive number.";
 
     function syncPresetScaleInputState() {
       if (!refs.presetScaleInput) {
@@ -96,23 +96,23 @@
       refs.presetScaleInput.disabled = !(hasFamily && hasFile);
     }
 
-    function parsePositiveInteger(rawValue) {
+    function parsePositiveScale(rawValue) {
       const text =
         typeof rawValue === "string" || typeof rawValue === "number"
           ? String(rawValue).trim()
           : "";
-      if (!/^[1-9]\d*$/.test(text)) {
+      if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(text)) {
         return null;
       }
-      const parsed = Number.parseInt(text, 10);
-      return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+      const parsed = Number.parseFloat(text);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
     }
 
     function getPresetScaleValue() {
       if (!refs.presetScaleInput) {
         return 1;
       }
-      return parsePositiveInteger(refs.presetScaleInput.value);
+      return parsePositiveScale(refs.presetScaleInput.value);
     }
 
     function normalizePresetScaleInput() {
@@ -143,7 +143,9 @@
       Object.keys(value).forEach(function scaleObjectEntry(key) {
         const entry = value[key];
         if (key === "op_count" && typeof entry === "number" && Number.isFinite(entry)) {
-          value[key] = Math.trunc(entry * scale);
+          const scaledValue = entry * scale;
+          value[key] =
+            scaledValue > 0 ? Math.max(1, Math.round(scaledValue)) : 0;
           return;
         }
         scalePresetOperationCounts(entry, scale);
@@ -186,7 +188,7 @@
       refs.presetSelectionNote.appendChild(description);
 
       const scale = getPresetScaleValue();
-      if (scale && scale > 1) {
+      if (scale && scale !== 1) {
         const scaleNote = document.createElement("div");
         scaleNote.className = "preset-note-description";
         scaleNote.textContent = "Workload scale applied: x" + String(scale);
