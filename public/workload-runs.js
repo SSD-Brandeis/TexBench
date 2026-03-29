@@ -9,6 +9,7 @@
   const START_ENDPOINT = "/api/workloads/runs";
   const POLL_INTERVAL_MS = 2500;
   const WORKLOAD_RUNS_STORAGE_KEY = "tectonic.workloadRuns.v2";
+  const SECONDS_DISPLAY_THRESHOLD_MICROS = 10000;
 
   function defaultNoop() {}
 
@@ -285,6 +286,16 @@
     });
   }
 
+  function formatDurationMicrosForMetric(micros) {
+    if (!Number.isFinite(micros)) {
+      return "—";
+    }
+    if (Math.abs(micros) >= SECONDS_DISPLAY_THRESHOLD_MICROS) {
+      return formatNumericString(micros / 1000000, 2) + " s";
+    }
+    return formatNumericString(micros, 2) + " µs";
+  }
+
   function formatMetricValue(metric) {
     const label = String(metric && metric.label ? metric.label : "").trim();
     const rawValue = String(metric && metric.value ? metric.value : "").trim();
@@ -298,7 +309,7 @@
 
     if (rawValue.endsWith("us")) {
       const numberPart = rawValue.slice(0, -2).trim();
-      return formatNumericString(numberPart, 2) + " µs";
+      return formatDurationMicrosForMetric(Number.parseFloat(numberPart));
     }
 
     if (rawValue.endsWith("ms")) {
@@ -307,7 +318,7 @@
       if (!Number.isFinite(parsed)) {
         return rawValue;
       }
-      return formatNumericString(parsed * 1000, 2) + " µs";
+      return formatDurationMicrosForMetric(parsed * 1000);
     }
 
     if (/secs?$/i.test(rawValue)) {
