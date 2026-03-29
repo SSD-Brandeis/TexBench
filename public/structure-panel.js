@@ -5,12 +5,31 @@
       .trim();
   }
 
+  function isConfiguredOperationSpec(spec) {
+    if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+      return false;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(spec, "enabled") &&
+      spec.enabled === false
+    ) {
+      return false;
+    }
+    if (Object.prototype.hasOwnProperty.call(spec, "op_count")) {
+      const count = Number(spec.op_count);
+      return Number.isFinite(count) && count > 0;
+    }
+    return true;
+  }
+
   function describeGroupOperations(group) {
     if (!group || typeof group !== "object") {
       return "empty";
     }
     const operationNames = Object.keys(group)
-      .filter((name) => name !== "sorted")
+      .filter(
+        (name) => name !== "sorted" && isConfiguredOperationSpec(group[name]),
+      )
       .map(humanizeOperationName)
       .filter(Boolean);
     if (group.sorted && typeof group.sorted === "object") {

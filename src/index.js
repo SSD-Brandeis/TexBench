@@ -165,7 +165,7 @@ const STRING_PATTERN_DEFAULTS = {
   val_hot_probability: 0.8,
 };
 const STRUCTURED_WORKLOAD_PATTERN =
-  /\b(?:single[- ]shot|one[- ]phase|two[- ]phase|three[- ]phase|preload|interleave|interleaved|phase\s+[123]|(?:first|second|third|next|later)\s+phase|write[- ]heavy|write[- ]only|followed\s+by)\b/i;
+  /\b(?:single[- ]shot|one[- ]phase|two[- ]phase|three[- ]phase|preload|interleave|interleaved|phase\s+[123]|(?:first|second|third|next|later|new|another)\s+phase|write[- ]heavy|write[- ]only|followed\s+by)\b/i;
 const RANGE_QUERY_SELECTIVITY_PROFILES = {
   short: 0.001,
   long: 0.1,
@@ -1996,7 +1996,10 @@ function ensureProgramStructuralSections(rawPatch, formState, schemaHints) {
   if (Array.isArray(rawPatch.sections)) {
     return rawPatch.sections;
   }
+  const hasExistingStructuredSections =
+    Array.isArray(formState?.sections) && formState.sections.length > 0;
   const hasExistingOperations =
+    hasExistingStructuredSections ||
     getEnabledOperationNames(formState || { operations: {} }, schemaHints)
       .length > 0;
   const clonedSections =

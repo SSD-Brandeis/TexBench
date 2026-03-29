@@ -1322,9 +1322,26 @@ function countConfiguredGroupOperations(group) {
   if (!group || typeof group !== "object") {
     return 0;
   }
-  return operationOrder.filter((op) =>
-    Object.prototype.hasOwnProperty.call(group, op),
-  ).length;
+  return operationOrder.filter((op) => {
+    if (!Object.prototype.hasOwnProperty.call(group, op)) {
+      return false;
+    }
+    const spec = group[op];
+    if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+      return false;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(spec, "enabled") &&
+      spec.enabled === false
+    ) {
+      return false;
+    }
+    if (Object.prototype.hasOwnProperty.call(spec, "op_count")) {
+      const count = Number(spec.op_count);
+      return Number.isFinite(count) && count > 0;
+    }
+    return true;
+  }).length;
 }
 
 function hasConfiguredWorkloadStructure() {
@@ -4167,6 +4184,12 @@ function extractConfiguredOperations(group) {
         spec.enabled === false
       ) {
         return false;
+      }
+      if (Object.prototype.hasOwnProperty.call(spec, "op_count")) {
+        const count = Number(spec.op_count);
+        if (!Number.isFinite(count) || count <= 0) {
+          return false;
+        }
       }
       return true;
     })
