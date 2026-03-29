@@ -134,13 +134,15 @@ tectonic-cli-v<version>-linux-arm64.tar.gz
 tectonic-cli-v<version>-linux-x64.tar.gz
 ```
 
-To package the current platform locally from a sibling `../Tectonic` checkout:
+To package the current platform locally:
 
 ```bash
 make package-tectonic
 ```
 
-To attempt the full platform matrix:
+If `TECTONIC_SOURCE_DIR` is not set, the packaging script clones a managed Tectonic checkout into `.bootstrap/src/Tectonic`, fetches [SSD-Brandeis/Tectonic](https://github.com/SSD-Brandeis/Tectonic), and switches it to branch `no-marker-array`.
+
+To attempt the full platform matrix from macOS:
 
 ```bash
 make package-tectonic-all
@@ -152,12 +154,23 @@ That target runs [scripts/package-tectonic-cli.sh](scripts/package-tectonic-cli.
 cargo build --release -p tectonic-cli --all-features
 ```
 
+The managed Tectonic branch currently requires nightly Rust, so the packaging flow installs and uses the pinned `BOOTSTRAP_TECTONIC_RUST_TOOLCHAIN` value (default: `nightly`) for both host and Docker builds.
+
 For multi-platform packaging, the script maps the repo bootstrap platforms to Rust targets:
 
 - `darwin-arm64` -> `aarch64-apple-darwin`
 - `darwin-x64` -> `x86_64-apple-darwin`
 - `linux-arm64` -> `aarch64-unknown-linux-gnu`
 - `linux-x64` -> `x86_64-unknown-linux-gnu`
+
+Packaging strategy:
+
+- macOS targets build on the macOS host with target-specific SDK/linker flags.
+- On macOS, the packaging script prefers `brew --prefix cassandra-cpp-driver` for `CASSANDRA_SYS_LIB_PATH` when that formula is installed.
+- Linux targets build in Docker buildx using [docker/tectonic-cli-linux-builder.Dockerfile](docker/tectonic-cli-linux-builder.Dockerfile), which installs the native RocksDB and Cassandra driver prerequisites inside the builder image.
+- The Linux builder defaults to conservative parallelism (`CPP_BUILD_JOBS=2`, `CARGO_BUILD_JOBS=2`) to avoid memory-pressure failures during the Cassandra driver compile. Override with `BOOTSTRAP_TECTONIC_DOCKER_CPP_JOBS` and `BOOTSTRAP_TECTONIC_DOCKER_CARGO_JOBS` if your machine can handle more.
+- `make package-tectonic-all` therefore expects Docker buildx to be available when run on macOS.
+- If a packaged target already exists in `dist/`, the script skips rebuilding it. Set `PACKAGE_FORCE=1` to rebuild anyway.
 
 You can override the platform list with:
 

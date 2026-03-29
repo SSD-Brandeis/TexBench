@@ -20,6 +20,14 @@ BOOTSTRAP_OLLAMA_MODEL_DIGEST="${BOOTSTRAP_OLLAMA_MODEL_DIGEST:-365c0bd3c000}"
 BOOTSTRAP_TECTONIC_CLI_VERSION="${BOOTSTRAP_TECTONIC_CLI_VERSION:-0.1.0}"
 BOOTSTRAP_TECTONIC_CLI_REPOSITORY="${BOOTSTRAP_TECTONIC_CLI_REPOSITORY:-SSD-Brandeis/tectonic-json}"
 BOOTSTRAP_TECTONIC_CLI_RELEASE_TAG="${BOOTSTRAP_TECTONIC_CLI_RELEASE_TAG:-tectonic-cli-v$BOOTSTRAP_TECTONIC_CLI_VERSION}"
+BOOTSTRAP_TECTONIC_REPOSITORY_URL="${BOOTSTRAP_TECTONIC_REPOSITORY_URL:-https://github.com/SSD-Brandeis/Tectonic.git}"
+BOOTSTRAP_TECTONIC_BRANCH="${BOOTSTRAP_TECTONIC_BRANCH:-no-marker-array}"
+BOOTSTRAP_TECTONIC_MANAGED_DIR="${BOOTSTRAP_TECTONIC_MANAGED_DIR:-$BOOTSTRAP_ROOT/src/Tectonic}"
+BOOTSTRAP_TECTONIC_RUST_TOOLCHAIN="${BOOTSTRAP_TECTONIC_RUST_TOOLCHAIN:-nightly}"
+BOOTSTRAP_TECTONIC_DOCKER_RUST_IMAGE="${BOOTSTRAP_TECTONIC_DOCKER_RUST_IMAGE:-rust:bookworm}"
+BOOTSTRAP_CASSANDRA_CPP_DRIVER_REF="${BOOTSTRAP_CASSANDRA_CPP_DRIVER_REF:-2.17.1}"
+BOOTSTRAP_TECTONIC_DOCKER_CPP_JOBS="${BOOTSTRAP_TECTONIC_DOCKER_CPP_JOBS:-2}"
+BOOTSTRAP_TECTONIC_DOCKER_CARGO_JOBS="${BOOTSTRAP_TECTONIC_DOCKER_CARGO_JOBS:-2}"
 BOOTSTRAP_CASSANDRA_VERSION="${BOOTSTRAP_CASSANDRA_VERSION:-5.0.7}"
 BOOTSTRAP_CASSANDRA_HOST="${BOOTSTRAP_CASSANDRA_HOST:-127.0.0.1}"
 BOOTSTRAP_CASSANDRA_PORT="${BOOTSTRAP_CASSANDRA_PORT:-9042}"
@@ -123,6 +131,48 @@ bootstrap_rust_target() {
 
 bootstrap_platform_env_key() {
   printf '%s\n' "${1:-$BOOTSTRAP_PLATFORM}" | tr '[:lower:]-' '[:upper:]_'
+}
+
+bootstrap_apple_arch() {
+  case "${1:-$BOOTSTRAP_PLATFORM}" in
+    darwin-arm64) printf 'arm64\n' ;;
+    darwin-x64) printf 'x86_64\n' ;;
+    *) bootstrap_fail "Unsupported Apple target platform: ${1:-$BOOTSTRAP_PLATFORM}" ;;
+  esac
+}
+
+bootstrap_package_strategy() {
+  local platform host_platform
+  platform="${1:-$BOOTSTRAP_PLATFORM}"
+  host_platform="${2:-$BOOTSTRAP_PLATFORM}"
+  case "$platform" in
+    darwin-*)
+      case "$host_platform" in
+        darwin-*) printf 'host\n' ;;
+        *)
+          bootstrap_fail "Packaging $platform requires a macOS host; current host platform is $host_platform"
+          ;;
+      esac
+      ;;
+    linux-*)
+      case "$host_platform" in
+        darwin-*) printf 'docker-linux\n' ;;
+        linux-*) printf 'host\n' ;;
+        *) bootstrap_fail "Unsupported host platform for packaging: $host_platform" ;;
+      esac
+      ;;
+    *)
+      bootstrap_fail "Unsupported package platform: $platform"
+      ;;
+  esac
+}
+
+bootstrap_docker_platform() {
+  case "${1:-$BOOTSTRAP_PLATFORM}" in
+    linux-x64) printf 'linux/amd64\n' ;;
+    linux-arm64) printf 'linux/arm64\n' ;;
+    *) bootstrap_fail "Unsupported Docker package platform: ${1:-$BOOTSTRAP_PLATFORM}" ;;
+  esac
 }
 
 bootstrap_node_archive_name() {
@@ -246,6 +296,20 @@ bootstrap_existing_java_bin() {
   printf '%s\n' "$java_bin"
 }
 
+bootstrap_existing_brew_bin() {
+  bootstrap_resolve_command brew
+}
+
+bootstrap_brew_prefix() {
+  local formula brew_bin
+  formula="$1"
+  brew_bin="$(bootstrap_existing_brew_bin || true)"
+  if [ -z "$brew_bin" ]; then
+    return 1
+  fi
+  "$brew_bin" --prefix "$formula" 2>/dev/null
+}
+
 bootstrap_tectonic_asset_name() {
   local platform
   platform="${1:-$BOOTSTRAP_PLATFORM}"
@@ -327,9 +391,20 @@ bootstrap_existing_cqlsh_bin() {
 }
 
 bootstrap_default_cassandra_sys_lib_path() {
-  case "${1:-$BOOTSTRAP_PLATFORM}" in
-    darwin-arm64) printf '/opt/homebrew/lib\n' ;;
-    darwin-x64) printf '/usr/local/lib\n' ;;
+  local platform brew_prefix
+  platform="${1:-$BOOTSTRAP_PLATFORM}"
+  case "$platform" in
+    darwin-arm64|darwin-x64)
+      brew_prefix="$(bootstrap_brew_prefix cassandra-cpp-driver || true)"
+      if [ -n "$brew_prefix" ] && [ -d "$brew_prefix/lib" ]; then
+        printf '%s/lib\n' "$brew_prefix"
+        return
+      fi
+      case "$platform" in
+        darwin-arm64) printf '/opt/homebrew/lib\n' ;;
+        darwin-x64) printf '/usr/local/lib\n' ;;
+      esac
+      ;;
     linux-*) printf '\n' ;;
     *) printf '\n' ;;
   esac

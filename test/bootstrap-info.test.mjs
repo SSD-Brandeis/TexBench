@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -66,17 +68,89 @@ test("bootstrap info resolves Rust target for darwin arm64", () => {
 
 test("bootstrap info resolves Rust target for linux x64", () => {
   const result = runInfo("rust-target", {
-    BOOTSTRAP_UNAME_S: "Linux",
-    BOOTSTRAP_UNAME_M: "x86_64",
+    BOOTSTRAP_TARGET_PLATFORM: "linux-x64",
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), "x86_64-unknown-linux-gnu");
+});
+
+test("bootstrap info resolves docker packaging strategy for Linux on macOS hosts", () => {
+  const result = runInfo("package-strategy", {
+    BOOTSTRAP_HOST_PLATFORM: "darwin-arm64",
+    BOOTSTRAP_TARGET_PLATFORM: "linux-arm64",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "docker-linux");
+});
+
+test("bootstrap info resolves Docker platform for linux x64 packaging", () => {
+  const result = runInfo("docker-platform", {
+    BOOTSTRAP_TARGET_PLATFORM: "linux-x64",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "linux/amd64");
+});
+
+test("bootstrap info exposes the managed Tectonic checkout branch", () => {
+  const result = runInfo("tectonic-branch");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "no-marker-array");
+});
+
+test("bootstrap info exposes the Tectonic Rust toolchain pin", () => {
+  const result = runInfo("tectonic-rust-toolchain");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "nightly");
+});
+
+test("bootstrap info exposes the managed Tectonic repository url", () => {
+  const result = runInfo("tectonic-repository-url");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "https://github.com/SSD-Brandeis/Tectonic.git");
+});
+
+test("bootstrap info exposes the pinned Cassandra C++ driver ref", () => {
+  const result = runInfo("cassandra-cpp-driver-ref");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "2.17.1");
+});
+
+test("bootstrap info exposes conservative Docker build parallelism defaults", () => {
+  const cppJobs = runInfo("tectonic-docker-cpp-jobs");
+  assert.equal(cppJobs.status, 0, cppJobs.stderr);
+  assert.equal(cppJobs.stdout.trim(), "2");
+
+  const cargoJobs = runInfo("tectonic-docker-cargo-jobs");
+  assert.equal(cargoJobs.status, 0, cargoJobs.stderr);
+  assert.equal(cargoJobs.stdout.trim(), "2");
+});
+
+test("bootstrap info prefers Homebrew cassandra-cpp-driver lib path on macOS", () => {
+  const binDir = mkdtempSync(path.join(os.tmpdir(), "bootstrap-info-brew-bin-"));
+  try {
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(
+    path.join(binDir, "brew"),
+    "#!/usr/bin/env bash\nif [ \"$1\" = \"--prefix\" ] && [ \"$2\" = \"cassandra-cpp-driver\" ]; then\n  echo /opt/homebrew/opt/cassandra-cpp-driver\n  exit 0\nfi\nexit 1\n",
+    { mode: 0o755 },
+  );
+    const result = runInfo("cassandra-sys-lib-path", {
+      BOOTSTRAP_UNAME_S: "Darwin",
+      BOOTSTRAP_UNAME_M: "arm64",
+      PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "/opt/homebrew/opt/cassandra-cpp-driver/lib");
+  } finally {
+    rmSync(binDir, { recursive: true, force: true });
+  }
 });
 
 test("bootstrap info exposes default Cassandra library path for apple silicon", () => {
   const result = runInfo("cassandra-sys-lib-path", {
     BOOTSTRAP_UNAME_S: "Darwin",
     BOOTSTRAP_UNAME_M: "arm64",
+    PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), "/opt/homebrew/lib");
