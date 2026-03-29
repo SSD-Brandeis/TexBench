@@ -17,7 +17,7 @@ import {
 } from "./local-tectonic-runner.mjs";
 
 const HOST =
-  readString(process.env.APP_HOST || process.env.LOCAL_APP_HOST) || "127.0.0.1";
+  readString(process.env.APP_HOST || process.env.LOCAL_APP_HOST) || "0.0.0.0";
 const PORT = readInteger(process.env.APP_PORT || process.env.PORT, 8787);
 const PUBLIC_DIR = path.resolve(
   process.env.PUBLIC_DIR || path.join(process.cwd(), "public"),

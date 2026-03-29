@@ -465,7 +465,7 @@ main() {
   bootstrap_start_ollama_for_session
   bootstrap_ensure_ollama_model
 
-  bootstrap_log "Starting app on http://127.0.0.1:8787"
+  bootstrap_log "Starting app on 0.0.0.0:8787"
   PATH="$(bootstrap_java_bin_dir):$(dirname "$BOOTSTRAP_NODE_BIN"):$PATH" \
     JAVA_HOME="${BOOTSTRAP_JAVA_HOME:-}" \
     AI_PROVIDER=ollama \
