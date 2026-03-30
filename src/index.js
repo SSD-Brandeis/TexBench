@@ -1996,8 +1996,23 @@ function ensureProgramStructuralSections(rawPatch, formState, schemaHints) {
   if (Array.isArray(rawPatch.sections)) {
     return rawPatch.sections;
   }
+  const hasConfiguredStructuredSections =
+    Array.isArray(formState?.sections) &&
+    formState.sections.some(
+      (section) =>
+        section &&
+        Array.isArray(section.groups) &&
+        section.groups.some(
+          (group) =>
+            group &&
+            typeof group === "object" &&
+            Object.keys(group).length > 0,
+        ),
+    );
   const hasExistingStructuredSections =
-    Array.isArray(formState?.sections) && formState.sections.length > 0;
+    Array.isArray(formState?.sections) &&
+    formState.sections.length > 0 &&
+    hasConfiguredStructuredSections;
   const hasExistingOperations =
     hasExistingStructuredSections ||
     getEnabledOperationNames(formState || { operations: {} }, schemaHints)
