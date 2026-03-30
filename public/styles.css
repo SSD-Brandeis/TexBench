@@ -789,6 +789,28 @@ body {
     padding: 10px 0 14px;
     margin-bottom: 10px;
     border-bottom: 1px solid #e8e8e8;
+    background: #ffffff;
+    transition: box-shadow 0.2s;
+}
+
+.spec-summary-progress.sticky {
+    position: fixed;
+    top: 60px;
+    left: 0;
+    right: 0;
+    z-index: 15;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    padding: 10px 24px 14px;
+}
+
+/* Placeholder to prevent content jump when progress bar goes sticky */
+.spec-progress-placeholder {
+    display: none;
+    height: 54px;
+}
+
+.spec-progress-placeholder.active {
+    display: block;
 }
 
 .spec-progress-step {
@@ -859,25 +881,36 @@ body {
     background: #2d2d2d;
 }
 
-/* ── LLM Chat Panel (inside section, collapsible) ── */
+/* ── LLM Chat Panel (fixed right edge, within section bounds) ── */
+
 .spec-chat-panel {
-    position: sticky;
-    top: 0;
-    bottom: 0;
-    align-self: flex-start;
+    position: fixed;
+    right: 0;
     width: 320px;
-    height: 70vh;
-    margin-left: auto;
-    background: #faf8f7;
-    border-left: 1px solid #e0dcda;
+    height: 75vh;
+    top: 60%;
+    transform: translateY(-50%);
+    background: #ffffff;
+    border: 1px solid #e0dcda;
+    border-right: none;
+    border-radius: 2;
     display: none;
     flex-direction: column;
-    z-index: 8;
-    box-shadow: -2px 0 12px rgba(0, 0, 0, 0.06);
+    z-index: 20;
+    /* JS will clip top/bottom to landing-forms bounds */
 }
 
 .spec-chat-panel.active {
     display: flex;
+}
+
+/* When chat is open, shrink the main content to avoid overlap */
+.landing-forms.chat-open {
+    padding-right: 340px;
+}
+
+.landing-forms.chat-open .spec-summary {
+    max-width: 100%;
 }
 
 .spec-chat-header {
@@ -891,6 +924,7 @@ body {
     font-weight: 700;
     color: #2d2d2d;
     background: #fff;
+    border-radius: 0;
 }
 
 .spec-chat-header svg {
@@ -1052,6 +1086,11 @@ body {
     overflow-y: auto;
 }
 
+/* Workload form hidden until user clicks a phase */
+.spec-form-collapsed {
+    display: none !important;
+}
+
 .spec-structure-summary {
     font-size: 13px;
     line-height: 1.6;
@@ -1062,7 +1101,7 @@ body {
 }
 
 .spec-workload-editor .structure-panel-head {
-    margin-bottom: 12px;
+    margin-bottom: 8px;
 }
 
 .spec-workload-editor .structure-panel-title {
@@ -1071,12 +1110,22 @@ body {
 }
 
 .spec-workload-editor .structure-help {
+    display: none;
+}
+
+.spec-workload-editor .structure-selection {
     font-size: 12px;
-    color: #888;
+    color: var(--accent);
+    margin-bottom: 6px;
+}
+
+/* Hide selection label when form is collapsed (no phase selected yet) */
+.spec-workload-editor:has(.spec-form-collapsed) .structure-selection {
+    display: none;
 }
 
 .spec-workload-editor .structure-tree {
-    margin-top: 8px;
+    margin-top: 4px;
 }
 
 .spec-summary-header {
@@ -1168,6 +1217,7 @@ body {
 .spec-summary-body.with-json {
     grid-template-columns: 1fr 1fr;
     gap: 20px;
+    align-items: start;
 }
 
 @media (max-width: 820px) {
@@ -1201,8 +1251,8 @@ body {
     overflow-y: auto;
     display: none;
     position: sticky;
-    top: 80px;
-    max-height: calc(100vh - 100px);
+    top: 130px;
+    max-height: calc(100vh - 150px);
     align-self: start;
 }
 
@@ -2689,99 +2739,220 @@ textarea::placeholder {
     margin-top: 14px;
 }
 
-.structure-section-card {
-    border: 1px solid var(--border-strong);
-    border-radius: 12px;
-    background: #ffffff;
-    padding: 12px;
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.7),
-        0 6px 14px rgba(45, 40, 38, 0.04);
+/* ── Compact Structure Panel ── */
+.struct-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
-.structure-section-head {
+.struct-section {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    background: #fff;
+    transition: border-color 0.15s;
+}
+
+.struct-section.active {
+    border-color: var(--border-strong);
+}
+
+.struct-section-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 10px;
-    flex-wrap: wrap;
+    margin-bottom: 12px;
 }
 
-.structure-section-title {
+.struct-section-label {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 0;
+    font-family: inherit;
+    transition: color 0.15s;
+    margin-right: auto;
+}
+
+.struct-section-label.active {
+    color: var(--accent);
+}
+
+.struct-section-label:hover {
+    color: var(--accent);
+}
+
+/* + Add Phase button */
+.struct-add-phase-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text-dim);
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.struct-add-phase-btn svg {
+    flex-shrink: 0;
+}
+
+.struct-add-phase-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: #faf5f5;
+}
+
+/* × Remove section */
+.struct-remove-section-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: #ccc;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    font-family: inherit;
+}
+
+.struct-remove-section-btn:hover {
+    border-color: var(--error);
+    color: var(--error);
+    background: #fef5f5;
+}
+
+/* + Add Section button (in panel head) */
+.struct-add-section-btn {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.struct-add-section-btn svg {
+    flex-shrink: 0;
+}
+
+.struct-add-section-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: #faf5f5;
+}
+
+/* Phase pills */
+.struct-phases {
     display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.struct-phase-pill {
+    display: inline-flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
-}
-
-.structure-section-btn,
-.structure-group-btn,
-.structure-mini-btn {
-    border: 1px solid #ddd9d7;
-    background: #ffffff;
-    color: #7a2828;
+    padding: 10px 14px;
     border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-soft);
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
     cursor: pointer;
-    font: inherit;
+    transition: all 0.15s;
+    position: relative;
 }
 
-.structure-section-btn {
-    padding: 8px 12px;
-    font-weight: 700;
-}
-
-.structure-group-btn {
-    padding: 8px 10px;
-    text-align: left;
-    flex: 1;
-}
-
-.structure-mini-btn {
-    padding: 6px 10px;
-    font-size: 12px;
-}
-
-.structure-section-btn.active,
-.structure-group-btn.active {
+.struct-phase-pill:hover {
     border-color: var(--accent);
-    background: #f5f0ef;
+    background: #faf5f5;
+}
+
+.struct-phase-pill.active {
+    border-color: var(--accent);
+    background: #f5eded;
     color: #922e2e;
 }
 
-.structure-mini-btn:hover,
-.structure-section-btn:hover,
-.structure-group-btn:hover {
-    border-color: var(--accent);
+.struct-phase-num {
+    font-weight: 700;
+    color: var(--accent);
+    font-size: 12px;
+    white-space: nowrap;
 }
 
-.structure-chip {
+.struct-phase-ops {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.struct-phase-remove {
+    color: #ccc;
+    cursor: pointer;
+    margin-left: 4px;
+    transition: color 0.15s;
+    line-height: 1;
     display: inline-flex;
     align-items: center;
-    border-radius: 999px;
-    background: #f5f2f0;
-    border: 1px solid #e0dcda;
-    color: #4a4240;
-    padding: 3px 8px;
-    font-size: 11px;
 }
 
-.structure-group-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 12px;
+.struct-phase-remove:hover {
+    color: var(--error);
 }
 
-.structure-group-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+/* Hint text */
+.struct-hint {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #bbb;
+    font-style: italic;
 }
 
-.structure-group-row+.structure-group-row {
-    border-top: 1px solid var(--divider);
-    padding-top: 8px;
+/* When form is collapsed, don't highlight any phase as active */
+.spec-workload-editor:has(.spec-form-collapsed) .struct-phase-pill.active {
+    border-color: var(--border);
+    background: var(--surface-soft);
+    color: var(--text);
 }
+
+.spec-workload-editor:has(.spec-form-collapsed) .struct-phase-pill.active .struct-phase-num {
+    color: var(--accent);
+}
+
+.spec-workload-editor:has(.spec-form-collapsed) .struct-section.active {
+    border-color: var(--border);
+}
+
+/* Keep old class names for legacy compat */
+.structure-section-card { display: none; }
+.structure-group-list { display: none; }
+.structure-group-row { display: none; }
 
 @media (max-width: 860px) {
     .welcome-panel {
