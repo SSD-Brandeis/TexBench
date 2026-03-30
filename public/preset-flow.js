@@ -79,7 +79,7 @@
         : "/presets/index.json";
 
     let presetCatalog = [];
-    const SCALE_ERROR_MESSAGE = "Scale must be a positive integer.";
+    const SCALE_ERROR_MESSAGE = "Scale must be a positive number.";
 
     function syncPresetScaleInputState() {
       if (!refs.presetScaleInput) {
@@ -96,23 +96,23 @@
       refs.presetScaleInput.disabled = !(hasFamily && hasFile);
     }
 
-    function parsePositiveInteger(rawValue) {
+    function parsePositiveNumber(rawValue) {
       const text =
         typeof rawValue === "string" || typeof rawValue === "number"
           ? String(rawValue).trim()
           : "";
-      if (!/^[1-9]\d*$/.test(text)) {
+      if (!text) {
         return null;
       }
-      const parsed = Number.parseInt(text, 10);
-      return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+      const parsed = Number.parseFloat(text);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
     }
 
     function getPresetScaleValue() {
       if (!refs.presetScaleInput) {
         return 1;
       }
-      return parsePositiveInteger(refs.presetScaleInput.value);
+      return parsePositiveNumber(refs.presetScaleInput.value);
     }
 
     function normalizePresetScaleInput() {
@@ -143,7 +143,7 @@
       Object.keys(value).forEach(function scaleObjectEntry(key) {
         const entry = value[key];
         if (key === "op_count" && typeof entry === "number" && Number.isFinite(entry)) {
-          value[key] = Math.trunc(entry * scale);
+          value[key] = Math.max(1, Math.round(entry * scale));
           return;
         }
         scalePresetOperationCounts(entry, scale);

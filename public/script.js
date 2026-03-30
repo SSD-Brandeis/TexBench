@@ -937,8 +937,9 @@ document.getElementById("ctaBtn").addEventListener("click", function () {
             var hasOption = Array.from(origFile.options).some(function (o) { return o.value === targetFileValue; });
             if (hasOption || attempts > 30) {
                 clearInterval(waitForFile);
+                // Set scale value silently, then trigger file change which reads scale
+                if (origScale) { origScale.value = scale.value; }
                 if (origFile) { origFile.value = targetFileValue; origFile.dispatchEvent(new Event("change", { bubbles: true })); }
-                if (origScale) { origScale.value = scale.value; origScale.dispatchEvent(new Event("input", { bubbles: true })); }
                 // Wait for preset to fully load, then show summary
                 setTimeout(function () {
                     enterApp();

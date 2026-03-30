@@ -4713,12 +4713,12 @@ function renderJsonSummary(json) {
     return;
   }
   const model = buildWorkloadSummaryModel(json);
-  const workloadScale =
+  const workloadScaleRaw =
     getActivePresetJsonState() &&
-    presetScaleInput &&
-    /^[1-9]\d*$/.test(String(presetScaleInput.value || "").trim())
-      ? Number.parseInt(String(presetScaleInput.value).trim(), 10)
-      : null;
+    presetScaleInput
+      ? Number.parseFloat(String(presetScaleInput.value || "").trim())
+      : NaN;
+  const workloadScale = Number.isFinite(workloadScaleRaw) && workloadScaleRaw > 0 ? workloadScaleRaw : null;
   jsonSummary.replaceChildren();
 
   const header = document.createElement("div");
@@ -4732,7 +4732,7 @@ function renderJsonSummary(json) {
   
   let worklaodScaleText = "";
 
-  if (Number.isSafeInteger(workloadScale) && workloadScale > 0) {
+  if (workloadScale !== null && workloadScale > 0) {
     // const scaleSection = document.createElement("section");
     // scaleSection.className = "json-summary-section";
 

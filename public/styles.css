@@ -1624,7 +1624,7 @@ body {
 
 /* Results tab */
 .results-tab-content {
-    max-width: 900px;
+    max-width: 100%;
     margin: 0 auto;
 }
 
@@ -4417,6 +4417,164 @@ textarea::placeholder {
     font-size: 11px;
     color: #b33a3a;
     line-height: 1.35;
+}
+
+/* ── Paper-style benchmark results dashboard ── */
+.results-dashboard {
+    display: grid;
+    gap: 16px;
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.results-panel {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #f7f7f8;
+    overflow: hidden;
+}
+
+.results-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    user-select: none;
+}
+
+.results-panel.expanded .results-panel-header {
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.results-panel-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.results-panel-subtitle {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 1px;
+}
+
+.results-panel-circles {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+}
+
+.db-progress-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.db-progress-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: #374151;
+}
+
+.db-progress-ring {
+    display: block;
+}
+
+@keyframes ring-spin {
+    to { stroke-dashoffset: 0; }
+}
+
+.ring-animate {
+    animation: ring-spin 2s linear infinite;
+}
+
+.results-panel-body {
+    padding: 20px 24px 24px;
+}
+
+.results-panel-empty {
+    color: #6b7280;
+    font-size: 13px;
+    text-align: center;
+    padding: 24px 0;
+}
+
+.results-panel-progress-text {
+    color: #f59e0b;
+    font-size: 12px;
+    text-align: center;
+    margin-top: 4px;
+}
+
+.results-plots-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.results-plot-cell {
+    flex: 1 1 200px;
+    min-width: 180px;
+    max-width: 360px;
+    background: #fff;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+    padding: 6px 4px 2px;
+}
+
+.results-plot-label {
+    display: none; /* title moved to y-axis label */
+}
+
+.results-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 10px;
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.paper-chart {
+    width: 100%;
+    height: auto;
+    display: block;
+    font-family: 'DM Sans', 'Space Grotesk', system-ui, sans-serif;
+    background: #fff;
+}
+
+.results-panel-links {
+    display: flex;
+    gap: 12px;
+    padding-top: 14px;
+    border-top: 1px solid #e5e5e5;
+    margin-top: 8px;
+}
+
+.results-download-link {
+    font-size: 12px;
+    color: #6b7280;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.results-download-link:hover {
+    color: #374151;
+}
+
+/* Override parent constraint for results */
+.benchmark-results-section {
+    border: none;
+    background: none;
+    box-shadow: none;
+    border-radius: 0;
+}
+
+.benchmark-results-head {
+    display: none;
 }
 
 .benchmark-stats {
