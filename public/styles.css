@@ -3476,8 +3476,19 @@ textarea::placeholder {
 }
 
 .spec-workload-editor .advanced-summary-controls {
-    grid-template-columns: repeat(auto-fit, minmax(140px, auto));
+    display: flex;
+    flex-wrap: wrap;
     gap: 10px;
+}
+
+.spec-workload-editor .advanced-summary-controls > .advanced-summary-field {
+    flex: 1 1 140px;
+    min-width: 140px;
+}
+
+/* Let segments/collection fields take full width */
+.spec-workload-editor .advanced-summary-controls > .advanced-summary-field:has(.advanced-expression-collection) {
+    flex: 1 1 100%;
 }
 
 .advanced-expression-builder,
