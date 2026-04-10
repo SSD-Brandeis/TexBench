@@ -2949,10 +2949,125 @@ textarea::placeholder {
     border-color: var(--border);
 }
 
-/* Keep old class names for legacy compat */
-.structure-section-card { display: none; }
-.structure-group-list { display: none; }
-.structure-group-row { display: none; }
+/* Support the current structure renderer classes used by app.js */
+.structure-section-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    background: #fff;
+    transition: border-color 0.15s;
+}
+
+.structure-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.structure-section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.structure-section-btn {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 0;
+    font-family: inherit;
+    transition: color 0.15s;
+}
+
+.structure-section-btn.active,
+.structure-section-btn:hover {
+    color: var(--accent);
+}
+
+.structure-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--surface-soft);
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.structure-group-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.structure-group-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.structure-group-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-soft);
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+}
+
+.structure-group-btn:hover {
+    border-color: var(--accent);
+    background: #faf5f5;
+}
+
+.structure-group-btn.active {
+    border-color: var(--accent);
+    background: #f5eded;
+    color: #922e2e;
+}
+
+.structure-mini-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text-dim);
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.structure-mini-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: #faf5f5;
+}
+
+.structure-mini-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
 
 @media (max-width: 860px) {
     .welcome-panel {

@@ -505,11 +505,11 @@ function copyTextToClipboard(text) {
 
         // Toggle form when user clicks a phase pill; show on other structure actions
         target.addEventListener("click", function (e) {
-            var pill = e.target.closest(".struct-phase-pill");
+            var pill = e.target.closest(".struct-phase-pill, .structure-group-btn");
             var removeBtn = e.target.closest(".struct-phase-remove");
-            var actionBtn = e.target.closest(".struct-action-btn");
+            var actionBtn = e.target.closest(".struct-action-btn, .structure-mini-btn");
             var addSection = e.target.closest("#addSectionBtn");
-            var sectionLabel = e.target.closest(".struct-section-label");
+            var sectionLabel = e.target.closest(".struct-section-label, .structure-section-btn");
 
             // If clicking remove × on a pill, don't toggle — just let remove logic run
             if (removeBtn) return;
