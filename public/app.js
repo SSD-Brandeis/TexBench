@@ -5819,6 +5819,22 @@ async function handleRunWorkload() {
   await controller.handleRun();
 }
 
+window.__runWorkload = handleRunWorkload;
+window.__setBenchmarkDatabases = function setBenchmarkDatabases(nextValues) {
+  const selected = new Set(
+    Array.isArray(nextValues)
+      ? nextValues.map((value) => String(value || "").trim()).filter(Boolean)
+      : [],
+  );
+  benchmarkDatabaseInputs.forEach((input) => {
+    if (!input) {
+      return;
+    }
+    input.checked = selected.has(String(input.value || "").trim());
+  });
+  updateBenchmarkDatabaseSummary();
+};
+
 async function handleAssistantApply() {
   const controller = getAssistantPanelController();
   if (!controller) {

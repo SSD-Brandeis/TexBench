@@ -380,18 +380,39 @@ function copyTextToClipboard(text) {
     if (dbRunBtn) {
         dbRunBtn.addEventListener("click", function () {
             var dbTabChecks = document.querySelectorAll("#dbOptionList input[name='benchmarkDatabase']");
-            var origChecks = document.querySelectorAll("#rightRail input[name='benchmarkDatabase']");
-            dbTabChecks.forEach(function (chk, i) {
-                if (origChecks[i]) origChecks[i].checked = chk.checked;
+            var selectedDatabases = [];
+            dbTabChecks.forEach(function (chk) {
+                if (chk && chk.checked) {
+                    selectedDatabases.push(String(chk.value || "").trim());
+                }
             });
-            // Unhide the runsPanel so results are visible
-            var tabRunsPanel = document.getElementById("tabRunsPanel");
-            if (tabRunsPanel) tabRunsPanel.hidden = false;
+            if (typeof window.__setBenchmarkDatabases === "function") {
+                window.__setBenchmarkDatabases(selectedDatabases);
+            } else {
+                var origChecks = document.querySelectorAll("input[name='benchmarkDatabase']");
+                origChecks.forEach(function (chk) {
+                    if (!chk || chk.closest("#dbOptionList")) return;
+                    chk.checked = selectedDatabases.indexOf(String(chk.value || "").trim()) > -1;
+                });
+            }
+
+            function showResultsTab() {
+                var tabRunsPanel = document.getElementById("tabRunsPanel");
+                if (tabRunsPanel) tabRunsPanel.hidden = false;
+                switchTab("results");
+                if (window.__switchSpecTab) window.__switchSpecTab("results");
+            }
+
+            if (typeof window.__runWorkload === "function") {
+                Promise.resolve(window.__runWorkload()).finally(showResultsTab);
+                return;
+            }
+
             var origRunBtn = document.getElementById("runWorkloadBtn");
-            if (origRunBtn) origRunBtn.click();
-            switchTab("results");
-            // Also switch the spec progress tabs to results
-            if (window.__switchSpecTab) window.__switchSpecTab("results");
+            if (origRunBtn) {
+                origRunBtn.click();
+            }
+            showResultsTab();
         });
     }
 
