@@ -96,54 +96,6 @@
     "description": "Three phases: 1) Zipfian inserts/deletes, 2) Uniform empty point queries, 3) 50/50 insert/range queries."
   },
   {
-    "id": "tec-2",
-    "family": "Tectonic",
-    "label": "2: Interleaved multi-distributional",
-    "path": "/presets/tectonic/2.spec.json",
-    "source": "example-specs/tectonic/2.spec.json",
-    "description": "Complex mix of inserts, point/range queries, and deletes using Zipfian, Normal, Uniform, and Pareto distributions."
-  },
-  {
-    "id": "tec-3",
-    "family": "Tectonic",
-    "label": "3: Near-sorted ingestion",
-    "path": "/presets/tectonic/3.spec.json",
-    "source": "example-specs/tectonic/3.spec.json",
-    "description": "100% insert workload designed to simulate nearly sorted data ingestion (K=1%, L=10%)."
-  },
-  {
-    "id": "tec-4",
-    "family": "Tectonic",
-    "label": "4: Slow phase transitioning",
-    "path": "/presets/tectonic/4.spec.json",
-    "source": "example-specs/tectonic/4.spec.json",
-    "description": "Gradual shift from insert-heavy to read-heavy across three phases with varying range query selectivity."
-  },
-  {
-    "id": "tec-5",
-    "family": "Tectonic",
-    "label": "5: Discrete phase transitioning",
-    "path": "/presets/tectonic/5.spec.json",
-    "source": "example-specs/tectonic/5.spec.json",
-    "description": "Sharp transition from a write-heavy (90% insert) phase to a read-heavy (70% point query) phase."
-  },
-  {
-    "id": "tec-6",
-    "family": "Tectonic",
-    "label": "6: Variable entry size",
-    "path": "/presets/tectonic/6.spec.json",
-    "source": "example-specs/tectonic/6.spec.json",
-    "description": "50/50 insert and point query mix where both keys and values vary significantly in size (32B–256B)."
-  },
-  {
-    "id": "tec-7",
-    "family": "Tectonic",
-    "label": "7: Skewed access",
-    "path": "/presets/tectonic/7.spec.json",
-    "source": "example-specs/tectonic/7.spec.json",
-    "description": "Workload with high temporal locality; 90% of queries target a 10% 'hot' keys."
-  },
-  {
     "id": "dbbench-test-1",
     "family": "db_bench",
     "label": "Test 1: Bulk Load (Random Order)",
