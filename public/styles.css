@@ -1626,6 +1626,9 @@ body {
 .results-tab-content {
     max-width: 100%;
     margin: 0 auto;
+    width: 100%;
+    padding: 0 24px 24px;
+    box-sizing: border-box;
 }
 
 /* Spec badge */
@@ -3714,6 +3717,8 @@ textarea::placeholder {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .benchmark-batch-head {
@@ -3791,7 +3796,6 @@ textarea::placeholder {
 }
 
 .benchmark-metric-chart-grid-overview {
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     align-items: stretch;
 }
 
@@ -3805,6 +3809,23 @@ textarea::placeholder {
 
 .benchmark-metric-chart-grid-overview .benchmark-metric-chart-title {
     min-height: calc(1.3em * 2);
+}
+
+.spec-chat-panel.active~.app-shell #tabResults .results-tab-content {
+    padding-right: 360px;
+}
+
+@media (max-width: 1200px) {
+    .results-tab-content .benchmark-metric-chart-grid,
+    .benchmark-metric-chart-grid-overview {
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+}
+
+@media (min-width: 1201px) {
+    .results-tab-content .benchmark-metric-chart-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 }
 
 .benchmark-chart-phase-group {
