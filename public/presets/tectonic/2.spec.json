@@ -1,0 +1,56 @@
+{
+  "sections": [
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 200000,
+            "key": {
+              "uniform": { "len": 20 }
+            },
+            "val": {
+              "uniform": { "len": 256 }
+            }
+          }
+        },
+        {
+          "point_queries": {
+            "op_count": 200000,
+            "selection": {
+              "zipf": { "n": 200000, "s": 1.5 }
+            }
+          }
+        },
+        {
+          "range_queries": {
+            "op_count": 100000,
+            "selection": {
+              "normal": { "mean": 0.5, "std_dev": 0.2 }
+            },
+            "selectivity": 0.005,
+            "range_format": "StartCount"
+          }
+        },
+        {
+          "updates": {
+            "op_count": 150000,
+            "val": {
+              "uniform": { "len": 256 }
+            },
+            "selection": {
+              "uniform": {}
+            }
+          }
+        },
+        {
+          "point_deletes": {
+            "op_count": 100000,
+            "selection": {
+              "pareto": { "scale": 1, "shape": 2 }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

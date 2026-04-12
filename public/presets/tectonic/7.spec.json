@@ -1,0 +1,42 @@
+{
+  "sections": [
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 500000,
+            "key": {
+              "uniform": { "len": 20 }
+            },
+            "val": {
+              "uniform": { "len": 256 }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "groups": [
+        {
+          "point_queries": {
+            "op_count": 450000,
+            "selection": {
+              "zipf": { "n": 500000, "s": 2.0 }
+            }
+          }
+        },
+        {
+          "updates": {
+            "op_count": 50000,
+            "val": {
+              "uniform": { "len": 256 }
+            },
+            "selection": {
+              "zipf": { "n": 500000, "s": 2.0 }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

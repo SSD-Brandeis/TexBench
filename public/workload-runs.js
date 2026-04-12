@@ -11,14 +11,16 @@
   const WORKLOAD_RUNS_STORAGE_KEY = "tectonic.workloadRuns.v2";
   const SECONDS_DISPLAY_THRESHOLD_MICROS = 10000;
 
+  var DB_DISPLAY_NAMES = { rocksdb: "RocksDB", cassandra: "Cassandra", printdb: "PrintDB", scylla: "ScyllaDB" };
+  function dbDisplayName(name) {
+    if (!name) return "unknown";
+    return DB_DISPLAY_NAMES[name.toLowerCase()] || name;
+  }
+
   function defaultNoop() {}
 
   function readPersistedRuns() {
     try {
-      if (window.__TECTONIC_RESTORE_UI_STATE__ !== true) {
-        clearPersistedRuns();
-        return [];
-      }
       const raw = window.localStorage.getItem(WORKLOAD_RUNS_STORAGE_KEY);
       if (!raw) {
         return [];
@@ -898,6 +900,733 @@
 
     section.appendChild(grid);
     return section;
+  }
+
+  // ── Paper-style benchmark plots ──
+
+  var DB_COLORS = ["#2d2d2d", "#7f8c8d", "#b85c4f", "#4a90a4", "#5a8f5a", "#b89b4f"];
+  var DB_FIXED_COLORS = {
+    RocksDB: "#2d2d2d",
+    Cassandra: "#b85c4f",
+    PrintDB: "#7f8c8d",
+    ScyllaDB: "#4a90a4",
+  };
+  function dbColor(label, index) {
+    return DB_FIXED_COLORS[label] || DB_COLORS[index % DB_COLORS.length];
+  }
+
+  function niceAxisTicks(maxVal, targetTicks) {
+    if (!maxVal || maxVal <= 0) return [0, 1];
+    var rough = maxVal / (targetTicks || 4);
+    var mag = Math.pow(10, Math.floor(Math.log10(rough)));
+    var res = rough / mag;
+    var step;
+    if (res <= 1) step = mag;
+    else if (res <= 2) step = 2 * mag;
+    else if (res <= 5) step = 5 * mag;
+    else step = 10 * mag;
+    var ticks = [];
+    for (var v = 0; v <= maxVal + step * 0.01; v += step) {
+      ticks.push(Math.round(v * 1e6) / 1e6);
+    }
+    // Ensure at least one tick above maxVal for headroom
+    if (ticks[ticks.length - 1] < maxVal) ticks.push(ticks[ticks.length - 1] + step);
+    return ticks;
+  }
+
+  function fmtAxisVal(v) {
+    if (v >= 1000000) return Math.round(v / 1000000) + "M";
+    if (v >= 1000) {
+      var k = v / 1000;
+      return (k === Math.floor(k)) ? Math.floor(k) + "K" : k.toFixed(1) + "K";
+    }
+    return String(Math.round(v));
+  }
+
+  function extractOperationLatencyData(run) {
+    if (!run || !run.benchmark_stats) return [];
+    var operations = normalizeStatsBuckets(run.benchmark_stats.operations);
+    return operations.map(function (op) {
+      var metrics = normalizeMetricsList(op.metrics);
+      function fm(candidates) {
+        for (var c = 0; c < candidates.length; c++) {
+          var found = metrics.find(function (m) {
+            var k = String(m.key || "").toLowerCase();
+            var l = slugifyMetricLabel(m.label);
+            return k === candidates[c] || l === candidates[c];
+          });
+          if (found) return found;
+        }
+        return null;
+      }
+      return {
+        operation: formatStatsBucketTitle(op.name),
+        operationKey: slugifyMetricLabel(op.name) || op.name,
+        min: parseLatencyMetricValueMicros(fm(["minimum_latency", "min_latency"])),
+        max: parseLatencyMetricValueMicros(fm(["maximum_latency", "max_latency"])),
+        avg: parseLatencyMetricValueMicros(fm(["average_latency", "avg_latency"])),
+        p50: parseLatencyMetricValueMicros(fm(["50th_percentile_latency", "median_latency", "percentile_50_latency"])),
+        p95: parseLatencyMetricValueMicros(fm(["95th_percentile_latency", "percentile_95_latency"])),
+        p99: parseLatencyMetricValueMicros(fm(["99th_percentile_latency", "percentile_99_latency"])),
+      };
+    });
+  }
+
+  function paperBarChart(points, yAxisLabel, chartTitle) {
+    // points: [{ label, value }]
+    if (!points || points.length === 0) return null;
+    var ns = "http://www.w3.org/2000/svg";
+    var w = 460, h = 300;
+    var m = { t: 18, r: 20, b: 36, l: 62 };
+    var pw = w - m.l - m.r, ph = h - m.t - m.b;
+    var maxVal = Math.max(1, ...points.map(function (p) { return p.value; }));
+    var ticks = niceAxisTicks(maxVal, 5);
+    var ceil = ticks[ticks.length - 1];
+
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("class", "paper-chart");
+    svg.setAttribute("viewBox", "0 0 " + w + " " + h);
+
+    // Tooltip element (shared, repositioned on hover)
+    var tooltip = document.createElementNS(ns, "g");
+    tooltip.setAttribute("visibility", "hidden");
+    tooltip.setAttribute("pointer-events", "none");
+    var ttBg = document.createElementNS(ns, "rect");
+    ttBg.setAttribute("rx", "4"); ttBg.setAttribute("ry", "4");
+    ttBg.setAttribute("fill", "#222"); ttBg.setAttribute("fill-opacity", "0.92");
+    tooltip.appendChild(ttBg);
+    var ttText = document.createElementNS(ns, "text");
+    ttText.setAttribute("fill", "#fff"); ttText.setAttribute("font-size", "11");
+    ttText.setAttribute("font-weight", "600"); ttText.setAttribute("font-family", "inherit");
+    ttText.setAttribute("text-anchor", "middle");
+    tooltip.appendChild(ttText);
+
+    // Y-axis line
+    var yAxis = document.createElementNS(ns, "line");
+    yAxis.setAttribute("x1", String(m.l)); yAxis.setAttribute("x2", String(m.l));
+    yAxis.setAttribute("y1", String(m.t)); yAxis.setAttribute("y2", String(m.t + ph));
+    yAxis.setAttribute("stroke", "#000"); yAxis.setAttribute("stroke-width", "1");
+    svg.appendChild(yAxis);
+    // X-axis line
+    var xAxis = document.createElementNS(ns, "line");
+    xAxis.setAttribute("x1", String(m.l)); xAxis.setAttribute("x2", String(m.l + pw));
+    xAxis.setAttribute("y1", String(m.t + ph)); xAxis.setAttribute("y2", String(m.t + ph));
+    xAxis.setAttribute("stroke", "#000"); xAxis.setAttribute("stroke-width", "1");
+    svg.appendChild(xAxis);
+
+    // Grid lines
+    ticks.forEach(function (tv) {
+      if (tv === 0) return;
+      var y = m.t + ph - (tv / ceil) * ph;
+      var gl = document.createElementNS(ns, "line");
+      gl.setAttribute("x1", String(m.l)); gl.setAttribute("x2", String(m.l + pw));
+      gl.setAttribute("y1", String(y)); gl.setAttribute("y2", String(y));
+      gl.setAttribute("stroke", "#e5e5e5"); gl.setAttribute("stroke-width", "0.5");
+      svg.appendChild(gl);
+    });
+
+    // Y ticks + labels
+    ticks.forEach(function (tv) {
+      var y = m.t + ph - (tv / ceil) * ph;
+      var tick = document.createElementNS(ns, "line");
+      tick.setAttribute("x1", String(m.l - 4)); tick.setAttribute("x2", String(m.l));
+      tick.setAttribute("y1", String(y)); tick.setAttribute("y2", String(y));
+      tick.setAttribute("stroke", "#000"); tick.setAttribute("stroke-width", "0.8");
+      svg.appendChild(tick);
+      var lbl = document.createElementNS(ns, "text");
+      lbl.setAttribute("x", String(m.l - 6)); lbl.setAttribute("y", String(y + 4));
+      lbl.setAttribute("text-anchor", "end"); lbl.setAttribute("font-size", "13");
+      lbl.setAttribute("fill", "#444"); lbl.setAttribute("font-family", "inherit");
+      lbl.textContent = fmtAxisVal(tv);
+      svg.appendChild(lbl);
+    });
+
+    // Y-axis title (chart title goes here)
+    var yLbl = document.createElementNS(ns, "text");
+    yLbl.setAttribute("x", String(13)); yLbl.setAttribute("y", String(m.t + ph / 2));
+    yLbl.setAttribute("text-anchor", "middle"); yLbl.setAttribute("font-size", "14");
+    yLbl.setAttribute("font-weight", "600"); yLbl.setAttribute("fill", "#222");
+    yLbl.setAttribute("font-family", "inherit");
+    yLbl.setAttribute("transform", "rotate(-90 13 " + (m.t + ph / 2) + ")");
+    yLbl.textContent = chartTitle || yAxisLabel || "";
+    svg.appendChild(yLbl);
+
+    // Bars
+    var step = pw / Math.max(points.length, 1);
+    var barW = Math.min(56, step * 0.5);
+    points.forEach(function (pt, i) {
+      var cx = m.l + step * i + step / 2;
+      var barH = (pt.value / ceil) * ph;
+      var barY = m.t + ph - barH;
+      var rect = document.createElementNS(ns, "rect");
+      rect.setAttribute("x", String(cx - barW / 2)); rect.setAttribute("y", String(barY));
+      rect.setAttribute("width", String(barW)); rect.setAttribute("height", String(barH));
+      rect.setAttribute("rx", "2"); rect.setAttribute("ry", "2");
+      rect.setAttribute("fill", dbColor(pt.label, i));
+      rect.setAttribute("style", "cursor:pointer");
+      svg.appendChild(rect);
+      // Hover hit area (invisible wider rect for easier hover)
+      var hitArea = document.createElementNS(ns, "rect");
+      hitArea.setAttribute("x", String(cx - step / 2)); hitArea.setAttribute("y", String(m.t));
+      hitArea.setAttribute("width", String(step)); hitArea.setAttribute("height", String(ph));
+      hitArea.setAttribute("fill", "transparent");
+      hitArea.setAttribute("style", "cursor:pointer");
+      // Hover tooltip
+      var exactVal = pt.value;
+      hitArea.addEventListener("mouseenter", function () {
+        ttText.textContent = pt.label + ": " + exactVal.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        var bbox = ttText.getBBox();
+        ttBg.setAttribute("x", String(cx - bbox.width / 2 - 6));
+        ttBg.setAttribute("y", String(barY - 24));
+        ttBg.setAttribute("width", String(bbox.width + 12));
+        ttBg.setAttribute("height", String(18));
+        ttText.setAttribute("x", String(cx));
+        ttText.setAttribute("y", String(barY - 10));
+        tooltip.setAttribute("visibility", "visible");
+      });
+      hitArea.addEventListener("mouseleave", function () {
+        tooltip.setAttribute("visibility", "hidden");
+      });
+      svg.appendChild(hitArea);
+      // Value on top
+      var vt = document.createElementNS(ns, "text");
+      vt.setAttribute("x", String(cx)); vt.setAttribute("y", String(barY - 4));
+      vt.setAttribute("text-anchor", "middle"); vt.setAttribute("font-size", "13");
+      vt.setAttribute("font-weight", "600"); vt.setAttribute("fill", "#111");
+      vt.setAttribute("font-family", "inherit");
+      vt.setAttribute("pointer-events", "none");
+      vt.textContent = fmtAxisVal(Math.round(pt.value));
+      svg.appendChild(vt);
+      // X label
+      var xl = document.createElementNS(ns, "text");
+      xl.setAttribute("x", String(cx)); xl.setAttribute("y", String(m.t + ph + 20));
+      xl.setAttribute("text-anchor", "middle"); xl.setAttribute("font-size", "13");
+      xl.setAttribute("font-weight", "600"); xl.setAttribute("fill", "#333");
+      xl.setAttribute("font-family", "inherit");
+      xl.textContent = pt.label;
+      svg.appendChild(xl);
+    });
+    // Tooltip layer on top of everything
+    svg.appendChild(tooltip);
+    return svg;
+  }
+
+  function paperBoxPlot(databases, yAxisLabel, unitDiv, chartTitle) {
+    // databases: [{ label, min, max, avg, p50, p95, p99 }]
+    if (!databases || databases.length === 0) return null;
+    var ns = "http://www.w3.org/2000/svg";
+    var ndb = databases.length;
+    // Extra height for legend row below x-labels
+    var w = 460, h = 320;
+    var m = { t: 18, r: 20, b: 56, l: 62 };
+    var pw = w - m.l - m.r, ph = h - m.t - m.b;
+    var div = unitDiv || 1;
+
+    // Collect all values for y range
+    var allVals = [];
+    databases.forEach(function (d) {
+      [d.min, d.max, d.avg, d.p50, d.p95, d.p99].forEach(function (v) {
+        if (v != null && Number.isFinite(v)) allVals.push(v / div);
+      });
+    });
+    if (allVals.length === 0) return null;
+    var rawMax = Math.max(1, ...allVals);
+    var ticks = niceAxisTicks(rawMax, 5);
+    var ceil = ticks[ticks.length - 1];
+
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("class", "paper-chart");
+    svg.setAttribute("viewBox", "0 0 " + w + " " + h);
+
+    // Tooltip element (shared)
+    var tooltip = document.createElementNS(ns, "g");
+    tooltip.setAttribute("visibility", "hidden");
+    tooltip.setAttribute("pointer-events", "none");
+    var ttBg = document.createElementNS(ns, "rect");
+    ttBg.setAttribute("rx", "4"); ttBg.setAttribute("ry", "4");
+    ttBg.setAttribute("fill", "#222"); ttBg.setAttribute("fill-opacity", "0.92");
+    tooltip.appendChild(ttBg);
+    var ttLines = [];
+    for (var ti = 0; ti < 7; ti++) {
+      var tl = document.createElementNS(ns, "text");
+      tl.setAttribute("fill", "#fff"); tl.setAttribute("font-size", "12");
+      tl.setAttribute("font-family", "inherit");
+      tl.setAttribute("text-anchor", "start");
+      tooltip.appendChild(tl);
+      ttLines.push(tl);
+    }
+
+    // Y-axis + X-axis
+    var yAx = document.createElementNS(ns, "line");
+    yAx.setAttribute("x1", String(m.l)); yAx.setAttribute("x2", String(m.l));
+    yAx.setAttribute("y1", String(m.t)); yAx.setAttribute("y2", String(m.t + ph));
+    yAx.setAttribute("stroke", "#000"); yAx.setAttribute("stroke-width", "1");
+    svg.appendChild(yAx);
+    var xAx = document.createElementNS(ns, "line");
+    xAx.setAttribute("x1", String(m.l)); xAx.setAttribute("x2", String(m.l + pw));
+    xAx.setAttribute("y1", String(m.t + ph)); xAx.setAttribute("y2", String(m.t + ph));
+    xAx.setAttribute("stroke", "#000"); xAx.setAttribute("stroke-width", "1");
+    svg.appendChild(xAx);
+
+    // Grid lines
+    ticks.forEach(function (tv) {
+      if (tv === 0) return;
+      var y = m.t + ph - (tv / ceil) * ph;
+      var gl = document.createElementNS(ns, "line");
+      gl.setAttribute("x1", String(m.l)); gl.setAttribute("x2", String(m.l + pw));
+      gl.setAttribute("y1", String(y)); gl.setAttribute("y2", String(y));
+      gl.setAttribute("stroke", "#e5e5e5"); gl.setAttribute("stroke-width", "0.5");
+      svg.appendChild(gl);
+    });
+
+    // Y ticks + labels
+    ticks.forEach(function (tv) {
+      var y = m.t + ph - (tv / ceil) * ph;
+      var tk = document.createElementNS(ns, "line");
+      tk.setAttribute("x1", String(m.l - 4)); tk.setAttribute("x2", String(m.l));
+      tk.setAttribute("y1", String(y)); tk.setAttribute("y2", String(y));
+      tk.setAttribute("stroke", "#000"); tk.setAttribute("stroke-width", "0.8");
+      svg.appendChild(tk);
+      var lbl = document.createElementNS(ns, "text");
+      lbl.setAttribute("x", String(m.l - 6)); lbl.setAttribute("y", String(y + 4));
+      lbl.setAttribute("text-anchor", "end"); lbl.setAttribute("font-size", "13");
+      lbl.setAttribute("fill", "#444"); lbl.setAttribute("font-family", "inherit");
+      lbl.textContent = fmtAxisVal(tv);
+      svg.appendChild(lbl);
+    });
+
+    // Y-axis title
+    var yLbl = document.createElementNS(ns, "text");
+    yLbl.setAttribute("x", String(13)); yLbl.setAttribute("y", String(m.t + ph / 2));
+    yLbl.setAttribute("text-anchor", "middle"); yLbl.setAttribute("font-size", "12");
+    yLbl.setAttribute("font-weight", "600"); yLbl.setAttribute("fill", "#222");
+    yLbl.setAttribute("font-family", "inherit");
+    yLbl.setAttribute("transform", "rotate(-90 13 " + (m.t + ph / 2) + ")");
+    yLbl.textContent = chartTitle || yAxisLabel || "";
+    svg.appendChild(yLbl);
+
+    function valToY(v) { return m.t + ph - (Math.min(v, ceil) / ceil) * ph; }
+
+    var step = pw / Math.max(ndb, 1);
+    var boxW = Math.min(36, step * 0.4);
+
+    databases.forEach(function (db, i) {
+      var cx = m.l + step * i + step / 2;
+      var color = dbColor(db.label, i);
+      var mn = (db.min || 0) / div;
+      var mx = (db.max || 0) / div;
+      var avg = (db.avg || 0) / div;
+      var p50 = db.p50 != null ? db.p50 / div : avg;
+      var p95 = (db.p95 || mx) / div;
+      var p99 = (db.p99 || mx) / div;
+
+      // Whisker line: min to max
+      var wl = document.createElementNS(ns, "line");
+      wl.setAttribute("x1", String(cx)); wl.setAttribute("x2", String(cx));
+      wl.setAttribute("y1", String(valToY(mx))); wl.setAttribute("y2", String(valToY(mn)));
+      wl.setAttribute("stroke", color); wl.setAttribute("stroke-width", "1.2");
+      svg.appendChild(wl);
+
+      // Caps at min and max (T-shaped ends)
+      var capW = boxW * 0.6;
+      [mn, mx].forEach(function (v) {
+        var c = document.createElementNS(ns, "line");
+        c.setAttribute("x1", String(cx - capW / 2)); c.setAttribute("x2", String(cx + capW / 2));
+        c.setAttribute("y1", String(valToY(v))); c.setAttribute("y2", String(valToY(v)));
+        c.setAttribute("stroke", color); c.setAttribute("stroke-width", "1.2");
+        svg.appendChild(c);
+      });
+
+      // Box: p50 to p95
+      var bTop = valToY(p95);
+      var bBot = valToY(p50);
+      var bH = Math.max(2, bBot - bTop);
+      var bx = document.createElementNS(ns, "rect");
+      bx.setAttribute("x", String(cx - boxW / 2)); bx.setAttribute("y", String(bTop));
+      bx.setAttribute("width", String(boxW)); bx.setAttribute("height", String(bH));
+      bx.setAttribute("fill", color); bx.setAttribute("fill-opacity", "0.15");
+      bx.setAttribute("stroke", color); bx.setAttribute("stroke-width", "1");
+      svg.appendChild(bx);
+
+      // Avg/p50 median line inside box
+      var ml = document.createElementNS(ns, "line");
+      ml.setAttribute("x1", String(cx - boxW / 2)); ml.setAttribute("x2", String(cx + boxW / 2));
+      ml.setAttribute("y1", String(valToY(avg))); ml.setAttribute("y2", String(valToY(avg)));
+      ml.setAttribute("stroke", color); ml.setAttribute("stroke-width", "2");
+      svg.appendChild(ml);
+
+      // P99 marker — small filled diamond
+      var p99y = valToY(p99);
+      var dia = document.createElementNS(ns, "polygon");
+      var ds = 3;
+      dia.setAttribute("points", cx + "," + (p99y - ds) + " " + (cx + ds) + "," + p99y + " " + cx + "," + (p99y + ds) + " " + (cx - ds) + "," + p99y);
+      dia.setAttribute("fill", color);
+      svg.appendChild(dia);
+
+      // Hover hit area for tooltip
+      var hitArea = document.createElementNS(ns, "rect");
+      hitArea.setAttribute("x", String(cx - step / 2)); hitArea.setAttribute("y", String(m.t));
+      hitArea.setAttribute("width", String(step)); hitArea.setAttribute("height", String(ph));
+      hitArea.setAttribute("fill", "transparent");
+      hitArea.setAttribute("style", "cursor:pointer");
+      (function (dbRef, cxRef, mnRef, mxRef, avgRef, p50Ref, p95Ref, p99Ref) {
+        hitArea.addEventListener("mouseenter", function () {
+          var fv = function (v) { return v.toLocaleString(undefined, { maximumFractionDigits: 2 }); };
+          ttLines[0].textContent = dbRef.label;
+          ttLines[0].setAttribute("font-weight", "700");
+          ttLines[1].textContent = "Avg: " + fv(avgRef);
+          ttLines[2].textContent = "P50: " + fv(p50Ref);
+          ttLines[3].textContent = "P95: " + fv(p95Ref);
+          ttLines[4].textContent = "P99: " + fv(p99Ref);
+          ttLines[5].textContent = "Min: " + fv(mnRef);
+          ttLines[6].textContent = "Max: " + fv(mxRef);
+          var maxTextW = 0;
+          ttLines.forEach(function (tl, idx) {
+            tl.setAttribute("x", String(cxRef - 50));
+            tl.setAttribute("y", String(m.t + 14 + idx * 14));
+            var bb = tl.getBBox();
+            if (bb.width > maxTextW) maxTextW = bb.width;
+          });
+          ttBg.setAttribute("x", String(cxRef - 56));
+          ttBg.setAttribute("y", String(m.t));
+          ttBg.setAttribute("width", String(maxTextW + 16));
+          ttBg.setAttribute("height", String(102));
+          ttLines.forEach(function (tl) {
+            tl.setAttribute("x", String(cxRef - 48));
+          });
+          tooltip.setAttribute("visibility", "visible");
+        });
+        hitArea.addEventListener("mouseleave", function () {
+          tooltip.setAttribute("visibility", "hidden");
+        });
+      })(db, cx, mn, mx, avg, p50, p95, p99);
+      svg.appendChild(hitArea);
+
+      // X label
+      var xl = document.createElementNS(ns, "text");
+      xl.setAttribute("x", String(cx)); xl.setAttribute("y", String(m.t + ph + 20));
+      xl.setAttribute("text-anchor", "middle"); xl.setAttribute("font-size", "13");
+      xl.setAttribute("font-weight", "600"); xl.setAttribute("fill", "#333");
+      xl.setAttribute("font-family", "inherit");
+      xl.textContent = db.label;
+      svg.appendChild(xl);
+    });
+
+    // Legend row at the bottom explaining box plot elements
+    var legendY = h - 10;
+    var legendItems = [
+      { sym: "line", label: "min/max" },
+      { sym: "box", label: "p50–p95" },
+      { sym: "dashline", label: "avg" },
+      { sym: "diamond", label: "p99" },
+    ];
+    var legendStartX = m.l;
+    var lgSpacing = pw / legendItems.length;
+    legendItems.forEach(function (item, li) {
+      var lx = legendStartX + lgSpacing * li;
+      var symColor = "#555";
+      if (item.sym === "line") {
+        var ll = document.createElementNS(ns, "line");
+        ll.setAttribute("x1", String(lx)); ll.setAttribute("x2", String(lx + 14));
+        ll.setAttribute("y1", String(legendY - 3)); ll.setAttribute("y2", String(legendY - 3));
+        ll.setAttribute("stroke", symColor); ll.setAttribute("stroke-width", "1");
+        svg.appendChild(ll);
+        // T caps
+        [lx, lx + 14].forEach(function (tx) {
+          var tc = document.createElementNS(ns, "line");
+          tc.setAttribute("x1", String(tx)); tc.setAttribute("x2", String(tx));
+          tc.setAttribute("y1", String(legendY - 6)); tc.setAttribute("y2", String(legendY));
+          tc.setAttribute("stroke", symColor); tc.setAttribute("stroke-width", "0.8");
+          svg.appendChild(tc);
+        });
+      } else if (item.sym === "box") {
+        var br = document.createElementNS(ns, "rect");
+        br.setAttribute("x", String(lx)); br.setAttribute("y", String(legendY - 6));
+        br.setAttribute("width", "14"); br.setAttribute("height", "6");
+        br.setAttribute("fill", symColor); br.setAttribute("fill-opacity", "0.15");
+        br.setAttribute("stroke", symColor); br.setAttribute("stroke-width", "0.8");
+        svg.appendChild(br);
+      } else if (item.sym === "dashline") {
+        var dl = document.createElementNS(ns, "line");
+        dl.setAttribute("x1", String(lx)); dl.setAttribute("x2", String(lx + 14));
+        dl.setAttribute("y1", String(legendY - 3)); dl.setAttribute("y2", String(legendY - 3));
+        dl.setAttribute("stroke", symColor); dl.setAttribute("stroke-width", "2");
+        svg.appendChild(dl);
+      } else if (item.sym === "diamond") {
+        var dcx = lx + 7, dcy = legendY - 3, dds = 3;
+        var dd = document.createElementNS(ns, "polygon");
+        dd.setAttribute("points", dcx + "," + (dcy - dds) + " " + (dcx + dds) + "," + dcy + " " + dcx + "," + (dcy + dds) + " " + (dcx - dds) + "," + dcy);
+        dd.setAttribute("fill", symColor);
+        svg.appendChild(dd);
+      }
+      var lt = document.createElementNS(ns, "text");
+      lt.setAttribute("x", String(lx + 18)); lt.setAttribute("y", String(legendY));
+      lt.setAttribute("text-anchor", "start"); lt.setAttribute("font-size", "12");
+      lt.setAttribute("fill", "#555"); lt.setAttribute("font-family", "inherit");
+      lt.textContent = item.label;
+      svg.appendChild(lt);
+    });
+
+    // Tooltip layer on top
+    svg.appendChild(tooltip);
+    return svg;
+  }
+
+  function buildCircleProgress(run) {
+    var size = 32, stroke = 3;
+    var r = (size - stroke) / 2;
+    var circ = 2 * Math.PI * r;
+    var isActive = ACTIVE_STATUSES.has(run.status);
+    var isDone = run.status === "succeeded";
+    var isFail = run.status === "failed" || run.status === "timed_out";
+    var pct = isDone ? 100 : (run.progress && Number.isFinite(run.progress.percent) ? run.progress.percent : (isActive ? 50 : 0));
+    var offset = circ - (pct / 100) * circ;
+    var color = isDone ? "#22c55e" : isFail ? "#ef4444" : "#f59e0b";
+
+    var wrap = document.createElement("div");
+    wrap.className = "db-progress-item";
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("width", String(size)); svg.setAttribute("height", String(size));
+    svg.setAttribute("class", "db-progress-ring");
+    // BG circle
+    var bg = document.createElementNS(ns, "circle");
+    bg.setAttribute("cx", String(size / 2)); bg.setAttribute("cy", String(size / 2));
+    bg.setAttribute("r", String(r)); bg.setAttribute("fill", "none");
+    bg.setAttribute("stroke", "#e5e7eb"); bg.setAttribute("stroke-width", String(stroke));
+    svg.appendChild(bg);
+    // Progress circle
+    var prog = document.createElementNS(ns, "circle");
+    prog.setAttribute("cx", String(size / 2)); prog.setAttribute("cy", String(size / 2));
+    prog.setAttribute("r", String(r)); prog.setAttribute("fill", "none");
+    prog.setAttribute("stroke", color); prog.setAttribute("stroke-width", String(stroke));
+    prog.setAttribute("stroke-dasharray", String(circ));
+    prog.setAttribute("stroke-dashoffset", String(offset));
+    prog.setAttribute("stroke-linecap", "round");
+    prog.setAttribute("transform", "rotate(-90 " + (size / 2) + " " + (size / 2) + ")");
+    if (isActive) prog.setAttribute("class", "ring-animate");
+    svg.appendChild(prog);
+    // Check mark for done
+    if (isDone) {
+      var check = document.createElementNS(ns, "polyline");
+      check.setAttribute("points", "10,17 14,21 22,12");
+      check.setAttribute("fill", "none"); check.setAttribute("stroke", "#22c55e");
+      check.setAttribute("stroke-width", "2"); check.setAttribute("stroke-linecap", "round");
+      check.setAttribute("stroke-linejoin", "round");
+      svg.appendChild(check);
+    }
+    wrap.appendChild(svg);
+    var lbl = document.createElement("span");
+    lbl.className = "db-progress-label";
+    lbl.textContent = dbDisplayName(run.database);
+    wrap.appendChild(lbl);
+    return wrap;
+  }
+
+  function buildResultPanel(batchRuns, isExpanded) {
+    var panel = document.createElement("div");
+    panel.className = "results-panel" + (isExpanded ? " expanded" : "");
+
+    // Header
+    var header = document.createElement("div");
+    header.className = "results-panel-header";
+    var titleWrap = document.createElement("div");
+    var title = document.createElement("div");
+    title.className = "results-panel-title";
+    var ts = batchRuns[0] ? formatLocalTime(batchRuns[0].created_at) : "";
+    var dbList = batchRuns.map(function (r) { return dbDisplayName(r.database); }).filter(function (n) { return n !== "unknown"; }).join(", ");
+    title.textContent = ts + (dbList ? " — " + dbList : "");
+    titleWrap.appendChild(title);
+    if (!isExpanded) {
+      var sub = document.createElement("div");
+      sub.className = "results-panel-subtitle";
+      var done = batchRuns.filter(function (r) { return r.status === "succeeded"; }).length;
+      sub.textContent = done + " of " + batchRuns.length + " completed";
+      titleWrap.appendChild(sub);
+    }
+    header.appendChild(titleWrap);
+
+    // Circle progress indicators
+    var circles = document.createElement("div");
+    circles.className = "results-panel-circles";
+    batchRuns.forEach(function (r) { circles.appendChild(buildCircleProgress(r)); });
+    header.appendChild(circles);
+    panel.appendChild(header);
+
+    // Toggle
+    header.style.cursor = "pointer";
+    var body = document.createElement("div");
+    body.className = "results-panel-body";
+    body.hidden = !isExpanded;
+    header.addEventListener("click", function () {
+      body.hidden = !body.hidden;
+      panel.classList.toggle("expanded", !body.hidden);
+    });
+
+    // Build plots for succeeded runs
+    var succeeded = batchRuns.filter(function (r) { return r.status === "succeeded" && r.benchmark_stats; });
+    // Sort by batch_index so x-axis labels stay consistent regardless of finish order
+    succeeded.sort(function (a, b) {
+      var ai = Number.isFinite(a.batch_index) ? a.batch_index : 0;
+      var bi = Number.isFinite(b.batch_index) ? b.batch_index : 0;
+      return ai - bi;
+    });
+    if (succeeded.length === 0) {
+      var running = batchRuns.some(function (r) { return ACTIVE_STATUSES.has(r.status); });
+      var msg = document.createElement("p");
+      msg.className = "results-panel-empty";
+      msg.textContent = running ? "Benchmark in progress..." : "No completed results.";
+      body.appendChild(msg);
+      // Show progress text
+      batchRuns.forEach(function (r) {
+        if (r.progress_text) {
+          var pt = document.createElement("p");
+          pt.className = "results-panel-progress-text";
+          pt.textContent = r.progress_text;
+          body.appendChild(pt);
+        }
+      });
+    } else {
+      // ── Row 1: Overall — Throughput + Avg Latency ──
+      var row1 = document.createElement("div");
+      row1.className = "results-plots-row";
+
+      // Throughput
+      var tpPoints = succeeded.map(function (r) {
+        var met = findOverallMetric(r.benchmark_stats, [
+          "throughput_using_start_and_end_time_ops_ms",
+          "throughput_using_start_and_end_time",
+        ]);
+        return { label: dbDisplayName(r.database), value: parseThroughputMetricValue(met) || 0 };
+      }).filter(function (p) { return p.value > 0; });
+
+      if (tpPoints.length > 0) {
+        var tpCell = document.createElement("div");
+        tpCell.className = "results-plot-cell";
+        var tpLbl = document.createElement("div");
+        tpLbl.className = "results-plot-label";
+        tpLbl.textContent = "Throughput (ops/sec)";
+        tpCell.appendChild(tpLbl);
+        tpCell.appendChild(paperBarChart(tpPoints, "ops/sec", "Throughput (ops/sec)"));
+        row1.appendChild(tpCell);
+      }
+
+      // Avg Latency
+      var latPoints = succeeded.map(function (r) {
+        var met = findOverallMetric(r.benchmark_stats, ["average_latency"]);
+        var v = parseLatencyMetricValueMicros(met);
+        return { label: dbDisplayName(r.database), value: v || 0 };
+      }).filter(function (p) { return p.value > 0; });
+      var latUnit = chooseLatencyChartUnit(Math.max(1, ...latPoints.map(function (p) { return p.value; })));
+      var latConverted = latPoints.map(function (p) { return { label: p.label, value: p.value / latUnit.divisor }; });
+      if (latConverted.length > 0) {
+        var latCell = document.createElement("div");
+        latCell.className = "results-plot-cell";
+        var latLbl = document.createElement("div");
+        latLbl.className = "results-plot-label";
+        latLbl.textContent = "Avg Latency (" + latUnit.unit + ")";
+        latCell.appendChild(latLbl);
+        latCell.appendChild(paperBarChart(latConverted, latUnit.unit, "Avg Latency (" + latUnit.unit + ")"));
+        row1.appendChild(latCell);
+      }
+      if (row1.children.length > 0) body.appendChild(row1);
+
+      // ── Row 2+: Per-operation latency box plots ──
+      var opMap = new Map();
+      succeeded.forEach(function (r) {
+        var ops = extractOperationLatencyData(r);
+        ops.forEach(function (od) {
+          if (!opMap.has(od.operationKey)) opMap.set(od.operationKey, { name: od.operation, databases: [] });
+          opMap.get(od.operationKey).databases.push({
+            label: dbDisplayName(r.database), min: od.min, max: od.max,
+            avg: od.avg, p50: od.p50, p95: od.p95, p99: od.p99,
+          });
+        });
+      });
+
+      if (opMap.size > 0) {
+        var opTitle = document.createElement("div");
+        // opTitle.className = "results-section-title";
+        // opTitle.textContent = "Per-Operation Latency";
+        // body.appendChild(opTitle);
+
+        // var opRow = document.createElement("div");
+        // opRow.className = "results-plots-row";
+        opMap.forEach(function (entry) {
+          // Use µs for box plots so small-value databases aren't squished
+          var opUnit = { divisor: 1, unit: "µs" };
+          var cell = document.createElement("div");
+          cell.className = "results-plot-cell";
+          var lbl = document.createElement("div");
+          lbl.className = "results-plot-label";
+          lbl.textContent = entry.name + " (" + opUnit.unit + ")";
+          cell.appendChild(lbl);
+          var bp = paperBoxPlot(entry.databases, opUnit.unit, opUnit.divisor, entry.name + " (" + opUnit.unit + ")");
+          if (bp) cell.appendChild(bp);
+          row1.appendChild(cell);
+        });
+        body.appendChild(row1);
+      }
+
+      // Download links
+      var links = document.createElement("div");
+      links.className = "results-panel-links";
+      succeeded.forEach(function (r) {
+        if (r.links && r.links.output_download_path) {
+          var a = document.createElement("a");
+          a.className = "results-download-link";
+          a.href = r.links.output_download_path;
+          a.target = "_blank";
+          a.textContent = "Download " + dbDisplayName(r.database);
+          links.appendChild(a);
+        }
+      });
+      if (links.children.length > 0) body.appendChild(links);
+    }
+
+    panel.appendChild(body);
+    return panel;
+  }
+
+  function groupRunsIntoBatches(runs) {
+    var batchMap = new Map();
+    var noBatch = [];
+    runs.forEach(function (r) {
+      if (r.batch_id) {
+        if (!batchMap.has(r.batch_id)) batchMap.set(r.batch_id, []);
+        batchMap.get(r.batch_id).push(r);
+      } else {
+        noBatch.push(r);
+      }
+    });
+    var groups = [];
+    batchMap.forEach(function (batchRuns) {
+      batchRuns.sort(function (a, b) { return (a.batch_index || 0) - (b.batch_index || 0); });
+      groups.push(batchRuns);
+    });
+    // Sort batches newest first
+    groups.sort(function (a, b) {
+      return String(b[0].created_at || "").localeCompare(String(a[0].created_at || ""));
+    });
+    // Single runs (no batch)
+    noBatch.forEach(function (r) { groups.push([r]); });
+    return groups;
+  }
+
+  function buildBenchmarkStatsPlots(run, allRuns) {
+    // Called from individual run detail — delegate to result panel builder
+    var comparisonRuns = [];
+    if (run && run.batch_id) {
+      comparisonRuns = (allRuns || []).filter(function (r) {
+        return r.batch_id === run.batch_id && (r.status === "succeeded" || ACTIVE_STATUSES.has(r.status));
+      });
+    }
+    if (comparisonRuns.length === 0) comparisonRuns = [run];
+    // Just build the plots section
+    var succeeded = comparisonRuns.filter(function (r) { return r.status === "succeeded" && r.benchmark_stats; });
+    if (succeeded.length === 0) return null;
+    var dummy = document.createElement("div");
+    return dummy;
   }
 
   function buildBenchmarkStats(stats) {
@@ -2044,7 +2773,7 @@
       summaryRow.appendChild(startedCell);
 
       const databaseCell = document.createElement("td");
-      databaseCell.textContent = run.database || "—";
+      databaseCell.textContent = dbDisplayName(run.database);
       summaryRow.appendChild(databaseCell);
 
       const statusCell = document.createElement("td");
@@ -2134,7 +2863,7 @@
         detail.appendChild(errorEl);
       }
 
-      const statsEl = buildBenchmarkStats(run.benchmark_stats);
+      const statsEl = buildBenchmarkStatsPlots(run, runs);
       if (statsEl) {
         detail.appendChild(statsEl);
       }
@@ -2401,19 +3130,19 @@
         const empty = document.createElement("p");
         empty.className = "runs-empty";
         empty.textContent =
-          'No runs yet. Click "Run Workload" to execute a tectonic benchmark.';
-      runsListEl.appendChild(empty);
-        restoreScrollState(scrollState, runsListEl);
+          'No runs yet. Select databases and click "Run Workload" to start a benchmark.';
+        runsListEl.appendChild(empty);
         return;
       }
-      const batchGraphs = buildBatchGraphDeck(runs);
-      if (batchGraphs) {
-        runsListEl.appendChild(batchGraphs);
-      }
-      runsListEl.appendChild(
-        buildRunTable(runs, { cancel: cancelRun }, expandedRunIds),
-      );
-      restoreScrollState(scrollState, runsListEl);
+
+      // Group runs into batch panels
+      var batches = groupRunsIntoBatches(runs);
+      var dashboard = document.createElement("div");
+      dashboard.className = "results-dashboard";
+      batches.forEach(function (batchRuns, i) {
+        dashboard.appendChild(buildResultPanel(batchRuns, i === 0));
+      });
+      runsListEl.appendChild(dashboard);
     }
 
     async function startRun(specJson, options) {
@@ -2484,11 +3213,36 @@
       stopPolling();
     }
 
+    // Load historical runs from server disk
+    async function loadHistoricalRuns() {
+      try {
+        const response = await fetch("/api/workloads/runs", { method: "GET", cache: "no-store" });
+        if (!response.ok) return;
+        const body = await response.json();
+        if (!Array.isArray(body.runs)) return;
+        var added = 0;
+        body.runs.forEach(function (serverRun) {
+          if (!serverRun.run_id) return;
+          // Skip if already in local list
+          if (runs.some(function (r) { return r.run_id === serverRun.run_id; })) return;
+          // Only add runs that have benchmark stats (completed)
+          if (!serverRun.benchmark_stats) return;
+          runs.push(normalizeRunEntry(serverRun, serverRun.run_id));
+          added++;
+        });
+        if (added > 0) {
+          persistRuns();
+          render();
+        }
+      } catch (_e) { /* ignore */ }
+    }
+
     render();
     ensurePolling();
     if (hasActiveRuns()) {
       void pollRuns();
     }
+    void loadHistoricalRuns();
     return {
       startRun,
       clear,

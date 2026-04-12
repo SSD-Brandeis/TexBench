@@ -771,8 +771,8 @@ body {
 /* ── Spec Summary View (after loading) ── */
 .spec-summary {
     display: none;
-    width: 100%;
-    max-width: 95%;
+    width: 92%;
+    max-width: 1800px;
 }
 
 .spec-summary.active {
@@ -879,6 +879,143 @@ body {
 
 .spec-progress-connector.done {
     background: #2d2d2d;
+}
+
+/* ── Accordion Layout (connected A/B/C sections) ── */
+.spec-accordion {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 0 40px;
+}
+
+.spec-accord-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: fit-content;
+    margin: 0 auto;
+    padding: 8px 20px;
+    border-radius: 8px;
+    background: #f5f3f2;
+    cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s;
+}
+
+.spec-accord-title-row:hover {
+    background: #eae6e4;
+}
+
+.spec-accord-title-text {
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+    color: #2d2d2d;
+    letter-spacing: -0.3px;
+    transition: font-weight 0.2s;
+}
+
+/* Active state: section is open */
+.spec-accord-title-row.active .spec-accord-circle {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #fff;
+}
+
+.spec-accord-title-row.active .spec-accord-title-text {
+    font-weight: 800;
+}
+
+.spec-accord-item {
+    width: 100%;
+    border: none;
+    background: #fff;
+    overflow: hidden;
+}
+
+.spec-accord-header {
+    display: none;
+}
+
+.spec-accord-circle {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    border: 2px solid #2d2d2d;
+    color: #fff;
+    background: #2d2d2d;
+    transition: all 0.25s;
+}
+
+.spec-accord-label {
+    flex: 1;
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #999;
+    letter-spacing: -0.2px;
+    text-align: left;
+    transition: color 0.2s;
+}
+
+.spec-accord-item.open .spec-accord-label {
+    color: #2d2d2d;
+}
+
+.spec-accord-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px 16px;
+}
+
+.spec-accord-chevron {
+    display: none;
+}
+
+.spec-accord-body {
+    display: none;
+}
+
+.spec-accord-item.open .spec-accord-body {
+    display: block;
+}
+
+.spec-accord-connector {
+    width: 2px;
+    height: 24px;
+    background: #ddd;
+    flex-shrink: 0;
+    margin: 0 auto;
+}
+
+
+.spec-section-body {
+    padding: 16px 20px;
+    text-align: center;
+}
+
+.spec-section-body .db-run-btn {
+    margin: 0 auto;
+}
+
+.db-inline-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+    justify-content: center;
 }
 
 /* ── LLM Chat Panel (fixed right edge, within section bounds) ── */
@@ -1105,7 +1242,7 @@ body {
 }
 
 .spec-workload-editor .structure-panel-title {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
 }
 
@@ -1626,9 +1763,6 @@ body {
 .results-tab-content {
     max-width: 100%;
     margin: 0 auto;
-    width: 100%;
-    padding: 0 24px 24px;
-    box-sizing: border-box;
 }
 
 /* Spec badge */
@@ -1857,7 +1991,10 @@ textarea::placeholder {
 .workload-form {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
+    border-top: 1px solid #e0dcda;
+    margin-top: 16px;
+    padding-top: 16px;
 }
 
 .builder-hint {
@@ -2253,6 +2390,31 @@ textarea::placeholder {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 10px;
+    padding: 10px 12px;
+    background: #fff;
+    border: 1px solid #e8e5e3;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.spec-workload-editor .form-grid {
+    background: none;
+    border: none;
+    padding: 0;
+    margin-bottom: 0;
+    gap: 12px;
+}
+
+.spec-workload-editor .form-grid .field > span {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.spec-workload-editor .form-grid .field select,
+.spec-workload-editor .form-grid .field input {
+    padding: 8px 12px;
+    font-size: 13px;
 }
 
 .field {
@@ -2357,11 +2519,28 @@ textarea::placeholder {
         0 6px 14px rgba(45, 40, 38, 0.04);
 }
 
+.spec-workload-editor .fieldset {
+    padding: 0;
+    margin-bottom: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+}
+
 .fieldset-title {
     font-size: 12px;
     color: var(--text-dim);
     margin-bottom: 8px;
     font-weight: 600;
+}
+
+.spec-workload-editor .fieldset-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: normal;
+    margin-bottom: 8px;
+    color: var(--text);
 }
 
 .welcome-panel {
@@ -2952,125 +3131,10 @@ textarea::placeholder {
     border-color: var(--border);
 }
 
-/* Support the current structure renderer classes used by app.js */
-.structure-section-card {
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 14px 16px;
-    background: #fff;
-    transition: border-color 0.15s;
-}
-
-.structure-section-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-    flex-wrap: wrap;
-}
-
-.structure-section-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.structure-section-btn {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--text);
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 2px 0;
-    font-family: inherit;
-    transition: color 0.15s;
-}
-
-.structure-section-btn.active,
-.structure-section-btn:hover {
-    color: var(--accent);
-}
-
-.structure-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: var(--surface-soft);
-    color: var(--text-dim);
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.structure-group-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.structure-group-row {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.structure-group-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--surface-soft);
-    color: var(--text);
-    font-size: 14px;
-    font-family: inherit;
-    cursor: pointer;
-    transition: all 0.15s;
-    position: relative;
-}
-
-.structure-group-btn:hover {
-    border-color: var(--accent);
-    background: #faf5f5;
-}
-
-.structure-group-btn.active {
-    border-color: var(--accent);
-    background: #f5eded;
-    color: #922e2e;
-}
-
-.structure-mini-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: #fff;
-    color: var(--text-dim);
-    font-size: 13px;
-    font-family: inherit;
-    cursor: pointer;
-    transition: all 0.15s;
-    white-space: nowrap;
-}
-
-.structure-mini-btn:hover:not(:disabled) {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: #faf5f5;
-}
-
-.structure-mini-btn:disabled {
-    opacity: 0.45;
-    cursor: default;
-}
+/* Keep old class names for legacy compat */
+.structure-section-card { display: none; }
+.structure-group-list { display: none; }
+.structure-group-row { display: none; }
 
 @media (max-width: 860px) {
     .welcome-panel {
@@ -3090,6 +3154,28 @@ textarea::placeholder {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 8px;
+}
+
+.spec-workload-editor .checkbox-grid {
+    grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+    gap: 6px;
+}
+
+.spec-workload-editor .checkbox-item {
+    padding: 6px 10px;
+    font-size: 13px;
+    border-radius: 8px;
+    background: #fff;
+    border: 1px solid #e0dcda;
+}
+
+.spec-workload-editor .checkbox-item:has(input:checked) {
+    border-color: var(--accent);
+    background: rgba(179, 58, 58, 0.04);
+}
+
+.spec-workload-editor .checkbox-item input[type="checkbox"] {
+    margin-top: 1px;
 }
 
 .checkbox-item {
@@ -3178,8 +3264,12 @@ textarea::placeholder {
 }
 
 .workload-form>*+* {
-    border-top: 1px solid var(--divider);
-    padding-top: 14px;
+    border-top: none;
+    padding-top: 0;
+}
+
+.spec-workload-editor .structure-selection {
+    font-size: 13px;
 }
 
 .op-config {
@@ -3194,6 +3284,43 @@ textarea::placeholder {
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.8),
         0 6px 14px rgba(45, 40, 38, 0.04);
+}
+
+.spec-workload-editor .op-config {
+    border: 1px solid #e0dcda;
+    border-radius: 10px;
+    padding: 14px 16px;
+    gap: 12px;
+    background: #fff;
+    box-shadow: none;
+}
+
+.spec-workload-editor .op-config-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--text);
+}
+
+.spec-workload-editor .op-config .field > span,
+.spec-workload-editor .op-config label {
+    font-size: 13px;
+}
+
+.spec-workload-editor .op-config .field select,
+.spec-workload-editor .op-config .field input,
+.spec-workload-editor .op-config .field textarea {
+    font-size: 13px;
+    padding: 8px 12px;
+}
+
+.spec-workload-editor .op-config .form-grid {
+    gap: 12px;
+}
+
+.spec-workload-editor .operation-config-container {
+    gap: 12px;
 }
 
 .op-config-head {
@@ -3237,12 +3364,74 @@ textarea::placeholder {
     gap: 8px;
 }
 
+.spec-workload-editor .advanced-summary {
+    border: 1px solid #e0dcda;
+    border-radius: 8px;
+    background: #faf8f7;
+    padding: 0;
+    overflow: hidden;
+}
+
 .advanced-summary-title {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: #5a5250;
+}
+
+.spec-workload-editor .advanced-summary-title {
+    padding: 10px 14px;
+    margin-bottom: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    user-select: none;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--text-dim);
+    transition: background 0.15s;
+}
+
+.spec-workload-editor .advanced-summary-title:hover {
+    background: #f0eeed;
+}
+
+.spec-workload-editor .advanced-summary-title::after {
+    content: "▸";
+    font-size: 11px;
+    color: #999;
+    transition: transform 0.2s;
+}
+
+.spec-workload-editor .advanced-summary.expanded .advanced-summary-title::after {
+    transform: rotate(90deg);
+}
+
+.spec-workload-editor .advanced-summary-list {
+    display: none;
+    padding: 4px 14px 12px;
+}
+
+.spec-workload-editor .advanced-summary.expanded .advanced-summary-list {
+    display: flex;
+}
+
+.spec-workload-editor .advanced-summary-text {
+    font-size: 13px;
+}
+
+.spec-workload-editor .advanced-summary-field span {
+    font-size: 13px;
+}
+
+.spec-workload-editor .advanced-summary-field input,
+.spec-workload-editor .advanced-summary-field select,
+.spec-workload-editor .advanced-summary-field textarea {
+    font-size: 13px;
 }
 
 .advanced-summary-list {
@@ -3259,6 +3448,12 @@ textarea::placeholder {
     border-radius: 8px;
     background: #ffffff;
     padding: 8px;
+}
+
+.spec-workload-editor .advanced-summary-item {
+    gap: 8px;
+    padding: 10px 12px;
+    border-color: #e0dcda;
 }
 
 .advanced-summary-text {
@@ -3280,11 +3475,32 @@ textarea::placeholder {
     gap: 8px;
 }
 
+.spec-workload-editor .advanced-summary-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.spec-workload-editor .advanced-summary-controls > .advanced-summary-field {
+    flex: 1 1 140px;
+    min-width: 140px;
+}
+
+/* Let segments/collection fields take full width */
+.spec-workload-editor .advanced-summary-controls > .advanced-summary-field:has(.advanced-expression-collection) {
+    flex: 1 1 100%;
+}
+
 .advanced-expression-builder,
 .advanced-expression-collection {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.spec-workload-editor .advanced-expression-builder,
+.spec-workload-editor .advanced-expression-collection {
+    gap: 6px;
 }
 
 .advanced-expression-row {
@@ -3295,6 +3511,11 @@ textarea::placeholder {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.spec-workload-editor .advanced-expression-row {
+    padding: 8px 10px;
+    gap: 6px;
 }
 
 .advanced-expression-row-head {
@@ -3310,16 +3531,29 @@ textarea::placeholder {
     color: #4a4240;
 }
 
+.spec-workload-editor .advanced-expression-row-head strong {
+    font-size: 13px;
+}
+
 .advanced-expression-row-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
 }
 
+.spec-workload-editor .advanced-expression-row-actions {
+    gap: 4px;
+}
+
 .advanced-expression-row-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 8px;
+}
+
+.spec-workload-editor .advanced-expression-row-grid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 6px;
 }
 
 .advanced-summary-field {
@@ -3358,6 +3592,11 @@ textarea::placeholder {
     font-size: 11px;
     line-height: 1.45;
     color: #6b6462;
+}
+
+.spec-workload-editor .advanced-summary-hint {
+    font-size: 12px;
+    color: #999;
 }
 
 .advanced-summary-actions {
@@ -3717,8 +3956,6 @@ textarea::placeholder {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    width: 100%;
-    box-sizing: border-box;
 }
 
 .benchmark-batch-head {
@@ -3796,6 +4033,7 @@ textarea::placeholder {
 }
 
 .benchmark-metric-chart-grid-overview {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     align-items: stretch;
 }
 
@@ -3804,41 +4042,11 @@ textarea::placeholder {
 }
 
 .benchmark-metric-chart-grid-overview .benchmark-metric-chart-head {
-    min-height: 76px;
+    min-height: 128px;
 }
 
 .benchmark-metric-chart-grid-overview .benchmark-metric-chart-title {
-    min-height: calc(1.3em * 2);
-}
-
-.spec-chat-panel.active~.app-shell #tabResults .results-tab-content {
-    padding-right: 360px;
-}
-
-@media (max-width: 1200px) {
-    .results-tab-content .benchmark-metric-chart-grid,
-    .benchmark-metric-chart-grid-overview {
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    }
-}
-
-@media (min-width: 1201px) {
-    .results-tab-content .benchmark-metric-chart-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-}
-
-.benchmark-chart-phase-group {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.benchmark-chart-phase-title {
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    color: #4f4745;
+    min-height: calc(1.3em * 3);
 }
 
 .benchmark-metric-chart-card {
@@ -3848,7 +4056,7 @@ textarea::placeholder {
     padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.9),
         0 14px 28px rgba(45, 40, 38, 0.045);
@@ -4573,7 +4781,7 @@ textarea::placeholder {
     display: grid;
     gap: 16px;
     width: 100%;
-    max-width: 1100px;
+    max-width: 100%;
     margin: 0 auto;
 }
 
@@ -4664,13 +4872,12 @@ textarea::placeholder {
 }
 
 .results-plot-cell {
-    flex: 1 1 200px;
-    min-width: 180px;
-    max-width: 360px;
+    flex: 1 1 340px;
+    min-width: 300px;
     background: #fff;
     border: 1px solid #e5e5e5;
-    border-radius: 4px;
-    padding: 6px 4px 2px;
+    border-radius: 6px;
+    padding: 10px 8px 4px;
 }
 
 .results-plot-label {

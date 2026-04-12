@@ -1,3 +1,9 @@
+var DB_DISPLAY_NAMES = { rocksdb: "RocksDB", cassandra: "Cassandra", printdb: "PrintDB", scylla: "ScyllaDB" };
+function dbDisplayName(name) {
+  if (!name) return "unknown";
+  return DB_DISPLAY_NAMES[name.toLowerCase()] || name;
+}
+
 const workloadForm = document.getElementById("workloadForm");
 const formCharacterSet = document.getElementById("formCharacterSet");
 const formSections = document.getElementById("formSections");
@@ -66,8 +72,7 @@ const downloadJsonBtn = document.getElementById("downloadJsonBtn");
 const runWorkloadBtn = document.getElementById("runWorkloadBtn");
 const copyBtn = document.getElementById("copyBtn");
 const validationResult = document.getElementById("validationResult");
-const runsList =
-  document.getElementById("tabRunsList") || document.getElementById("runsList");
+const runsList = document.getElementById("inlineRunsList") || document.getElementById("tabRunsList") || document.getElementById("runsList");
 const newWorkloadBtn = document.getElementById("newWorkloadBtn");
 const presetBrowserBtn = document.getElementById("presetBrowserBtn");
 const assistantInput = document.getElementById("assistantInput");
@@ -1436,13 +1441,10 @@ function syncStructurePanelToggleUi(showBuilderEditor) {
 }
 
 function updateStructurePanelVisibility() {
+  // When spec editor is active, panels are managed by the spec summary — don't hide them
   if (window.__specEditorActive) {
-    if (structurePanel) {
-      structurePanel.hidden = false;
-    }
-    if (workloadForm) {
-      workloadForm.hidden = false;
-    }
+    if (structurePanel) structurePanel.hidden = false;
+    if (workloadForm) workloadForm.hidden = false;
     return;
   }
   const showBuilderEditor = hasConfiguredWorkloadStructure();
@@ -1721,7 +1723,7 @@ function updateBenchmarkDatabaseSummary() {
   selected.slice(0, 2).forEach((name) => {
     const chip = document.createElement("span");
     chip.className = "run-db-chip";
-    chip.textContent = name;
+    chip.textContent = dbDisplayName(name);
     benchmarkDatabaseSummary.appendChild(chip);
   });
   if (selected.length > 2) {
@@ -4824,56 +4826,59 @@ function renderJsonSummary(json) {
   const header = document.createElement("div");
   header.className = "json-summary-header";
 
-  const title = document.createElement("div");
-  title.className = "json-summary-title";
-  title.textContent = "Workload Summary";
-  header.appendChild(title);
-  jsonSummary.appendChild(header);
+  // const title = document.createElement("div");
+  // title.className = "json-summary-title";
+  // title.textContent = "Workload Summary";
+  // header.appendChild(title);
+  // jsonSummary.appendChild(header);
+  
+  let worklaodScaleText = "";
 
-  const overview = document.createElement("div");
-  overview.className = "json-summary-overview";
-  overview.textContent = model.overview;
-  jsonSummary.appendChild(overview);
+  if (workloadScale !== null && workloadScale > 0) {
+    // const scaleSection = document.createElement("section");
+    // scaleSection.className = "json-summary-section";
 
-  if (Number.isFinite(workloadScale) && workloadScale > 0) {
-    const scaleSection = document.createElement("section");
-    scaleSection.className = "json-summary-section";
+    // const scaleTitle = document.createElement("div");
+    // scaleTitle.className = "json-summary-section-title";
+    // scaleTitle.textContent = "Workload scale";
+    // scaleSection.appendChild(scaleTitle);
 
-    const scaleTitle = document.createElement("div");
-    scaleTitle.className = "json-summary-section-title";
-    scaleTitle.textContent = "Workload scale";
-    scaleSection.appendChild(scaleTitle);
-
-    const scaleValue = document.createElement("div");
-    scaleValue.className = "json-summary-overview";
-    scaleValue.textContent =
+    // const scaleValue = document.createElement("div");
+    // scaleValue.className = "json-summary-overview";
+    // scaleValue.textContent =
+    worklaodScaleText =
       "Operations loaded from the selected workload are scaled by x" +
       String(workloadScale) +
       ".";
-    scaleSection.appendChild(scaleValue);
+    // scaleSection.appendChild(scaleValue);
 
-    jsonSummary.appendChild(scaleSection);
+    // jsonSummary.appendChild(scaleSection);
   }
 
-  if (Array.isArray(model.groups) && model.groups.length > 0) {
-    const groupsSection = document.createElement("section");
-    groupsSection.className = "json-summary-section";
+  const overview = document.createElement("div");
+  overview.className = "json-summary-overview";
+  overview.textContent = model.overview + " " + worklaodScaleText;
+  jsonSummary.appendChild(overview);
 
-    const groupsTitle = document.createElement("div");
-    groupsTitle.className = "json-summary-section-title";
-    groupsTitle.textContent = "Execution plan";
-    groupsSection.appendChild(groupsTitle);
+  // if (Array.isArray(model.groups) && model.groups.length > 0) {
+  //   const groupsSection = document.createElement("section");
+  //   groupsSection.className = "json-summary-section";
 
-    const groupsList = document.createElement("ul");
-    groupsList.className = "json-summary-list";
-    model.groups.forEach((text) => {
-      const item = document.createElement("li");
-      item.textContent = text;
-      groupsList.appendChild(item);
-    });
-    groupsSection.appendChild(groupsList);
-    jsonSummary.appendChild(groupsSection);
-  }
+  //   const groupsTitle = document.createElement("div");
+  //   groupsTitle.className = "json-summary-section-title";
+  //   groupsTitle.textContent = "Execution plan";
+  //   groupsSection.appendChild(groupsTitle);
+
+  //   const groupsList = document.createElement("ul");
+  //   groupsList.className = "json-summary-list";
+  //   model.groups.forEach((text) => {
+  //     const item = document.createElement("li");
+  //     item.textContent = text;
+  //     groupsList.appendChild(item);
+  //   });
+  //   groupsSection.appendChild(groupsList);
+  //   jsonSummary.appendChild(groupsSection);
+  // }
 
   if (Array.isArray(model.assumptions) && model.assumptions.length > 0) {
     const assumptionsSection = document.createElement("section");

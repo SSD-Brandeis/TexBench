@@ -1,0 +1,61 @@
+{
+  "sections": [
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 450000,
+            "key": {
+              "uniform": { "len": 20 }
+            },
+            "val": {
+              "uniform": { "len": 256 }
+            }
+          }
+        },
+        {
+          "point_queries": {
+            "op_count": 50000,
+            "selection": {
+              "uniform": {}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 50000,
+            "key": {
+              "uniform": { "len": 20 }
+            },
+            "val": {
+              "uniform": { "len": 256 }
+            }
+          }
+        },
+        {
+          "point_queries": {
+            "op_count": 350000,
+            "selection": {
+              "uniform": {}
+            }
+          }
+        },
+        {
+          "updates": {
+            "op_count": 100000,
+            "val": {
+              "uniform": { "len": 256 }
+            },
+            "selection": {
+              "uniform": {}
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

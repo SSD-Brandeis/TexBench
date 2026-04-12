@@ -163,54 +163,92 @@
 
     <!-- Spec Summary (shown after spec loads) -->
     <div class="spec-summary" id="specSummaryView">
-      <!-- A/B/C Progress Tabs -->
-      <div class="spec-summary-progress" id="specProgressTabs">
-        <button class="spec-progress-step active" data-tab="edit">
-          <span class="spec-progress-circle">A</span>
-          <span class="spec-progress-label">Edit Specification</span>
-        </button>
-        <div class="spec-progress-connector" id="specConnectorAB"></div>
-        <button class="spec-progress-step" data-tab="databases">
-          <span class="spec-progress-circle">B</span>
-          <span class="spec-progress-label">Select Databases</span>
-        </button>
-        <div class="spec-progress-connector" id="specConnectorBC"></div>
-        <button class="spec-progress-step" data-tab="results">
-          <span class="spec-progress-circle">C</span>
-          <span class="spec-progress-label">Results</span>
-        </button>
-      </div>
-      <div class="spec-progress-placeholder" id="specProgressPlaceholder"></div>
-      <!-- Action bar -->
-      <div class="spec-summary-header">
-        <div style="display:flex;align-items:center;gap:14px;">
-          <span class="spec-summary-valid" id="specSummaryValid">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            Valid
-          </span>
+      <div class="spec-accordion">
+        <!-- Section A: Edit Specification -->
+        <div class="spec-accord-title-row" data-accord="accordEdit">
+          <span class="spec-accord-circle">A</span>
+          <span class="spec-accord-title-text">Edit Specification</span>
         </div>
-        <div class="spec-summary-actions">
-          <button class="spec-action-btn" id="specViewJsonBtn" title="View JSON">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            View JSON
-          </button>
-          <button class="spec-action-btn" id="specDownloadBtn" title="Download JSON">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Download
-          </button>
-          <button class="spec-action-btn" id="specCopyBtn" title="Copy JSON">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            Copy
-          </button>
+        <div class="spec-accord-item open" id="accordEdit">
+          <div class="spec-accord-body">
+            <div class="spec-accord-actions" id="specAccordActions">
+              <span class="spec-summary-valid" id="specSummaryValid">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                Valid
+              </span>
+              <button class="spec-action-btn" id="specViewJsonBtn" title="View JSON">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                JSON
+              </button>
+              <button class="spec-action-btn" id="specDownloadBtn" title="Download">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </button>
+              <button class="spec-action-btn" id="specCopyBtn" title="Copy">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+            </div>
+            <div class="spec-summary-body" id="specSummaryBody">
+              <div class="spec-workload-editor" id="specWorkloadEditor"></div>
+              <div class="spec-json-viewer" id="specJsonViewer">
+                <pre id="specJsonPre"></pre>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-      <!-- Workload editor + optional JSON side by side -->
-      <div class="spec-summary-body" id="specSummaryBody">
-        <div class="spec-workload-editor" id="specWorkloadEditor">
-          <!-- Populated by JS: full workload editor (structure + form) -->
+
+        <div class="spec-accord-connector"></div>
+
+        <!-- Section B: Select Databases -->
+        <div class="spec-accord-title-row" data-accord="accordDatabases">
+          <span class="spec-accord-circle">B</span>
+          <span class="spec-accord-title-text">Select Databases</span>
         </div>
-        <div class="spec-json-viewer" id="specJsonViewer">
-          <pre id="specJsonPre"></pre>
+        <div class="spec-accord-item" id="accordDatabases">
+          <div class="spec-accord-body">
+            <div class="spec-section-body">
+              <div class="db-inline-options" id="dbInlineOptions">
+                <label class="db-option-item">
+                  <input type="checkbox" name="benchmarkDatabaseInline" value="rocksdb" checked />
+                  <span>RocksDB</span>
+                </label>
+                <label class="db-option-item">
+                  <input type="checkbox" name="benchmarkDatabaseInline" value="cassandra" />
+                  <span>Cassandra</span>
+                </label>
+                <label class="db-option-item">
+                  <input type="checkbox" name="benchmarkDatabaseInline" value="scylla" />
+                  <span>ScyllaDB</span>
+                </label>
+                <label class="db-option-item">
+                  <input type="checkbox" name="benchmarkDatabaseInline" value="printdb" />
+                  <span>PrintDB</span>
+                </label>
+              </div>
+              <button class="db-run-btn" id="inlineRunWorkloadBtn">
+                Run Workload
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="spec-accord-connector"></div>
+
+        <!-- Section C: Results -->
+        <div class="spec-accord-title-row" data-accord="accordResults">
+          <span class="spec-accord-circle">C</span>
+          <span class="spec-accord-title-text">Results</span>
+        </div>
+        <div class="spec-accord-item" id="accordResults">
+          <div class="spec-accord-body">
+            <div class="spec-section-body">
+              <div class="runs-list" id="inlineRunsList">
+                <p class="runs-empty" style="color:#999;font-size:14px;text-align:center;padding:40px 0;">
+                  No runs yet. Select databases and click "Run Workload" to start a benchmark.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -481,7 +519,7 @@
                           <span class="run-db-menu-prompt">Select one or more engines</span>
                         </div>
                         <span class="run-db-menu-value" id="benchmarkDatabaseSummary">
-                          <span class="run-db-chip">rocksdb</span>
+                          <span class="run-db-chip">RocksDB</span>
                         </span>
                         <span class="run-db-menu-chevron" aria-hidden="true">▾</span>
                       </summary>
@@ -492,15 +530,19 @@
                         </p>
                         <label class="run-db-option">
                           <input type="checkbox" name="benchmarkDatabase" value="rocksdb" checked />
-                          <span>rocksdb</span>
+                          <span>RocksDB</span>
                         </label>
                         <label class="run-db-option">
                           <input type="checkbox" name="benchmarkDatabase" value="cassandra" />
-                          <span>cassandra</span>
+                          <span>Cassandra</span>
+                        </label>
+                        <label class="run-db-option">
+                          <input type="checkbox" name="benchmarkDatabase" value="scylla" />
+                          <span>ScyllaDB</span>
                         </label>
                         <label class="run-db-option">
                           <input type="checkbox" name="benchmarkDatabase" value="printdb" />
-                          <span>printdb</span>
+                          <span>PrintDB</span>
                         </label>
                       </div>
                     </details>
@@ -560,6 +602,10 @@
               <label class="db-option-item">
                 <input type="checkbox" name="benchmarkDatabase" value="printdb" />
                 <span>PrintDB</span>
+              </label>
+              <label class="db-option-item">
+                <input type="checkbox" name="benchmarkDatabase" value="scylla" />
+                <span>ScyllaDB</span>
               </label>
             </div>
             <button class="db-run-btn" id="dbRunWorkloadBtn">

@@ -375,44 +375,40 @@ function copyTextToClipboard(text) {
         });
     });
 
-    // Wire the databases tab Run Workload button
+    // Wire the databases tab Run Workload button (appShell version)
     var dbRunBtn = document.getElementById("dbRunWorkloadBtn");
     if (dbRunBtn) {
         dbRunBtn.addEventListener("click", function () {
             var dbTabChecks = document.querySelectorAll("#dbOptionList input[name='benchmarkDatabase']");
-            var selectedDatabases = [];
-            dbTabChecks.forEach(function (chk) {
-                if (chk && chk.checked) {
-                    selectedDatabases.push(String(chk.value || "").trim());
-                }
+            var origChecks = document.querySelectorAll("#rightRail input[name='benchmarkDatabase']");
+            dbTabChecks.forEach(function (chk, i) {
+                if (origChecks[i]) origChecks[i].checked = chk.checked;
             });
-            if (typeof window.__setBenchmarkDatabases === "function") {
-                window.__setBenchmarkDatabases(selectedDatabases);
-            } else {
-                var origChecks = document.querySelectorAll("input[name='benchmarkDatabase']");
-                origChecks.forEach(function (chk) {
-                    if (!chk || chk.closest("#dbOptionList")) return;
-                    chk.checked = selectedDatabases.indexOf(String(chk.value || "").trim()) > -1;
-                });
-            }
-
-            function showResultsTab() {
-                var tabRunsPanel = document.getElementById("tabRunsPanel");
-                if (tabRunsPanel) tabRunsPanel.hidden = false;
-                switchTab("results");
-                if (window.__switchSpecTab) window.__switchSpecTab("results");
-            }
-
-            if (typeof window.__runWorkload === "function") {
-                Promise.resolve(window.__runWorkload()).finally(showResultsTab);
-                return;
-            }
-
+            var tabRunsPanel = document.getElementById("tabRunsPanel");
+            if (tabRunsPanel) tabRunsPanel.hidden = false;
             var origRunBtn = document.getElementById("runWorkloadBtn");
-            if (origRunBtn) {
-                origRunBtn.click();
-            }
-            showResultsTab();
+            if (origRunBtn) origRunBtn.click();
+            if (window.__switchSpecTab) window.__switchSpecTab("results");
+        });
+    }
+
+    // Wire the inline Run Workload button (stacked layout version)
+    var inlineRunBtn = document.getElementById("inlineRunWorkloadBtn");
+    if (inlineRunBtn) {
+        inlineRunBtn.addEventListener("click", function () {
+            // Sync inline checkboxes to original right-rail checkboxes
+            var inlineChecks = document.querySelectorAll("#dbInlineOptions input[name='benchmarkDatabaseInline']");
+            var origChecks = document.querySelectorAll("#rightRail input[name='benchmarkDatabase']");
+            inlineChecks.forEach(function (chk, i) {
+                if (origChecks[i]) origChecks[i].checked = chk.checked;
+            });
+            // Click the original run button to trigger the actual run
+            var origRunBtn = document.getElementById("runWorkloadBtn");
+            if (origRunBtn) origRunBtn.click();
+            // Open results section and scroll to it
+            var accordRes = document.getElementById("accordResults");
+            if (accordRes) accordRes.classList.add("open");
+            if (window.__switchSpecTab) window.__switchSpecTab("results");
         });
     }
 
@@ -487,12 +483,16 @@ function copyTextToClipboard(text) {
         // Update validation
         updateSpecValidation();
 
-        // Scroll to A/B/C progress bar
+        // Only open A (Edit Specification) on initial load, collapse B and C
         setTimeout(function () {
-            var progressTabs = document.getElementById("specProgressTabs");
-            if (progressTabs) {
-                progressTabs.scrollIntoView({ behavior: "smooth", block: "start" });
-            }
+            var accordEdit = document.getElementById("accordEdit");
+            var accordDb = document.getElementById("accordDatabases");
+            var accordRes = document.getElementById("accordResults");
+            if (accordEdit) accordEdit.classList.add("open");
+            if (accordDb) accordDb.classList.remove("open");
+            if (accordRes) accordRes.classList.remove("open");
+            if (window.__syncAccordTitleRows) window.__syncAccordTitleRows();
+            if (accordEdit) accordEdit.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 100);
 
     }
@@ -526,11 +526,11 @@ function copyTextToClipboard(text) {
 
         // Toggle form when user clicks a phase pill; show on other structure actions
         target.addEventListener("click", function (e) {
-            var pill = e.target.closest(".struct-phase-pill, .structure-group-btn");
+            var pill = e.target.closest(".struct-phase-pill");
             var removeBtn = e.target.closest(".struct-phase-remove");
-            var actionBtn = e.target.closest(".struct-action-btn, .structure-mini-btn");
+            var actionBtn = e.target.closest(".struct-action-btn");
             var addSection = e.target.closest("#addSectionBtn");
-            var sectionLabel = e.target.closest(".struct-section-label, .structure-section-btn");
+            var sectionLabel = e.target.closest(".struct-section-label");
 
             // If clicking remove × on a pill, don't toggle — just let remove logic run
             if (removeBtn) return;
@@ -545,6 +545,14 @@ function copyTextToClipboard(text) {
             } else if (actionBtn || addSection || sectionLabel) {
                 workloadForm.classList.remove("spec-form-collapsed");
             }
+        });
+
+        // Make advanced expression editor titles toggle their list
+        target.addEventListener("click", function (e) {
+            var title = e.target.closest(".advanced-summary-title");
+            if (!title) return;
+            var summary = title.closest(".advanced-summary");
+            if (summary) summary.classList.toggle("expanded");
         });
 
         target.dataset.populated = "true";
@@ -817,83 +825,45 @@ function copyTextToClipboard(text) {
     }
 
     // ── Spec progress tab switching (mirrors app tabs) ──
+    // ── Accordion toggle + switchSpecTab ──
     (function () {
-        var specSteps = document.querySelectorAll(".spec-progress-step");
-        var specStepOrder = ["edit", "databases", "results"];
-        var specConAB = document.getElementById("specConnectorAB");
-        var specConBC = document.getElementById("specConnectorBC");
+        var accordMap = { edit: "accordEdit", databases: "accordDatabases", results: "accordResults" };
 
-        var specEditorArea = document.getElementById("specWorkloadEditor");
-        var specSummaryBody = document.getElementById("specSummaryBody");
-        var tabDatabases = document.getElementById("tabDatabases");
-        var tabResults = document.getElementById("tabResults");
-
-        function switchSpecTab(tabName) {
-            var activeIdx = specStepOrder.indexOf(tabName);
-            specSteps.forEach(function (s) {
-                var tab = s.getAttribute("data-tab");
-                var idx = specStepOrder.indexOf(tab);
-                s.classList.remove("active", "done");
-                if (idx < activeIdx) s.classList.add("done");
-                if (idx === activeIdx) s.classList.add("active");
+        function syncTitleRows() {
+            document.querySelectorAll(".spec-accord-title-row[data-accord]").forEach(function (row) {
+                var item = document.getElementById(row.getAttribute("data-accord"));
+                if (item && item.classList.contains("open")) {
+                    row.classList.add("active");
+                } else {
+                    row.classList.remove("active");
+                }
             });
-            if (specConAB) specConAB.classList.toggle("done", activeIdx > 0);
-            if (specConBC) specConBC.classList.toggle("done", activeIdx > 1);
-
-            // Hide/show right collapsed tab and action bar based on tab
-            var collapsedTabR = document.getElementById("collapsedTabRight");
-            var specHeader = document.querySelector(".spec-summary-header");
-
-            if (tabName === "edit") {
-                // Restore workload editor
-                specEditorArea.style.display = "";
-                if (specHeader) specHeader.style.display = "";
-                if (collapsedTabR && !document.getElementById("specChatPanel").classList.contains("active")) {
-                    collapsedTabR.style.display = "";
-                }
-                // Restore JSON viewer visibility if it was active
-                var jsonViewer = document.getElementById("specJsonViewer");
-                if (jsonViewer && jsonViewer.classList.contains("active")) {
-                    jsonViewer.style.display = "";
-                }
-                // Move databases/results content back to app shell if needed
-                if (tabDatabases && tabDatabases.parentElement === specSummaryBody) {
-                    var appMain = appShell.querySelector("main");
-                    if (appMain) {
-                        appMain.appendChild(tabDatabases);
-                        appMain.appendChild(tabResults);
-                    }
-                }
-            } else if (tabName === "databases") {
-                // Hide workload editor + action bar + right tab
-                specEditorArea.style.display = "none";
-                if (specHeader) specHeader.style.display = "none";
-                if (collapsedTabR) collapsedTabR.style.display = "none";
-                var jsonViewer = document.getElementById("specJsonViewer");
-                if (jsonViewer) jsonViewer.style.display = "none";
-                tabDatabases.classList.add("active");
-                tabResults.classList.remove("active");
-                specSummaryBody.appendChild(tabDatabases);
-            } else if (tabName === "results") {
-                specEditorArea.style.display = "none";
-                if (specHeader) specHeader.style.display = "none";
-                if (collapsedTabR) collapsedTabR.style.display = "none";
-                var jsonViewer2 = document.getElementById("specJsonViewer");
-                if (jsonViewer2) jsonViewer2.style.display = "none";
-                tabResults.classList.add("active");
-                tabDatabases.classList.remove("active");
-                specSummaryBody.appendChild(tabResults);
-            }
         }
 
-        specSteps.forEach(function (step) {
-            step.addEventListener("click", function () {
-                switchSpecTab(this.getAttribute("data-tab"));
+        // Click title row to toggle section
+        document.querySelectorAll(".spec-accord-title-row").forEach(function (row) {
+            row.addEventListener("click", function () {
+                var accordId = row.getAttribute("data-accord");
+                var item = document.getElementById(accordId);
+                if (item) {
+                    item.classList.toggle("open");
+                    syncTitleRows();
+                }
             });
         });
 
-        // Expose globally so other parts (dbRunBtn) can switch spec tabs
+        function switchSpecTab(tabName) {
+            var accordId = accordMap[tabName];
+            var item = document.getElementById(accordId);
+            if (item) {
+                item.classList.add("open");
+                syncTitleRows();
+                item.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+        }
+
         window.__switchSpecTab = switchSpecTab;
+        window.__syncAccordTitleRows = syncTitleRows;
     })();
 
     // Position collapsed tabs within the forms section on scroll

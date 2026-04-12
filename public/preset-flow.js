@@ -96,7 +96,7 @@
       refs.presetScaleInput.disabled = !(hasFamily && hasFile);
     }
 
-    function parsePositiveScale(rawValue) {
+    function parsePositiveNumber(rawValue) {
       const text =
         typeof rawValue === "string" || typeof rawValue === "number"
           ? String(rawValue).trim()
@@ -112,7 +112,7 @@
       if (!refs.presetScaleInput) {
         return 1;
       }
-      return parsePositiveScale(refs.presetScaleInput.value);
+      return parsePositiveNumber(refs.presetScaleInput.value);
     }
 
     function normalizePresetScaleInput() {
@@ -206,7 +206,7 @@
       }
       if (refs.presetFileSelect) {
         refs.presetFileSelect.innerHTML =
-          '<option value="">Choose a file...</option>';
+          '<option value="">Choose a type...</option>';
         refs.presetFileSelect.value = "";
         refs.presetFileSelect.disabled = true;
       }
@@ -240,7 +240,6 @@
       loadPresetIntoBuilder(
         scalePresetOperationCounts(cloneJsonValue(activePresetJson), scale),
       );
-      clearWorkloadRuns();
       if (preset) {
         renderPresetSelectionNote(preset.family, preset.id);
       }
@@ -412,7 +411,7 @@
       refs.presetFileSelect.innerHTML = "";
       const defaultOption = document.createElement("option");
       defaultOption.value = "";
-      defaultOption.textContent = "Choose a file...";
+      defaultOption.textContent = "Choose a type...";
       refs.presetFileSelect.appendChild(defaultOption);
       matchingPresets.forEach(function appendPresetOption(preset) {
         const option = document.createElement("option");
@@ -540,7 +539,6 @@
         setActivePresetJson(cloneJsonValue(loadedJson));
         setSelectedBuilderRoute("preset");
         loadPresetIntoBuilder(scaledJson);
-        clearWorkloadRuns();
         renderPresetSelectionNote(preset.family, preset.id);
         syncLandingUi();
       } catch (error) {
