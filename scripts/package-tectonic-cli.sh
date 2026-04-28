@@ -16,12 +16,19 @@ DIST_DIR="${DIST_DIR:-$BOOTSTRAP_REPO_ROOT/dist}"
 PACKAGE_PLATFORMS="${PACKAGE_PLATFORMS:-$BOOTSTRAP_PLATFORM}"
 HOST_PLATFORM="$BOOTSTRAP_PLATFORM"
 TECTONIC_CHECKOUT_READY=0
+TECTONIC_PACKAGE_PATCH_READY=0
+TECTONIC_PACKAGE_PATCH_APPLIED=0
 SUCCESSFUL_PLATFORMS=()
 FAILED_PLATFORMS=()
 SKIPPED_PLATFORMS=()
 
 TMP_DIR="$(mktemp -d)"
 cleanup_tmp() {
+  local tectonic_package_patch
+  tectonic_package_patch="$BOOTSTRAP_REPO_ROOT/patches/tectonic-package.patch"
+  if [ "$TECTONIC_PACKAGE_PATCH_APPLIED" = "1" ]; then
+    package_run git -C "$TECTONIC_SOURCE_DIR" apply --reverse "$tectonic_package_patch" || true
+  fi
   rm -rf "$TMP_DIR"
 }
 trap cleanup_tmp EXIT
@@ -199,6 +206,37 @@ ensure_tectonic_checkout_once() {
   TECTONIC_CHECKOUT_READY=1
 }
 
+ensure_tectonic_package_patch_once() {
+  local tectonic_package_patch
+  tectonic_package_patch="$BOOTSTRAP_REPO_ROOT/patches/tectonic-package.patch"
+  if [ "$TECTONIC_PACKAGE_PATCH_READY" = "1" ]; then
+    return 0
+  fi
+  if [ ! -f "$tectonic_package_patch" ]; then
+    bootstrap_fail "Tectonic packaging patch not found: $tectonic_package_patch"
+  fi
+  ensure_tectonic_checkout_once
+  if package_is_dry_run; then
+    bootstrap_log "Applying Tectonic packaging patch from $tectonic_package_patch"
+    package_run git -C "$TECTONIC_SOURCE_DIR" apply "$tectonic_package_patch"
+    TECTONIC_PACKAGE_PATCH_APPLIED=1
+    TECTONIC_PACKAGE_PATCH_READY=1
+    return 0
+  fi
+  if git -C "$TECTONIC_SOURCE_DIR" apply --reverse --check "$tectonic_package_patch" >/dev/null 2>&1; then
+    bootstrap_log "Tectonic packaging patch already present in $TECTONIC_SOURCE_DIR"
+    TECTONIC_PACKAGE_PATCH_READY=1
+    return 0
+  fi
+  if ! git -C "$TECTONIC_SOURCE_DIR" apply --check "$tectonic_package_patch" >/dev/null 2>&1; then
+    bootstrap_fail "Unable to apply Tectonic packaging patch: $tectonic_package_patch"
+  fi
+  bootstrap_log "Applying Tectonic packaging patch from $tectonic_package_patch"
+  git -C "$TECTONIC_SOURCE_DIR" apply "$tectonic_package_patch"
+  TECTONIC_PACKAGE_PATCH_APPLIED=1
+  TECTONIC_PACKAGE_PATCH_READY=1
+}
+
 package_asset_path_for_platform() {
   printf '%s/%s\n' "$DIST_DIR" "$(bootstrap_tectonic_asset_name "$1")"
 }
@@ -280,6 +318,7 @@ build_host_platform() {
   local sdkroot apple_arch clang_bin clangxx_bin ar_bin
   platform="$1"
   ensure_tectonic_checkout_once
+  ensure_tectonic_package_patch_once
   rust_target="$(bootstrap_rust_target "$platform")"
   asset_name="$(bootstrap_tectonic_asset_name "$platform")"
   asset_path="$DIST_DIR/$asset_name"
@@ -372,6 +411,7 @@ build_linux_platform_in_docker() {
   local platform rust_target asset_name asset_path docker_platform context_dir out_dir built_bin
   platform="$1"
   ensure_tectonic_checkout_once
+  ensure_tectonic_package_patch_once
   rust_target="$(bootstrap_rust_target "$platform")"
   asset_name="$(bootstrap_tectonic_asset_name "$platform")"
   asset_path="$DIST_DIR/$asset_name"

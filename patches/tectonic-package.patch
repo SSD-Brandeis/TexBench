@@ -1,0 +1,133 @@
+commit bd94bfb87c349ab4591111bfcf8ba765ba111c8f (HEAD -> refs/heads/no-marker-array)
+Author: Abhishek Chanda <abhishek.becs@gmail.com>
+Date:   Thu Apr 23 21:07:02 2026 -0500
+
+    Fix if let chain build error
+
+diff --git a/tectonic-cli/src/main.rs b/tectonic-cli/src/main.rs
+index c302996..8362c06 100644
+--- a/tectonic-cli/src/main.rs
++++ b/tectonic-cli/src/main.rs
+@@ -158,7 +158,7 @@ impl WorkloadPath {
+                 env!("CARGO_MANIFEST_DIR"),
+                 kvbench_name
+             ));
+-        } else if let Some(db_bench_name) = self.db_bench_workload {
++        } else if let Some(_db_bench_name) = self.db_bench_workload {
+             todo!()
+         } else {
+             unreachable!()
+@@ -180,24 +180,29 @@ fn main() -> Result<()> {
+         } => {
+             let workload_path = workload_path.into_path()?;
+ 
+-            if let Some(scale) = scale
+-                && scale != 1.0
+-            {
+-                return invoke_generate(
+-                    &workload_path,
+-                    output.as_deref(),
+-                    |workload_spec_string, output_file_path| {
+-                        scale_and_generate_workload(workload_spec_string, output_file_path, scale)
+-                    },
+-                );
+-            } else {
+-                return invoke_generate(
+-                    &workload_path,
+-                    output.as_deref(),
+-                    |workload_spec_string, output_file_path| {
+-                        generate_workload(workload_spec_string, output_file_path)
+-                    },
+-                );
++            match scale {
++                Some(scale) if scale != 1.0 => {
++                    return invoke_generate(
++                        &workload_path,
++                        output.as_deref(),
++                        |workload_spec_string, output_file_path| {
++                            scale_and_generate_workload(
++                                workload_spec_string,
++                                output_file_path,
++                                scale,
++                            )
++                        },
++                    );
++                }
++                _ => {
++                    return invoke_generate(
++                        &workload_path,
++                        output.as_deref(),
++                        |workload_spec_string, output_file_path| {
++                            generate_workload(workload_spec_string, output_file_path)
++                        },
++                    );
++                }
+             }
+         }
+         Command::Schema => return invoke_schema(),
+@@ -223,35 +228,36 @@ fn main() -> Result<()> {
+         } => {
+             let workload_path = workload_path.into_path()?;
+ 
+-            if let Some(scale) = scale
+-                && scale != 1.0
+-            {
+-                return invoke_benchmark(
+-                    &workload_path,
+-                    &database,
+-                    |workload_spec_string, database_name| {
+-                        scale_and_benchmark_workload(
+-                            workload_spec_string,
+-                            database_name,
+-                            db_path.as_deref(),
+-                            config.as_deref(),
+-                            scale,
+-                        )
+-                    },
+-                );
+-            } else {
+-                return invoke_benchmark(
+-                    &workload_path,
+-                    &database,
+-                    |workload_spec_string, database_name| {
+-                        benchmark_workload(
+-                            workload_spec_string,
+-                            database_name,
+-                            db_path.as_deref(),
+-                            config.as_deref(),
+-                        )
+-                    },
+-                );
++            match scale {
++                Some(scale) if scale != 1.0 => {
++                    return invoke_benchmark(
++                        &workload_path,
++                        &database,
++                        |workload_spec_string, database_name| {
++                            scale_and_benchmark_workload(
++                                workload_spec_string,
++                                database_name,
++                                db_path.as_deref(),
++                                config.as_deref(),
++                                scale,
++                            )
++                        },
++                    );
++                }
++                _ => {
++                    return invoke_benchmark(
++                        &workload_path,
++                        &database,
++                        |workload_spec_string, database_name| {
++                            benchmark_workload(
++                                workload_spec_string,
++                                database_name,
++                                db_path.as_deref(),
++                                config.as_deref(),
++                            )
++                        },
++                    );
++                }
+             }
+         }
+     }
