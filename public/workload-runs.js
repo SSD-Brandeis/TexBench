@@ -11,7 +11,7 @@
   const WORKLOAD_RUNS_STORAGE_KEY = "tectonic.workloadRuns.v2";
   const SECONDS_DISPLAY_THRESHOLD_MICROS = 10000;
 
-  var DB_DISPLAY_NAMES = { rocksdb: "RocksDB", cassandra: "Cassandra", printdb: "PrintDB", scylla: "ScyllaDB" };
+  var DB_DISPLAY_NAMES = { rocksdb: "RocksDB", cassandra: "Cassandra", printdb: "PrintDB", scylla: "ScyllaDB", redis: "Redis" };
   function dbDisplayName(name) {
     if (!name) return "unknown";
     return DB_DISPLAY_NAMES[name.toLowerCase()] || name;
@@ -910,6 +910,7 @@
     Cassandra: "#b85c4f",
     PrintDB: "#7f8c8d",
     ScyllaDB: "#4a90a4",
+    Redis: "#c0392b",
   };
   function dbColor(label, index) {
     return DB_FIXED_COLORS[label] || DB_COLORS[index % DB_COLORS.length];

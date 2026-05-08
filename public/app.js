@@ -1,4 +1,4 @@
-var DB_DISPLAY_NAMES = { rocksdb: "RocksDB", cassandra: "Cassandra", printdb: "PrintDB", scylla: "ScyllaDB" };
+var DB_DISPLAY_NAMES = { rocksdb: "RocksDB", cassandra: "Cassandra", printdb: "PrintDB", scylla: "ScyllaDB", redis: "Redis" };
 function dbDisplayName(name) {
   if (!name) return "unknown";
   return DB_DISPLAY_NAMES[name.toLowerCase()] || name;

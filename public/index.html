@@ -220,6 +220,10 @@
                   <span>ScyllaDB</span>
                 </label>
                 <label class="db-option-item">
+                  <input type="checkbox" name="benchmarkDatabaseInline" value="redis" />
+                  <span>Redis</span>
+                </label>
+                <label class="db-option-item">
                   <input type="checkbox" name="benchmarkDatabaseInline" value="printdb" />
                   <span>PrintDB</span>
                 </label>
@@ -541,6 +545,10 @@
                           <span>ScyllaDB</span>
                         </label>
                         <label class="run-db-option">
+                          <input type="checkbox" name="benchmarkDatabase" value="redis" />
+                          <span>Redis</span>
+                        </label>
+                        <label class="run-db-option">
                           <input type="checkbox" name="benchmarkDatabase" value="printdb" />
                           <span>PrintDB</span>
                         </label>
@@ -606,6 +614,10 @@
               <label class="db-option-item">
                 <input type="checkbox" name="benchmarkDatabase" value="scylla" />
                 <span>ScyllaDB</span>
+              </label>
+              <label class="db-option-item">
+                <input type="checkbox" name="benchmarkDatabase" value="redis" />
+                <span>Redis</span>
               </label>
             </div>
             <button class="db-run-btn" id="dbRunWorkloadBtn">
