@@ -324,3 +324,48 @@ test("bootstrap helper installs Redis package with Homebrew on macOS", () => {
     rmSync(binDir, { recursive: true, force: true });
   }
 });
+
+test("run-local-dev starts Redis from package binaries after package install", () => {
+  const binDir = mkdtempSync(path.join(os.tmpdir(), "bootstrap-redis-start-"));
+  try {
+    const redisLogPath = path.join(binDir, "redis.log");
+    const cliLogPath = path.join(binDir, "redis-cli.log");
+    createExecutable(
+      binDir,
+      "redis-server",
+      `#!/bin/sh\necho "$@" >> "${redisLogPath}"\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "--pidfile" ]; then\n    shift\n    echo $$ > "$1"\n    exit 0\n  fi\n  shift\ndone\nexit 0\n`,
+    );
+    createExecutable(
+      binDir,
+      "redis-cli",
+      `#!/bin/sh\necho "$@" >> "${cliLogPath}"\nif [ -f "${cliLogPath}.ready" ]; then echo PONG; fi\n: > "${cliLogPath}.ready"\nexit 0\n`,
+    );
+    createExecutable(
+      binDir,
+      "kill",
+      "#!/bin/sh\nexit 0\n",
+    );
+    const script = [
+      "RUN_LOCAL_DEV_SOURCE_ONLY=1",
+      "source scripts/run-local-dev.sh",
+      "bootstrap_install_redis() { return 0; }",
+      "bootstrap_start_redis_for_session",
+    ].join("; ");
+    const result = spawnSync("/bin/bash", ["-c", script], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: binDir,
+        BOOTSTRAP_UNAME_S: "Linux",
+        BOOTSTRAP_UNAME_M: "x86_64",
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const redisLog = readFileSync(redisLogPath, "utf8");
+    assert.match(redisLog, /--port 6379/);
+    assert.doesNotMatch(result.stdout + result.stderr, /\.bootstrap\/tools\/redis/);
+  } finally {
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});

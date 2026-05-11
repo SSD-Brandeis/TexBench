@@ -545,8 +545,12 @@ bootstrap_start_redis_for_session() {
     BOOTSTRAP_REDIS_CLI_BIN="$existing_cli"
   else
     bootstrap_install_redis
-    BOOTSTRAP_REDIS_SERVER_BIN="$BOOTSTRAP_DOWNLOADED_REDIS_SERVER_BIN"
-    BOOTSTRAP_REDIS_CLI_BIN="$BOOTSTRAP_DOWNLOADED_REDIS_CLI_BIN"
+    BOOTSTRAP_REDIS_SERVER_BIN="$(bootstrap_existing_redis_server_bin || true)"
+    BOOTSTRAP_REDIS_CLI_BIN="$(bootstrap_existing_redis_cli_bin || true)"
+    if [ -z "$BOOTSTRAP_REDIS_SERVER_BIN" ] || [ -z "$BOOTSTRAP_REDIS_CLI_BIN" ]; then
+      BOOTSTRAP_REDIS_SERVER_BIN="$BOOTSTRAP_DOWNLOADED_REDIS_SERVER_BIN"
+      BOOTSTRAP_REDIS_CLI_BIN="$BOOTSTRAP_DOWNLOADED_REDIS_CLI_BIN"
+    fi
   fi
 
   bootstrap_log "Starting Redis for this session"
