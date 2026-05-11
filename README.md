@@ -67,6 +67,8 @@ Ollama's current official macOS support starts at macOS 14+. See the official do
 
 - `AI_PROVIDER=ollama`
 - `OLLAMA_MODEL=llama3:latest`
+- `OLLAMA_TIMEOUT_MS=300000`
+- `AI_TIMEOUT_MS=300000`
 - `TECTONIC_BIN=<repo-local prebuilt binary>`
 - Cassandra pinned to `5.0.7` on `127.0.0.1:9042`
 - Redis on `127.0.0.1:6379`

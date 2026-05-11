@@ -333,7 +333,7 @@ test("run-local-dev starts Redis from package binaries after package install", (
     createExecutable(
       binDir,
       "redis-server",
-      `#!/bin/sh\necho "$@" >> "${redisLogPath}"\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "--pidfile" ]; then\n    shift\n    echo $$ > "$1"\n    exit 0\n  fi\n  shift\ndone\nexit 0\n`,
+      `#!/bin/sh\necho "$@" >> "${redisLogPath}"\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "--pidfile" ]; then\n    shift\n    sleep 10 &\n    echo $! > "$1"\n    exit 0\n  fi\n  shift\ndone\nexit 0\n`,
     );
     createExecutable(
       binDir,
@@ -347,16 +347,17 @@ test("run-local-dev starts Redis from package binaries after package install", (
     );
     const script = [
       "RUN_LOCAL_DEV_SOURCE_ONLY=1",
-      "source scripts/run-local-dev.sh",
+      "source \"$0\"",
       "bootstrap_install_redis() { return 0; }",
       "bootstrap_start_redis_for_session",
+      "bootstrap_cleanup",
     ].join("; ");
-    const result = spawnSync("/bin/bash", ["-c", script], {
+    const result = spawnSync("/bin/bash", ["-c", script, "scripts/run-local-dev.sh"], {
       cwd: repoRoot,
       encoding: "utf8",
       env: {
         ...process.env,
-        PATH: binDir,
+        PATH: binDir + path.delimiter + process.env.PATH,
         BOOTSTRAP_UNAME_S: "Linux",
         BOOTSTRAP_UNAME_M: "x86_64",
       },

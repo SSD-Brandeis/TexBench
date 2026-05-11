@@ -4,7 +4,7 @@ import {
 } from "./ollama-assist-provider.mjs";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:11434";
-const DEFAULT_TIMEOUT_MS = 65000;
+const DEFAULT_TIMEOUT_MS = 300000;
 const DEFAULT_ENDPOINT_PATH = "/api/chat";
 
 export function createOllamaAiBindingFromEnv(envLike = process.env) {
@@ -20,11 +20,7 @@ export function createOllamaAiBindingFromEnv(envLike = process.env) {
     readString(env.OLLAMA_API_ENDPOINT) || DEFAULT_ENDPOINT_PATH,
   );
   const defaultModel = getOllamaModel(env);
-  const timeoutMs = clampInteger(
-    readInteger(env.OLLAMA_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
-    1000,
-    120000,
-  );
+  const timeoutMs = resolveOllamaTimeoutMs(env);
 
   return {
     async run(modelName, payload) {
@@ -81,6 +77,15 @@ export function createOllamaAiBindingFromEnv(envLike = process.env) {
       }
     },
   };
+}
+
+export function resolveOllamaTimeoutMs(envLike = process.env) {
+  const env = envLike && typeof envLike === "object" ? envLike : {};
+  return clampInteger(
+    readInteger(env.OLLAMA_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
+    1000,
+    600000,
+  );
 }
 
 function shouldEnableOllamaBinding(env) {
