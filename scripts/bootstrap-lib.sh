@@ -574,6 +574,61 @@ bootstrap_install_curl_if_missing() {
   bootstrap_log "curl is ready at $curl_bin"
 }
 
+bootstrap_install_redis_build_dependencies_if_missing() {
+  local missing=()
+  if ! bootstrap_resolve_command cc >/dev/null 2>&1; then
+    missing+=("cc")
+  fi
+  if ! bootstrap_resolve_command pkg-config >/dev/null 2>&1; then
+    missing+=("pkg-config")
+  fi
+  if [ "${#missing[@]}" -eq 0 ]; then
+    return 0
+  fi
+
+  case "$BOOTSTRAP_PLATFORM" in
+    darwin-*)
+      bootstrap_fail "Redis source build requires missing tools: ${missing[*]}. Install Xcode Command Line Tools and pkg-config, or install redis-server and redis-cli yourself."
+      ;;
+    linux-*)
+      local package_manager
+      package_manager="$(bootstrap_existing_linux_package_manager || true)"
+      if [ -z "$package_manager" ]; then
+        bootstrap_fail "Redis source build requires missing tools: ${missing[*]}, and no supported Linux package manager (apt-get, dnf, yum, zypper, apk) was found."
+      fi
+      bootstrap_log "Installing Redis build dependencies using $package_manager"
+      case "$package_manager" in
+        apt-get)
+          bootstrap_run_privileged apt-get update
+          bootstrap_run_privileged apt-get install -y build-essential pkg-config
+          ;;
+        dnf)
+          bootstrap_run_privileged dnf install -y gcc make pkgconf-pkg-config
+          ;;
+        yum)
+          bootstrap_run_privileged yum install -y gcc make pkgconfig
+          ;;
+        zypper)
+          bootstrap_run_privileged zypper --non-interactive install gcc make pkg-config
+          ;;
+        apk)
+          bootstrap_run_privileged apk add --no-cache build-base pkgconf
+          ;;
+      esac
+      ;;
+    *)
+      bootstrap_fail "Redis source build requires missing tools: ${missing[*]}."
+      ;;
+  esac
+
+  if ! bootstrap_resolve_command cc >/dev/null 2>&1; then
+    bootstrap_fail "Redis build dependency installation completed, but cc is still unavailable."
+  fi
+  if ! bootstrap_resolve_command pkg-config >/dev/null 2>&1; then
+    bootstrap_fail "Redis build dependency installation completed, but pkg-config is still unavailable."
+  fi
+}
+
 bootstrap_download() {
   local url output
   url="$1"

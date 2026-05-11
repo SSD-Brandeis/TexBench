@@ -53,6 +53,7 @@ make bootstrap-info
 - `tar`
 - `make`
 - `python3` for `cqlsh`
+- a C compiler and `pkg-config` for first-time repo-local Redis builds when Redis is not already installed; on Linux, `make up` will try to install the matching build packages with the detected package manager
 - internet access for first-time downloads
 
 Ollama's current official macOS support starts at macOS 14+. See the official docs:

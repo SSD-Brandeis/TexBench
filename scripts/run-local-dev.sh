@@ -477,6 +477,7 @@ bootstrap_install_redis() {
   fi
   bootstrap_log "Installing Redis $BOOTSTRAP_REDIS_VERSION"
   bootstrap_require_commands make
+  bootstrap_install_redis_build_dependencies_if_missing
   mkdir -p "$BOOTSTRAP_CACHE_DIR" "$BOOTSTRAP_TOOLS_DIR/redis/$BOOTSTRAP_PLATFORM"
   local archive_name archive_path extract_root
   archive_name="$(bootstrap_redis_archive_name)"

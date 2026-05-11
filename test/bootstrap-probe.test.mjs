@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -252,6 +252,44 @@ test("bootstrap probe marks curl for install when unavailable", () => {
     });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout.trim(), "install");
+  } finally {
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test("bootstrap helper installs Redis build dependencies with apt when compiler tools are missing", () => {
+  const binDir = mkdtempSync(path.join(os.tmpdir(), "bootstrap-redis-deps-"));
+  try {
+    const logPath = path.join(binDir, "apt.log");
+    createExecutable(
+      binDir,
+      "apt-get",
+      `#!/bin/sh\necho "$@" >> "${logPath}"\nexit 0\n`,
+    );
+    createExecutable(
+      binDir,
+      "id",
+      "#!/bin/sh\nif [ \"$1\" = \"-u\" ]; then echo 0; exit 0; fi\nexec /usr/bin/id \"$@\"\n",
+    );
+    const script = [
+      "source scripts/bootstrap-lib.sh",
+      "bootstrap_install_redis_build_dependencies_if_missing",
+    ].join("; ");
+    const result = spawnSync("/bin/bash", ["-c", script], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: binDir,
+        BOOTSTRAP_UNAME_S: "Linux",
+        BOOTSTRAP_UNAME_M: "x86_64",
+      },
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /cc is still unavailable/);
+    const log = readFileSync(logPath, "utf8");
+    assert.match(log, /^update$/m);
+    assert.match(log, /^install -y build-essential pkg-config$/m);
   } finally {
     rmSync(binDir, { recursive: true, force: true });
   }
