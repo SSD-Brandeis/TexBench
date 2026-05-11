@@ -629,6 +629,49 @@ bootstrap_install_redis_build_dependencies_if_missing() {
   fi
 }
 
+bootstrap_install_redis_package_if_possible() {
+  case "$BOOTSTRAP_PLATFORM" in
+    darwin-*)
+      local brew_bin
+      brew_bin="$(bootstrap_existing_brew_bin || true)"
+      if [ -z "$brew_bin" ]; then
+        return 1
+      fi
+      bootstrap_log "Installing Redis using Homebrew"
+      "$brew_bin" install redis
+      ;;
+    linux-*)
+      local package_manager
+      package_manager="$(bootstrap_existing_linux_package_manager || true)"
+      if [ -z "$package_manager" ]; then
+        return 1
+      fi
+      bootstrap_log "Installing Redis using $package_manager"
+      case "$package_manager" in
+        apt-get)
+          bootstrap_run_privileged apt-get update
+          bootstrap_run_privileged apt-get install -y redis-server
+          ;;
+        dnf)
+          bootstrap_run_privileged dnf install -y redis
+          ;;
+        yum)
+          bootstrap_run_privileged yum install -y redis
+          ;;
+        zypper)
+          bootstrap_run_privileged zypper --non-interactive install redis
+          ;;
+        apk)
+          bootstrap_run_privileged apk add --no-cache redis
+          ;;
+      esac
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 bootstrap_download() {
   local url output
   url="$1"

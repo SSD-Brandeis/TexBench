@@ -471,11 +471,19 @@ bootstrap_start_cassandra_for_session() {
 }
 
 bootstrap_install_redis() {
+  if bootstrap_install_redis_package_if_possible; then
+    if bootstrap_existing_redis_server_bin >/dev/null 2>&1 && bootstrap_existing_redis_cli_bin >/dev/null 2>&1; then
+      bootstrap_log "Redis package install completed"
+      return
+    fi
+    bootstrap_fail "Redis package install completed, but redis-server and redis-cli are still unavailable."
+  fi
+
   if [ -x "$BOOTSTRAP_DOWNLOADED_REDIS_SERVER_BIN" ] && [ -x "$BOOTSTRAP_DOWNLOADED_REDIS_CLI_BIN" ]; then
     bootstrap_log "Repo-local Redis already installed at $BOOTSTRAP_DOWNLOADED_REDIS_HOME"
     return
   fi
-  bootstrap_log "Installing Redis $BOOTSTRAP_REDIS_VERSION"
+  bootstrap_log "Installing repo-local Redis $BOOTSTRAP_REDIS_VERSION from source"
   bootstrap_require_commands make
   bootstrap_install_redis_build_dependencies_if_missing
   mkdir -p "$BOOTSTRAP_CACHE_DIR" "$BOOTSTRAP_TOOLS_DIR/redis/$BOOTSTRAP_PLATFORM"

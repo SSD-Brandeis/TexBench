@@ -257,8 +257,8 @@ test("bootstrap probe marks curl for install when unavailable", () => {
   }
 });
 
-test("bootstrap helper installs Redis build dependencies with apt when compiler tools are missing", () => {
-  const binDir = mkdtempSync(path.join(os.tmpdir(), "bootstrap-redis-deps-"));
+test("bootstrap helper installs Redis package with apt when Redis is missing", () => {
+  const binDir = mkdtempSync(path.join(os.tmpdir(), "bootstrap-redis-package-"));
   try {
     const logPath = path.join(binDir, "apt.log");
     createExecutable(
@@ -273,7 +273,7 @@ test("bootstrap helper installs Redis build dependencies with apt when compiler 
     );
     const script = [
       "source scripts/bootstrap-lib.sh",
-      "bootstrap_install_redis_build_dependencies_if_missing",
+      "bootstrap_install_redis_package_if_possible",
     ].join("; ");
     const result = spawnSync("/bin/bash", ["-c", script], {
       cwd: repoRoot,
@@ -285,11 +285,41 @@ test("bootstrap helper installs Redis build dependencies with apt when compiler 
         BOOTSTRAP_UNAME_M: "x86_64",
       },
     });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /cc is still unavailable/);
+    assert.equal(result.status, 0, result.stderr);
     const log = readFileSync(logPath, "utf8");
     assert.match(log, /^update$/m);
-    assert.match(log, /^install -y build-essential pkg-config$/m);
+    assert.match(log, /^install -y redis-server$/m);
+  } finally {
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test("bootstrap helper installs Redis package with Homebrew on macOS", () => {
+  const binDir = mkdtempSync(path.join(os.tmpdir(), "bootstrap-redis-brew-"));
+  try {
+    const logPath = path.join(binDir, "brew.log");
+    createExecutable(
+      binDir,
+      "brew",
+      `#!/bin/sh\necho "$@" >> "${logPath}"\nexit 0\n`,
+    );
+    const script = [
+      "source scripts/bootstrap-lib.sh",
+      "bootstrap_install_redis_package_if_possible",
+    ].join("; ");
+    const result = spawnSync("/bin/bash", ["-c", script], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: binDir,
+        BOOTSTRAP_UNAME_S: "Darwin",
+        BOOTSTRAP_UNAME_M: "arm64",
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const log = readFileSync(logPath, "utf8");
+    assert.match(log, /^install redis$/m);
   } finally {
     rmSync(binDir, { recursive: true, force: true });
   }
