@@ -22,7 +22,7 @@ function findMetricByLabel(metrics, label) {
   );
 }
 
-test("runner builds benchmark args for rocksdb, cassandra, and printdb", () => {
+test("runner builds benchmark args for rocksdb, cassandra, redis, and printdb", () => {
   assert.deepEqual(
     buildTectonicBenchmarkArgs({
       spec_path: "/tmp/spec.json",
@@ -49,6 +49,16 @@ test("runner builds benchmark args for rocksdb, cassandra, and printdb", () => {
       "-p",
       "127.0.0.1",
     ],
+  );
+
+  assert.deepEqual(
+    buildTectonicBenchmarkArgs({
+      spec_path: "/tmp/spec.json",
+      database: "redis",
+      database_path: "",
+      config: "",
+    }),
+    ["benchmark", "-w", "/tmp/spec.json", "--database", "redis"],
   );
 
   assert.deepEqual(

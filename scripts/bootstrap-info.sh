@@ -34,6 +34,8 @@ case "$key" in
   cassandra-version) printf '%s\n' "$BOOTSTRAP_CASSANDRA_VERSION" ;;
   cassandra-url) bootstrap_cassandra_archive_url ;;
   cassandra-sys-lib-path) bootstrap_default_cassandra_sys_lib_path ;;
+  redis-version) printf '%s\n' "$BOOTSTRAP_REDIS_VERSION" ;;
+  redis-url) bootstrap_redis_archive_url ;;
   *)
     cat >&2 <<'EOF'
 Usage: scripts/bootstrap-info.sh <key>
@@ -66,6 +68,8 @@ Keys:
   cassandra-version
   cassandra-url
   cassandra-sys-lib-path
+  redis-version
+  redis-url
 EOF
     exit 1
     ;;

@@ -12,6 +12,8 @@ java_bin="$(bootstrap_existing_java_bin || true)"
 tectonic_bin="$(bootstrap_existing_tectonic_bin || true)"
 cassandra_bin="$(bootstrap_existing_cassandra_bin || true)"
 cqlsh_bin="$(bootstrap_existing_cqlsh_bin || true)"
+redis_server_bin="$(bootstrap_existing_redis_server_bin || true)"
+redis_cli_bin="$(bootstrap_existing_redis_cli_bin || true)"
 ollama_bin="$(bootstrap_existing_ollama_bin || true)"
 curl_bin="$(bootstrap_existing_curl_bin || true)"
 
@@ -79,6 +81,27 @@ case "$key" in
       bootstrap_cqlsh_bin
     fi
     ;;
+  redis-source)
+    if [ -n "$redis_server_bin" ] && [ -n "$redis_cli_bin" ]; then
+      printf 'existing\n'
+    else
+      printf 'bootstrap\n'
+    fi
+    ;;
+  redis-server-path)
+    if [ -n "$redis_server_bin" ]; then
+      printf '%s\n' "$redis_server_bin"
+    else
+      bootstrap_redis_server_bin
+    fi
+    ;;
+  redis-cli-path)
+    if [ -n "$redis_cli_bin" ]; then
+      printf '%s\n' "$redis_cli_bin"
+    else
+      bootstrap_redis_cli_bin
+    fi
+    ;;
   ollama-source)
     if [ -n "$ollama_bin" ]; then
       printf 'existing\n'
@@ -113,6 +136,9 @@ Keys:
   cassandra-source
   cassandra-path
   cqlsh-path
+  redis-source
+  redis-server-path
+  redis-cli-path
   ollama-source
   ollama-path
   curl-source

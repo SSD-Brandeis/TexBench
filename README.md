@@ -14,13 +14,17 @@ make
 
 - detect your OS and CPU automatically
 - reuse a working local Node.js, Java, Ollama, `tectonic-cli`, or Cassandra setup when it already satisfies the pinned requirements
+- reuse a working local Redis setup when it is already accepting connections
 - otherwise bootstrap a repo-local Node.js runtime
 - otherwise bootstrap a repo-local Java 17 runtime for Cassandra when a compatible Cassandra setup is not already available
 - install npm dependencies
 - install Ollama if it is missing
 - install Cassandra `5.0.7` if it is missing
+- install Redis `7.2.4` if it is missing
 - start Cassandra for the current app session if it is not already running and functional on `127.0.0.1:9042`
 - verify Cassandra with `cqlsh`
+- start Redis for the current app session if it is not already running and functional on `127.0.0.1:6379`
+- verify Redis with `redis-cli PING`
 - start Ollama for the current app session if it is not already running
 - pull the pinned default local model (`llama3:latest`)
 - verify that Ollama resolves it to digest `365c0bd3c000`
@@ -64,6 +68,7 @@ Ollama's current official macOS support starts at macOS 14+. See the official do
 - `OLLAMA_MODEL=llama3:latest`
 - `TECTONIC_BIN=<repo-local prebuilt binary>`
 - Cassandra pinned to `5.0.7` on `127.0.0.1:9042`
+- Redis on `127.0.0.1:6379` (repo-local fallback pinned to `7.2.4`)
 
 The app server entrypoint remains:
 
@@ -81,12 +86,15 @@ Supported databases in the UI:
 
 - `rocksdb`
 - `cassandra`
+- `scylla`
+- `redis`
 - `printdb`
 
-For Cassandra runs, `make up` targets:
+For Cassandra and Redis runs, `make up` targets:
 
 ```text
 127.0.0.1:9042
+127.0.0.1:6379
 ```
 
 The runner writes artifacts under:

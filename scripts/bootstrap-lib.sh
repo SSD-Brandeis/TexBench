@@ -31,6 +31,9 @@ BOOTSTRAP_TECTONIC_DOCKER_CARGO_JOBS="${BOOTSTRAP_TECTONIC_DOCKER_CARGO_JOBS:-2}
 BOOTSTRAP_CASSANDRA_VERSION="${BOOTSTRAP_CASSANDRA_VERSION:-5.0.7}"
 BOOTSTRAP_CASSANDRA_HOST="${BOOTSTRAP_CASSANDRA_HOST:-127.0.0.1}"
 BOOTSTRAP_CASSANDRA_PORT="${BOOTSTRAP_CASSANDRA_PORT:-9042}"
+BOOTSTRAP_REDIS_VERSION="${BOOTSTRAP_REDIS_VERSION:-7.2.4}"
+BOOTSTRAP_REDIS_HOST="${BOOTSTRAP_REDIS_HOST:-127.0.0.1}"
+BOOTSTRAP_REDIS_PORT="${BOOTSTRAP_REDIS_PORT:-6379}"
 BOOTSTRAP_OLLAMA_HOST="${BOOTSTRAP_OLLAMA_HOST:-127.0.0.1:11434}"
 BOOTSTRAP_OLLAMA_BASE_URL="${BOOTSTRAP_OLLAMA_BASE_URL:-http://$BOOTSTRAP_OLLAMA_HOST}"
 
@@ -382,6 +385,29 @@ bootstrap_cqlsh_bin() {
   printf '%s/bin/cqlsh\n' "$(bootstrap_cassandra_home "${1:-$BOOTSTRAP_PLATFORM}")"
 }
 
+bootstrap_redis_archive_name() {
+  printf 'redis-%s.tar.gz\n' "$BOOTSTRAP_REDIS_VERSION"
+}
+
+bootstrap_redis_archive_url() {
+  printf 'https://download.redis.io/releases/%s\n' "$(bootstrap_redis_archive_name)"
+}
+
+bootstrap_redis_home() {
+  printf '%s/redis/%s/redis-%s\n' \
+    "$BOOTSTRAP_TOOLS_DIR" \
+    "${1:-$BOOTSTRAP_PLATFORM}" \
+    "$BOOTSTRAP_REDIS_VERSION"
+}
+
+bootstrap_redis_server_bin() {
+  printf '%s/src/redis-server\n' "$(bootstrap_redis_home "${1:-$BOOTSTRAP_PLATFORM}")"
+}
+
+bootstrap_redis_cli_bin() {
+  printf '%s/src/redis-cli\n' "$(bootstrap_redis_home "${1:-$BOOTSTRAP_PLATFORM}")"
+}
+
 bootstrap_existing_cassandra_bin() {
   local cassandra_bin cqlsh_bin
   cassandra_bin="$(bootstrap_resolve_command cassandra || true)"
@@ -397,6 +423,23 @@ bootstrap_existing_cqlsh_bin() {
     return 1
   fi
   bootstrap_resolve_command cqlsh
+}
+
+bootstrap_existing_redis_server_bin() {
+  local server_bin cli_bin
+  server_bin="$(bootstrap_resolve_command redis-server || true)"
+  cli_bin="$(bootstrap_resolve_command redis-cli || true)"
+  if [ -z "$server_bin" ] || [ -z "$cli_bin" ]; then
+    return 1
+  fi
+  printf '%s\n' "$server_bin"
+}
+
+bootstrap_existing_redis_cli_bin() {
+  if ! bootstrap_existing_redis_server_bin >/dev/null 2>&1; then
+    return 1
+  fi
+  bootstrap_resolve_command redis-cli
 }
 
 bootstrap_default_cassandra_sys_lib_path() {

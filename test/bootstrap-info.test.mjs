@@ -168,6 +168,19 @@ test("bootstrap info exposes the pinned Cassandra version", () => {
   assert.equal(result.stdout.trim(), "5.0.7");
 });
 
+test("bootstrap info exposes the pinned Redis version and archive URL", () => {
+  const version = runInfo("redis-version");
+  assert.equal(version.status, 0, version.stderr);
+  assert.equal(version.stdout.trim(), "7.2.4");
+
+  const url = runInfo("redis-url");
+  assert.equal(url.status, 0, url.stderr);
+  assert.equal(
+    url.stdout.trim(),
+    "https://download.redis.io/releases/redis-7.2.4.tar.gz",
+  );
+});
+
 test("bootstrap info fails on unsupported operating systems", () => {
   const result = runInfo("platform", {
     BOOTSTRAP_UNAME_S: "FreeBSD",

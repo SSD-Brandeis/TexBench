@@ -154,6 +154,41 @@ test("bootstrap probe prefers an existing Cassandra and cqlsh pair when present"
   }
 });
 
+test("bootstrap probe prefers an existing Redis server and cli pair when present", () => {
+  const binDir = mkdtempSync(path.join(os.tmpdir(), "bootstrap-probe-redis-"));
+  try {
+    const fakeRedisServer = createExecutable(
+      binDir,
+      "redis-server",
+      "#!/usr/bin/env bash\necho redis-server\n",
+    );
+    const fakeRedisCli = createExecutable(
+      binDir,
+      "redis-cli",
+      "#!/usr/bin/env bash\necho redis-cli\n",
+    );
+    const result = runProbe("redis-source", {
+      PATH: binDir + path.delimiter + process.env.PATH,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "existing");
+
+    const serverPath = runProbe("redis-server-path", {
+      PATH: binDir + path.delimiter + process.env.PATH,
+    });
+    assert.equal(serverPath.status, 0, serverPath.stderr);
+    assert.equal(serverPath.stdout.trim(), fakeRedisServer);
+
+    const cliPath = runProbe("redis-cli-path", {
+      PATH: binDir + path.delimiter + process.env.PATH,
+    });
+    assert.equal(cliPath.status, 0, cliPath.stderr);
+    assert.equal(cliPath.stdout.trim(), fakeRedisCli);
+  } finally {
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
 test("bootstrap probe prefers an existing ollama command when present", () => {
   const binDir = mkdtempSync(path.join(os.tmpdir(), "bootstrap-probe-ollama-"));
   try {
@@ -208,7 +243,7 @@ test("bootstrap probe marks curl for install when unavailable", () => {
     createExecutable(
       binDir,
       "dirname",
-      "#!/usr/bin/env bash\nexec /usr/bin/dirname \"$@\"\n",
+      "#!/bin/sh\nexec /usr/bin/dirname \"$@\"\n",
     );
     const result = runProbe("curl-source", {
       PATH: binDir,

@@ -13,6 +13,9 @@ BOOTSTRAP_DOWNLOADED_TECTONIC_LIB_DIR="$(bootstrap_tectonic_home)/lib"
 BOOTSTRAP_DOWNLOADED_CASSANDRA_HOME="$(bootstrap_cassandra_home)"
 BOOTSTRAP_DOWNLOADED_CASSANDRA_BIN="$(bootstrap_cassandra_bin)"
 BOOTSTRAP_DOWNLOADED_CQLSH_BIN="$(bootstrap_cqlsh_bin)"
+BOOTSTRAP_DOWNLOADED_REDIS_HOME="$(bootstrap_redis_home)"
+BOOTSTRAP_DOWNLOADED_REDIS_SERVER_BIN="$(bootstrap_redis_server_bin)"
+BOOTSTRAP_DOWNLOADED_REDIS_CLI_BIN="$(bootstrap_redis_cli_bin)"
 BOOTSTRAP_CASSANDRA_RUNTIME_ROOT="$BOOTSTRAP_ROOT/cassandra-runtime/$BOOTSTRAP_CASSANDRA_VERSION"
 BOOTSTRAP_CASSANDRA_CONF_DIR="$BOOTSTRAP_CASSANDRA_RUNTIME_ROOT/conf"
 BOOTSTRAP_CASSANDRA_DATA_DIR="$BOOTSTRAP_CASSANDRA_RUNTIME_ROOT/data"
@@ -30,10 +33,14 @@ BOOTSTRAP_TECTONIC_LIBRARY_PATH=""
 BOOTSTRAP_OLLAMA_BIN=""
 BOOTSTRAP_CASSANDRA_BIN=""
 BOOTSTRAP_CQLSH_BIN=""
+BOOTSTRAP_REDIS_SERVER_BIN=""
+BOOTSTRAP_REDIS_CLI_BIN=""
 BOOTSTRAP_OLLAMA_PID=""
 BOOTSTRAP_OLLAMA_STARTED=0
 BOOTSTRAP_CASSANDRA_PID=""
 BOOTSTRAP_CASSANDRA_STARTED=0
+BOOTSTRAP_REDIS_PID=""
+BOOTSTRAP_REDIS_STARTED=0
 
 bootstrap_ensure_core_download_tooling() {
   bootstrap_install_curl_if_missing
@@ -463,7 +470,110 @@ bootstrap_start_cassandra_for_session() {
   printf '%s\n' "$version_output"
 }
 
+bootstrap_install_redis() {
+  if [ -x "$BOOTSTRAP_DOWNLOADED_REDIS_SERVER_BIN" ] && [ -x "$BOOTSTRAP_DOWNLOADED_REDIS_CLI_BIN" ]; then
+    bootstrap_log "Repo-local Redis already installed at $BOOTSTRAP_DOWNLOADED_REDIS_HOME"
+    return
+  fi
+  bootstrap_log "Installing Redis $BOOTSTRAP_REDIS_VERSION"
+  bootstrap_require_commands make
+  mkdir -p "$BOOTSTRAP_CACHE_DIR" "$BOOTSTRAP_TOOLS_DIR/redis/$BOOTSTRAP_PLATFORM"
+  local archive_name archive_path extract_root
+  archive_name="$(bootstrap_redis_archive_name)"
+  archive_path="$BOOTSTRAP_CACHE_DIR/$archive_name"
+  extract_root="$BOOTSTRAP_TOOLS_DIR/redis/$BOOTSTRAP_PLATFORM"
+  if [ ! -f "$archive_path" ]; then
+    bootstrap_download "$(bootstrap_redis_archive_url)" "$archive_path"
+  fi
+  rm -rf "$BOOTSTRAP_DOWNLOADED_REDIS_HOME"
+  bootstrap_extract_archive "$archive_path" "$extract_root"
+  make -C "$BOOTSTRAP_DOWNLOADED_REDIS_HOME" BUILD_TLS=no MALLOC=libc redis-server redis-cli
+  if [ ! -x "$BOOTSTRAP_DOWNLOADED_REDIS_SERVER_BIN" ] || [ ! -x "$BOOTSTRAP_DOWNLOADED_REDIS_CLI_BIN" ]; then
+    bootstrap_fail "Redis install completed but the expected binaries were not found in $BOOTSTRAP_DOWNLOADED_REDIS_HOME."
+  fi
+  bootstrap_log "Installed Redis at $BOOTSTRAP_DOWNLOADED_REDIS_HOME"
+}
+
+bootstrap_redis_ping() {
+  "$1" -h "$BOOTSTRAP_REDIS_HOST" -p "$BOOTSTRAP_REDIS_PORT" PING 2>/dev/null
+}
+
+bootstrap_wait_for_redis() {
+  local redis_cli_bin timeout_seconds deadline output
+  redis_cli_bin="$1"
+  timeout_seconds="${2:-30}"
+  deadline=$((SECONDS + timeout_seconds))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if [ -n "$BOOTSTRAP_REDIS_PID" ] && ! kill -0 "$BOOTSTRAP_REDIS_PID" >/dev/null 2>&1; then
+      return 1
+    fi
+    output="$(bootstrap_redis_ping "$redis_cli_bin" || true)"
+    if [ "$output" = "PONG" ]; then
+      printf '%s\n' "$output"
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+bootstrap_start_redis_for_session() {
+  local existing_server existing_cli ping_output
+  existing_server="$(bootstrap_existing_redis_server_bin || true)"
+  existing_cli="$(bootstrap_existing_redis_cli_bin || true)"
+  if [ -n "$existing_cli" ]; then
+    ping_output="$(bootstrap_redis_ping "$existing_cli" || true)"
+    if [ "$ping_output" = "PONG" ]; then
+      BOOTSTRAP_REDIS_SERVER_BIN="$existing_server"
+      BOOTSTRAP_REDIS_CLI_BIN="$existing_cli"
+      bootstrap_log "Redis is already functional at $BOOTSTRAP_REDIS_HOST:$BOOTSTRAP_REDIS_PORT, moving on"
+      return
+    fi
+  fi
+
+  if [ -n "$existing_server" ] && [ -n "$existing_cli" ]; then
+    BOOTSTRAP_REDIS_SERVER_BIN="$existing_server"
+    BOOTSTRAP_REDIS_CLI_BIN="$existing_cli"
+  else
+    bootstrap_install_redis
+    BOOTSTRAP_REDIS_SERVER_BIN="$BOOTSTRAP_DOWNLOADED_REDIS_SERVER_BIN"
+    BOOTSTRAP_REDIS_CLI_BIN="$BOOTSTRAP_DOWNLOADED_REDIS_CLI_BIN"
+  fi
+
+  bootstrap_log "Starting Redis for this session"
+  mkdir -p "$BOOTSTRAP_RUN_DIR/redis"
+  rm -f "$BOOTSTRAP_RUN_DIR/redis.pid"
+  "$BOOTSTRAP_REDIS_SERVER_BIN" \
+    --bind "$BOOTSTRAP_REDIS_HOST" \
+    --port "$BOOTSTRAP_REDIS_PORT" \
+    --save "" \
+    --appendonly no \
+    --dir "$BOOTSTRAP_RUN_DIR/redis" \
+    --pidfile "$BOOTSTRAP_RUN_DIR/redis.pid" \
+    --logfile "$BOOTSTRAP_RUN_DIR/redis.log" \
+    --daemonize yes
+  BOOTSTRAP_REDIS_PID="$(cat "$BOOTSTRAP_RUN_DIR/redis.pid" 2>/dev/null || true)"
+  if [ -z "$BOOTSTRAP_REDIS_PID" ]; then
+    bootstrap_fail "Redis did not write a pid file. See $BOOTSTRAP_RUN_DIR/redis.log."
+  fi
+  BOOTSTRAP_REDIS_STARTED=1
+  bootstrap_log "Redis started in the background with pid $BOOTSTRAP_REDIS_PID"
+  bootstrap_log "Waiting for Redis to accept connections on $BOOTSTRAP_REDIS_HOST:$BOOTSTRAP_REDIS_PORT"
+
+  ping_output="$(bootstrap_wait_for_redis "$BOOTSTRAP_REDIS_CLI_BIN" 30 || true)"
+  if [ "$ping_output" != "PONG" ]; then
+    bootstrap_fail "Redis did not become ready. See $BOOTSTRAP_RUN_DIR/redis.log."
+  fi
+  bootstrap_log "Redis is functional at $BOOTSTRAP_REDIS_HOST:$BOOTSTRAP_REDIS_PORT"
+}
+
 bootstrap_cleanup() {
+  if [ "$BOOTSTRAP_REDIS_STARTED" = "1" ] && [ -n "$BOOTSTRAP_REDIS_PID" ]; then
+    bootstrap_log "Stopping session Redis"
+    kill "$BOOTSTRAP_REDIS_PID" >/dev/null 2>&1 || true
+    wait "$BOOTSTRAP_REDIS_PID" >/dev/null 2>&1 || true
+    rm -f "$BOOTSTRAP_RUN_DIR/redis.pid"
+  fi
   if [ "$BOOTSTRAP_CASSANDRA_STARTED" = "1" ] && [ -n "$BOOTSTRAP_CASSANDRA_PID" ]; then
     bootstrap_log "Stopping session Cassandra"
     kill "$BOOTSTRAP_CASSANDRA_PID" >/dev/null 2>&1 || true
@@ -487,6 +597,7 @@ main() {
   bootstrap_install_npm_dependencies
   bootstrap_select_tectonic_cli
   bootstrap_start_cassandra_for_session
+  bootstrap_start_redis_for_session
   bootstrap_install_ollama_if_missing
   bootstrap_start_ollama_for_session
   bootstrap_ensure_ollama_model
