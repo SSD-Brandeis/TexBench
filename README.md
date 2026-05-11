@@ -4,6 +4,11 @@ A local chat + form interface for designing Tectonic workload specs, editing the
 
 ## Quick Start
 
+Use a machine with a GPU for the local Ollama assistant. The app can run on a
+CPU-only box, but `llama3:latest` is too slow for a good interactive demo or
+day-to-day workflow without GPU acceleration. On CPU-only machines, expect slow
+responses and frequent Ollama request timeouts.
+
 Run the whole project with one command:
 
 ```bash
@@ -49,6 +54,7 @@ make bootstrap-info
 
 ## What `make up` Expects
 
+- a GPU-backed machine for practical local Ollama latency
 - `curl`
 - `tar`
 - `make`
