@@ -399,6 +399,7 @@ bootstrap_prepare_cassandra_config() {
 
 bootstrap_cqlsh_show_version() {
   PATH="$(bootstrap_java_bin_dir):$(dirname "$BOOTSTRAP_NODE_BIN"):$PATH" \
+    CQLSH_PYTHON="$(command -v python3.11 2>/dev/null || command -v python3 2>/dev/null)" \
     "$1" "$BOOTSTRAP_CASSANDRA_HOST" "$BOOTSTRAP_CASSANDRA_PORT" -e "SHOW VERSION" 2>&1
 }
 
