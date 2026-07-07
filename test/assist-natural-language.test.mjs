@@ -1057,6 +1057,35 @@ test("worker assist endpoint returns structured patches for phased workload prom
   assert.equal(body.patch.sections[0].groups[0].inserts.op_count, 1000000);
   assert.equal(body.patch.sections[0].groups[1].point_queries.op_count, 400000);
   assert.equal(body.patch.sections[0].groups[1].updates.op_count, 100000);
+  assert.equal(
+    body.summary,
+    "Generated a 2-phase workload with 1M inserts, 100K updates, and 400K point queries.",
+  );
+});
+
+test("normalize assist payload replaces generic follow-up summaries with change details", () => {
+  const result = normalizeAssistPayload(
+    {
+      summary: "Updated the workload.",
+      patch: {
+        operations: {
+          point_queries: {
+            enabled: true,
+            op_count: 50000,
+          },
+        },
+      },
+      clarifications: [],
+      assumptions: [],
+    },
+    SCHEMA_HINTS,
+    createFormState({
+      inserts: createInsertSeed(),
+    }),
+    "Add 50k point queries",
+  );
+
+  assert.equal(result.summary, "Added 50K point queries to the workload.");
 });
 
 test("worker assist endpoint defaults total count for fresh percentage-only workload mixes", async () => {

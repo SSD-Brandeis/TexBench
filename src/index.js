@@ -604,7 +604,13 @@ const OPENAI_ASSIST_PROGRAM_COMMAND_SCHEMA = {
     {
       type: "object",
       additionalProperties: false,
-      required: ["kind", "scan_length"],
+      required: [
+        "kind",
+        "section_index",
+        "group_index",
+        "operation",
+        "scan_length",
+      ],
       properties: {
         kind: { type: "string", enum: ["set_range_scan_length"] },
         section_index: { type: ["number", "null"] },
@@ -616,7 +622,7 @@ const OPENAI_ASSIST_PROGRAM_COMMAND_SCHEMA = {
     {
       type: "object",
       additionalProperties: false,
-      required: ["kind", "group"],
+      required: ["kind", "section_index", "after_group_index", "group"],
       properties: {
         kind: { type: "string", enum: ["append_group"] },
         section_index: { type: ["number", "null"] },
@@ -627,7 +633,13 @@ const OPENAI_ASSIST_PROGRAM_COMMAND_SCHEMA = {
     {
       type: "object",
       additionalProperties: false,
-      required: ["kind", "group_index", "operation", "fields"],
+      required: [
+        "kind",
+        "section_index",
+        "group_index",
+        "operation",
+        "fields",
+      ],
       properties: {
         kind: { type: "string", enum: ["set_group_operation_fields"] },
         section_index: { type: ["number", "null"] },
@@ -642,7 +654,13 @@ const OPENAI_ASSIST_PROGRAM_COMMAND_SCHEMA = {
     {
       type: "object",
       additionalProperties: false,
-      required: ["kind", "group_index", "from_operation", "to_operation"],
+      required: [
+        "kind",
+        "section_index",
+        "group_index",
+        "from_operation",
+        "to_operation",
+      ],
       properties: {
         kind: { type: "string", enum: ["rename_group_operation"] },
         section_index: { type: ["number", "null"] },
@@ -740,6 +758,7 @@ export const __test = {
   interpretAssistProgram,
   normalizeAssistPayload,
   buildEffectiveState,
+  openAiAssistResponseJsonSchema: OPENAI_ASSIST_RESPONSE_JSON_SCHEMA,
 };
 
 async function handleAssistRequest(request, env) {
@@ -3007,10 +3026,13 @@ function normalizeAssistPayload(
     normalizeAssumptionEntries(payload.assumptions),
     deriveDeterministicAssumptions(patch, formState, prompt, schemaHints),
   );
-  const summary =
-    typeof payload.summary === "string" && payload.summary.trim()
-      ? payload.summary.trim()
-      : "Updated the form based on your request.";
+  const summary = normalizeAssistSummary(payload.summary, {
+    patch,
+    formState,
+    prompt,
+    schemaHints,
+    clarifications: effectiveClarifications,
+  });
 
   return {
     summary,
@@ -3020,6 +3042,447 @@ function normalizeAssistPayload(
     questions: effectiveClarifications.map((entry) => entry.text),
     assumption_texts: assumptions.map((entry) => entry.text),
   };
+}
+
+function normalizeAssistSummary(rawSummary, context) {
+  const summary =
+    typeof rawSummary === "string" && rawSummary.trim()
+      ? rawSummary.trim()
+      : "";
+  if (summary && !isGenericAssistSummary(summary)) {
+    return summary;
+  }
+  return (
+    buildSpecificAssistSummary(context) ||
+    buildClarificationAssistSummary(context && context.clarifications) ||
+    "Prepared the workload change from your prompt."
+  );
+}
+
+function isGenericAssistSummary(summary) {
+  const text = String(summary || "").trim();
+  if (!text) {
+    return true;
+  }
+  return [
+    /^(?:generate|generated|create|created|build|built|make|made|update|updated)(?: the| a)? (?:workload|form)(?: from your request| based on your request)?[.!]?$/i,
+    /^created a (?:phased|mixed) workload (?:matching the requested structure|using the requested percentage split)[.!]?$/i,
+    /^applied(?: the ai response| your request)?(?: to the form)?[.!]?$/i,
+  ].some((pattern) => pattern.test(text));
+}
+
+function buildSpecificAssistSummary(context) {
+  const patch =
+    context && context.patch && typeof context.patch === "object"
+      ? context.patch
+      : null;
+  const schemaHints =
+    context && context.schemaHints && typeof context.schemaHints === "object"
+      ? context.schemaHints
+      : normalizeSchemaHints(null);
+  const formState =
+    context && context.formState && typeof context.formState === "object"
+      ? context.formState
+      : null;
+  if (!patch) {
+    return null;
+  }
+
+  const isInitialGeneration = !hasConfiguredWorkloadForSummary(
+    formState,
+    schemaHints,
+  );
+  const flatOperationChangeSummary = buildFlatOperationChangeSummary(
+    patch,
+    formState,
+    schemaHints,
+  );
+  if (!isInitialGeneration && flatOperationChangeSummary) {
+    return flatOperationChangeSummary;
+  }
+
+  const operationPhrases = extractPatchOperationSummaryPhrases(
+    patch,
+    schemaHints,
+  );
+  if (operationPhrases.length > 0) {
+    const verb = isInitialGeneration ? "Generated" : "Updated";
+    const workloadDescription = buildPatchWorkloadDescription(patch);
+    return (
+      verb +
+      " " +
+      workloadDescription +
+      " with " +
+      summarizePhraseList(operationPhrases, 3) +
+      "."
+    );
+  }
+
+  const settingsSummary = buildTopLevelPatchSettingsSummary(patch);
+  if (settingsSummary) {
+    return settingsSummary;
+  }
+
+  if (patch.clear_operations === true) {
+    return "Cleared the workload operations.";
+  }
+
+  return null;
+}
+
+function buildClarificationAssistSummary(clarifications) {
+  const entries = Array.isArray(clarifications) ? clarifications : [];
+  if (entries.length === 0) {
+    return null;
+  }
+  const firstText =
+    typeof entries[0].text === "string" ? entries[0].text.trim() : "";
+  if (!firstText) {
+    return entries.length === 1
+      ? "Need one more detail before updating the workload."
+      : "Need " +
+          String(entries.length) +
+          " more details before updating the workload.";
+  }
+  const detail = firstText
+    .replace(/\?+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (char) => char.toLowerCase());
+  return (
+    (entries.length === 1
+      ? "Need one more detail before updating the workload: "
+      : "Need " +
+        String(entries.length) +
+        " more details before updating the workload, starting with: ") +
+    detail +
+    "."
+  );
+}
+
+function hasConfiguredWorkloadForSummary(formState, schemaHints) {
+  if (!formState || typeof formState !== "object") {
+    return false;
+  }
+  if (getEnabledOperationNames(formState, schemaHints).length > 0) {
+    return true;
+  }
+  const sections = Array.isArray(formState.sections) ? formState.sections : [];
+  return sections.some((section) => {
+    const groups = Array.isArray(section && section.groups)
+      ? section.groups
+      : [];
+    return groups.some((group) =>
+      (schemaHints.operation_order || []).some((operationName) =>
+        Object.prototype.hasOwnProperty.call(group || {}, operationName),
+      ),
+    );
+  });
+}
+
+function buildFlatOperationChangeSummary(patch, formState, schemaHints) {
+  const entries = extractFlatPatchOperationEntries(patch, schemaHints);
+  if (entries.length === 0) {
+    return null;
+  }
+  const currentOperations =
+    formState && formState.operations && typeof formState.operations === "object"
+      ? formState.operations
+      : {};
+  const added = [];
+  const removed = [];
+  const updated = [];
+
+  entries.forEach(({ operationName, spec }) => {
+    const currentSpec =
+      currentOperations[operationName] &&
+      typeof currentOperations[operationName] === "object"
+        ? currentOperations[operationName]
+        : {};
+    const wasEnabled = currentSpec.enabled === true;
+    const phrase =
+      buildSummaryOperationPhrase(operationName, spec, schemaHints) ||
+      humanizeSummaryOperationName(operationName, spec, schemaHints);
+
+    if (
+      spec &&
+      typeof spec === "object" &&
+      Object.prototype.hasOwnProperty.call(spec, "enabled") &&
+      spec.enabled === false &&
+      wasEnabled
+    ) {
+      removed.push(humanizeSummaryOperationName(operationName, spec, schemaHints));
+      return;
+    }
+    if (
+      spec &&
+      typeof spec === "object" &&
+      spec.enabled === true &&
+      !wasEnabled
+    ) {
+      added.push(phrase);
+      return;
+    }
+    if (operationPatchHasConfiguredValues(spec)) {
+      updated.push(phrase);
+    }
+  });
+
+  if (added.length === 0 && removed.length === 0 && updated.length === 0) {
+    return null;
+  }
+  if (added.length > 0 && removed.length === 0 && updated.length === 0) {
+    return "Added " + joinSummaryPhrases(added) + " to the workload.";
+  }
+  if (removed.length > 0 && added.length === 0 && updated.length === 0) {
+    return "Removed " + joinSummaryPhrases(removed) + " from the workload.";
+  }
+  if (updated.length > 0 && added.length === 0 && removed.length === 0) {
+    return "Updated the workload with " + joinSummaryPhrases(updated) + ".";
+  }
+
+  const changes = [];
+  if (added.length > 0) {
+    changes.push("adding " + joinSummaryPhrases(added));
+  }
+  if (removed.length > 0) {
+    changes.push("removing " + joinSummaryPhrases(removed));
+  }
+  if (updated.length > 0) {
+    changes.push("changing " + joinSummaryPhrases(updated));
+  }
+  return "Updated the workload by " + joinSummaryPhrases(changes) + ".";
+}
+
+function extractFlatPatchOperationEntries(patch, schemaHints) {
+  if (!patch || typeof patch !== "object") {
+    return [];
+  }
+  const operations =
+    patch.operations && typeof patch.operations === "object"
+      ? patch.operations
+      : null;
+  if (!operations) {
+    return [];
+  }
+  return (schemaHints.operation_order || [])
+    .filter((operationName) =>
+      Object.prototype.hasOwnProperty.call(operations, operationName),
+    )
+    .map((operationName) => ({
+      operationName,
+      spec: operations[operationName],
+    }));
+}
+
+function extractPatchOperationSummaryPhrases(patch, schemaHints) {
+  if (!patch || typeof patch !== "object") {
+    return [];
+  }
+  const phrases = [];
+  if (Array.isArray(patch.sections) && patch.sections.length > 0) {
+    patch.sections.forEach((section) => {
+      const groups = Array.isArray(section && section.groups)
+        ? section.groups
+        : [];
+      groups.forEach((group) => {
+        appendOperationSummaryPhrasesFromGroup(phrases, group, schemaHints);
+      });
+    });
+  }
+  if (phrases.length > 0) {
+    return phrases;
+  }
+  if (patch.operations && typeof patch.operations === "object") {
+    appendOperationSummaryPhrasesFromGroup(
+      phrases,
+      patch.operations,
+      schemaHints,
+    );
+  }
+  return phrases;
+}
+
+function appendOperationSummaryPhrasesFromGroup(target, group, schemaHints) {
+  if (!group || typeof group !== "object") {
+    return;
+  }
+  (schemaHints.operation_order || []).forEach((operationName) => {
+    if (!Object.prototype.hasOwnProperty.call(group, operationName)) {
+      return;
+    }
+    const phrase = buildSummaryOperationPhrase(
+      operationName,
+      group[operationName],
+      schemaHints,
+    );
+    if (phrase) {
+      target.push(phrase);
+    }
+  });
+}
+
+function buildSummaryOperationPhrase(operationName, spec, schemaHints) {
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+    return "";
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(spec, "enabled") &&
+    spec.enabled === false
+  ) {
+    return "";
+  }
+  const label = humanizeSummaryOperationName(operationName, spec, schemaHints);
+  if (!label) {
+    return "";
+  }
+  if (Number.isFinite(spec.op_count)) {
+    return formatSummaryCount(spec.op_count) + " " + label;
+  }
+  return label;
+}
+
+function humanizeSummaryOperationName(operationName, spec, schemaHints) {
+  if (
+    (operationName === "range_queries" || operationName === "range_deletes") &&
+    spec &&
+    typeof spec === "object"
+  ) {
+    const selectivity = Number(spec.selectivity);
+    if (Number.isFinite(selectivity)) {
+      if (Math.abs(selectivity - 0.001) < 1e-9) {
+        return operationName === "range_queries"
+          ? "short range queries"
+          : "short range deletes";
+      }
+      if (Math.abs(selectivity - 0.01) < 1e-9) {
+        return operationName === "range_queries"
+          ? "long range queries"
+          : "long range deletes";
+      }
+    }
+  }
+  return humanizeOperation(operationName, schemaHints);
+}
+
+function formatSummaryCount(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "";
+  }
+  const abs = Math.abs(numeric);
+  if (abs >= 1000000) {
+    const scaled = Math.round((numeric / 1000000) * 10) / 10;
+    return String(scaled) + "M";
+  }
+  if (abs >= 1000) {
+    const scaled = Math.round((numeric / 1000) * 10) / 10;
+    return String(scaled) + "K";
+  }
+  return String(numeric);
+}
+
+function joinSummaryPhrases(parts) {
+  const values = Array.isArray(parts)
+    ? parts.filter((value) => typeof value === "string" && value.trim())
+    : [];
+  if (values.length === 0) {
+    return "";
+  }
+  if (values.length === 1) {
+    return values[0];
+  }
+  if (values.length === 2) {
+    return values[0] + " and " + values[1];
+  }
+  return (
+    values.slice(0, -1).join(", ") + ", and " + values[values.length - 1]
+  );
+}
+
+function summarizePhraseList(parts, limit) {
+  const values = Array.isArray(parts)
+    ? parts.filter((value) => typeof value === "string" && value.trim())
+    : [];
+  const cappedLimit = Math.max(1, Number(limit) || 3);
+  if (values.length <= cappedLimit) {
+    return joinSummaryPhrases(values);
+  }
+  const remaining = values.length - cappedLimit;
+  return (
+    joinSummaryPhrases(values.slice(0, cappedLimit)) +
+    " and " +
+    String(remaining) +
+    " other operation type" +
+    (remaining === 1 ? "" : "s")
+  );
+}
+
+function buildPatchWorkloadDescription(patch) {
+  const sections = Array.isArray(patch && patch.sections) ? patch.sections : [];
+  if (sections.length === 0) {
+    return "the workload";
+  }
+  const groupCount = sections.reduce((total, section) => {
+    const groups = Array.isArray(section && section.groups)
+      ? section.groups
+      : [];
+    return total + groups.length;
+  }, 0);
+  if (sections.length === 1 && groupCount > 1) {
+    return (
+      "a " +
+      String(groupCount) +
+      "-phase workload"
+    );
+  }
+  if (sections.length > 1) {
+    return (
+      "a " +
+      String(sections.length) +
+      "-section, " +
+      String(groupCount) +
+      "-group workload"
+    );
+  }
+  return "the workload";
+}
+
+function buildTopLevelPatchSettingsSummary(patch) {
+  if (!patch || typeof patch !== "object") {
+    return null;
+  }
+  const changes = [];
+  if (typeof patch.character_set === "string" && patch.character_set.trim()) {
+    changes.push("character set " + patch.character_set.trim());
+  }
+  if (Number.isFinite(patch.sections_count) && patch.sections_count > 0) {
+    changes.push(
+      String(patch.sections_count) +
+        " section" +
+        (patch.sections_count === 1 ? "" : "s"),
+    );
+  }
+  if (
+    Number.isFinite(patch.groups_per_section) &&
+    patch.groups_per_section > 0
+  ) {
+    changes.push(
+      String(patch.groups_per_section) +
+        " group" +
+        (patch.groups_per_section === 1 ? "" : "s") +
+        " per section",
+    );
+  }
+  if (patch.skip_key_contains_check === true) {
+    changes.push("skip-key-contains-check enabled");
+  } else if (patch.skip_key_contains_check === false) {
+    changes.push("skip-key-contains-check disabled");
+  }
+  if (changes.length === 0) {
+    return null;
+  }
+  return "Updated workload settings: " + joinSummaryPhrases(changes) + ".";
 }
 
 function operationPatchHasConfiguredValues(value) {

@@ -513,11 +513,131 @@
         return true;
       }
       return [
-        /^(?:generated|created|built|made|updated)(?: the)? (?:workload|form)(?: from your request| based on your request)?[.!]?$/i,
+        /^(?:generate|generated|create|created|build|built|make|made|update|updated)(?: the| a)? (?:workload|form)(?: from your request| based on your request)?[.!]?$/i,
+        /^created a (?:phased|mixed) workload (?:matching the requested structure|using the requested percentage split)[.!]?$/i,
         /^applied(?: the ai response| your request| prompt)?(?: to the form)?[.!]?$/i,
       ].some(function matches(pattern) {
         return pattern.test(text);
       });
+    }
+
+    function summarizePhraseList(parts, limit) {
+      const values = Array.isArray(parts)
+        ? parts.filter(function filterPhrase(value) {
+            return typeof value === "string" && value.trim();
+          })
+        : [];
+      const cappedLimit = Math.max(1, Number(limit) || 3);
+      if (values.length <= cappedLimit) {
+        return joinPhrases(values);
+      }
+      const remaining = values.length - cappedLimit;
+      return (
+        joinPhrases(values.slice(0, cappedLimit)) +
+        " and " +
+        String(remaining) +
+        " other operation type" +
+        (remaining === 1 ? "" : "s")
+      );
+    }
+
+    function buildPatchWorkloadDescription(patch) {
+      const sections = Array.isArray(patch && patch.sections)
+        ? patch.sections
+        : [];
+      if (sections.length === 0) {
+        return "the workload";
+      }
+      const groupCount = sections.reduce(function countGroups(total, section) {
+        const groups = Array.isArray(section && section.groups)
+          ? section.groups
+          : [];
+        return total + groups.length;
+      }, 0);
+      if (sections.length === 1 && groupCount > 1) {
+        return "a " + String(groupCount) + "-phase workload";
+      }
+      if (sections.length > 1) {
+        return (
+          "a " +
+          String(sections.length) +
+          "-section, " +
+          String(groupCount) +
+          "-group workload"
+        );
+      }
+      return "the workload";
+    }
+
+    function buildTopLevelPatchSettingsSummary(patch) {
+      if (!patch || typeof patch !== "object") {
+        return "";
+      }
+      const changes = [];
+      if (typeof patch.character_set === "string" && patch.character_set.trim()) {
+        changes.push("character set " + patch.character_set.trim());
+      }
+      if (Number.isFinite(patch.sections_count) && patch.sections_count > 0) {
+        changes.push(
+          String(patch.sections_count) +
+            " section" +
+            (patch.sections_count === 1 ? "" : "s"),
+        );
+      }
+      if (
+        Number.isFinite(patch.groups_per_section) &&
+        patch.groups_per_section > 0
+      ) {
+        changes.push(
+          String(patch.groups_per_section) +
+            " group" +
+            (patch.groups_per_section === 1 ? "" : "s") +
+            " per section",
+        );
+      }
+      if (patch.skip_key_contains_check === true) {
+        changes.push("skip-key-contains-check enabled");
+      } else if (patch.skip_key_contains_check === false) {
+        changes.push("skip-key-contains-check disabled");
+      }
+      if (changes.length === 0) {
+        return "";
+      }
+      return "Updated workload settings: " + joinPhrases(changes) + ".";
+    }
+
+    function buildClarificationSummary(clarifications) {
+      const entries = Array.isArray(clarifications) ? clarifications : [];
+      if (entries.length === 0) {
+        return "";
+      }
+      const firstText =
+        entries[0] && typeof entries[0].text === "string"
+          ? entries[0].text.trim()
+          : "";
+      if (!firstText) {
+        return entries.length === 1
+          ? "Need one more detail before updating the workload."
+          : "Need " +
+              String(entries.length) +
+              " more details before updating the workload.";
+      }
+      const detail = firstText
+        .replace(/\?+$/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/^./, function lowerFirst(char) {
+          return char.toLowerCase();
+        });
+      return (
+        (entries.length === 1
+          ? "Need one more detail before updating the workload: "
+          : "Need " +
+            String(entries.length) +
+            " more details before updating the workload, starting with: ") +
+        detail +
+        "."
+      );
     }
 
     function buildSpecificSummary(context) {
@@ -536,9 +656,14 @@
         !context || context.hadConfiguredWorkloadBeforeApply !== true;
       const defaultVerb = isInitialGeneration ? "Generated" : "Updated";
       if (phrases.length === 0) {
-        return isInitialGeneration
-          ? "Generated the workload from your request."
-          : "Updated the workload.";
+        return (
+          buildTopLevelPatchSettingsSummary(patch) ||
+          (patch && patch.clear_operations === true
+            ? "Cleared the workload operations."
+            : "") ||
+          buildClarificationSummary(context && context.clarifications) ||
+          "Prepared the workload change from your prompt."
+        );
       }
 
       if (!isInitialGeneration && patchedOperationEntries.length > 0) {
@@ -594,19 +719,27 @@
         if (updated.length > 0 && added.length === 0 && removed.length === 0) {
           return "Updated the workload with " + joinPhrases(updated) + ".";
         }
+        if (added.length > 0 || removed.length > 0 || updated.length > 0) {
+          const changes = [];
+          if (added.length > 0) {
+            changes.push("adding " + joinPhrases(added));
+          }
+          if (removed.length > 0) {
+            changes.push("removing " + joinPhrases(removed));
+          }
+          if (updated.length > 0) {
+            changes.push("changing " + joinPhrases(updated));
+          }
+          return "Updated the workload by " + joinPhrases(changes) + ".";
+        }
       }
 
-      if (phrases.length <= 3) {
-        return defaultVerb + " the workload with " + joinPhrases(phrases) + ".";
-      }
       return (
         defaultVerb +
-        " the workload with " +
-        joinPhrases(phrases.slice(0, 3)) +
-        " and " +
-        String(phrases.length - 3) +
-        " other operation type" +
-        (phrases.length - 3 === 1 ? "" : "s") +
+        " " +
+        buildPatchWorkloadDescription(patch) +
+        " with " +
+        summarizePhraseList(phrases, 3) +
         "."
       );
     }
@@ -623,7 +756,6 @@
     }
 
     function normalizeResponse(result, context) {
-      const summary = normalizeSummaryText(result.summary, context);
       let clarifications = Array.isArray(result.clarifications)
         ? result.clarifications
             .map(function mapClarification(entry) {
@@ -645,6 +777,10 @@
           })
           .filter(Boolean);
       }
+      const summary = normalizeSummaryText(
+        result.summary,
+        Object.assign({}, context, { clarifications: clarifications }),
+      );
       const assumptions = Array.isArray(result.assumptions)
         ? result.assumptions
             .map(function mapAssumption(entry, index) {

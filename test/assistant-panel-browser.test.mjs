@@ -588,6 +588,14 @@ test("assistant panel renders single-choice delete clarification as checkboxes",
     refs.assistantInput.value = "Add 1k deletes";
     await controller.handleApply();
 
+    const assistantTurn = refs.assistantTimeline.children[1];
+    const assistantText = flattenText(assistantTurn);
+    assert.match(
+      assistantText,
+      /Need one more detail before updating the workload: which deletes should be added or removed\./,
+    );
+    assert.doesNotMatch(assistantText, /Updated the workload\./);
+
     const clarificationsWrap = refs.assistantTimeline.children[2];
     const clarificationBlock = clarificationsWrap.children[0];
     const checkboxGroup = clarificationBlock.children[1];
