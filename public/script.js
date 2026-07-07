@@ -844,6 +844,13 @@ function copyTextToClipboard(text) {
         document.querySelectorAll(".spec-accord-title-row").forEach(function (row) {
             row.addEventListener("click", function () {
                 var accordId = row.getAttribute("data-accord");
+                if (
+                    accordId === "accordDatabases" &&
+                    typeof window.__canSelectDatabases === "function" &&
+                    !window.__canSelectDatabases()
+                ) {
+                    return;
+                }
                 var item = document.getElementById(accordId);
                 if (item) {
                     item.classList.toggle("open");

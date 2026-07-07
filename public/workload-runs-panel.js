@@ -13,6 +13,17 @@
         : function getCurrentWorkloadJsonFallback() {
             return null;
           };
+    const hasRunnableWorkload =
+      typeof config.hasRunnableWorkload === "function"
+        ? config.hasRunnableWorkload
+        : function hasRunnableWorkloadFallback(specJson) {
+            return !!(
+              specJson &&
+              typeof specJson === "object" &&
+              Array.isArray(specJson.sections) &&
+              specJson.sections.length > 0
+            );
+          };
     const getSelectedDatabases =
       typeof config.getSelectedDatabases === "function"
         ? config.getSelectedDatabases
@@ -64,10 +75,11 @@
         !specJson ||
         typeof specJson !== "object" ||
         !Array.isArray(specJson.sections) ||
-        specJson.sections.length === 0
+        specJson.sections.length === 0 ||
+        !hasRunnableWorkload(specJson)
       ) {
         setValidationStatus(
-          "Build a valid spec with at least one section before running workload generation.",
+          "Build a valid spec with at least one operation before running workload generation.",
           "invalid",
         );
         return;

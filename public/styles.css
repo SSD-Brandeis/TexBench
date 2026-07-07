@@ -902,11 +902,74 @@ body {
     border-radius: 8px;
     background: #f5f3f2;
     cursor: pointer;
+    position: relative;
     transition: background 0.2s, box-shadow 0.2s;
 }
 
 .spec-accord-title-row:hover {
     background: #eae6e4;
+}
+
+.spec-accord-title-row.disabled,
+.spec-accord-title-row[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: 0.64;
+}
+
+.spec-accord-title-row.disabled:hover,
+.spec-accord-title-row[aria-disabled="true"]:hover {
+    background: #f5f3f2;
+    box-shadow: none;
+}
+
+.spec-accord-title-row[data-disabled-tooltip]::after,
+.run-db-menu-summary[data-disabled-tooltip]::after {
+    content: attr(data-disabled-tooltip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 10px);
+    z-index: 50;
+    width: max-content;
+    max-width: min(320px, 80vw);
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #2f2a28;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+    text-align: center;
+    white-space: normal;
+    box-shadow: 0 10px 24px rgba(45, 40, 38, 0.18);
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, 4px);
+}
+
+.spec-accord-title-row[data-disabled-tooltip]::before,
+.run-db-menu-summary[data-disabled-tooltip]::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 4px);
+    z-index: 51;
+    border: 6px solid transparent;
+    border-top-color: #2f2a28;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, 4px);
+}
+
+.spec-accord-title-row[data-disabled-tooltip]:hover::after,
+.spec-accord-title-row[data-disabled-tooltip]:hover::before,
+.spec-accord-title-row[data-disabled-tooltip]:focus-visible::after,
+.spec-accord-title-row[data-disabled-tooltip]:focus-visible::before,
+.run-db-menu-summary[data-disabled-tooltip]:hover::after,
+.run-db-menu-summary[data-disabled-tooltip]:hover::before,
+.run-db-menu-summary[data-disabled-tooltip]:focus-visible::after,
+.run-db-menu-summary[data-disabled-tooltip]:focus-visible::before {
+    opacity: 1;
+    transform: translate(-50%, 0);
 }
 
 .spec-accord-title-text {
@@ -1732,6 +1795,21 @@ body {
     background: #fdf5f5;
 }
 
+.db-option-item.disabled,
+.db-option-item:has(input:disabled) {
+    cursor: not-allowed;
+    opacity: 0.58;
+    background: #f7f5f4;
+    border-color: #e6e1df;
+}
+
+.db-option-item.disabled:hover,
+.db-option-item:has(input:disabled):hover {
+    border-color: #e6e1df;
+    background: #f7f5f4;
+    box-shadow: none;
+}
+
 .db-option-item input[type="checkbox"] {
     width: 18px;
     height: 18px;
@@ -1757,6 +1835,14 @@ body {
 .db-run-btn:hover {
     background: #c94444;
     box-shadow: 0 6px 20px rgba(179, 58, 58, 0.3);
+}
+
+.db-run-btn:disabled,
+.db-run-btn:disabled:hover {
+    cursor: not-allowed;
+    color: #8a817e;
+    background: #e5dfdc;
+    box-shadow: none;
 }
 
 /* Results tab */
@@ -4638,6 +4724,7 @@ textarea::placeholder {
     background: linear-gradient(180deg, #faf8f7 0%, #f3f0ee 100%);
     color: #3a3535;
     cursor: pointer;
+    position: relative;
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.82),
         0 10px 24px rgba(45, 40, 38, 0.05);
@@ -4645,6 +4732,17 @@ textarea::placeholder {
 
 .run-db-menu-summary::-webkit-details-marker {
     display: none;
+}
+
+.run-db-menu.disabled .run-db-menu-summary {
+    cursor: not-allowed;
+    opacity: 0.62;
+    background: #f1eeec;
+    box-shadow: none;
+}
+
+.run-db-menu.disabled .run-db-menu-chevron {
+    transform: none;
 }
 
 .run-db-menu-summary-copy {
@@ -4749,6 +4847,21 @@ textarea::placeholder {
 .run-db-option:hover {
     border-color: #cdc8c5;
     background: linear-gradient(180deg, #ffffff 0%, #f3f0ee 100%);
+}
+
+.run-db-option.disabled,
+.run-db-option:has(input:disabled) {
+    cursor: not-allowed;
+    opacity: 0.58;
+    background: #f7f5f4;
+    border-color: #e6e1df;
+}
+
+.run-db-option.disabled:hover,
+.run-db-option:has(input:disabled):hover {
+    border-color: #e6e1df;
+    background: #f7f5f4;
+    transform: none;
 }
 
 .run-db-option input {

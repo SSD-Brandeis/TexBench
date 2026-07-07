@@ -57,6 +57,20 @@ const jsonSummary = document.getElementById("jsonSummary");
 const benchmarkDatabaseInputs = Array.from(
   document.querySelectorAll('input[name="benchmarkDatabase"]'),
 );
+const inlineBenchmarkDatabaseInputs = Array.from(
+  document.querySelectorAll('input[name="benchmarkDatabaseInline"]'),
+);
+const allBenchmarkDatabaseInputs = [
+  ...benchmarkDatabaseInputs,
+  ...inlineBenchmarkDatabaseInputs,
+];
+const benchmarkDatabaseMenu = document.querySelector(".run-db-menu");
+const benchmarkDatabaseMenuSummary = benchmarkDatabaseMenu
+  ? benchmarkDatabaseMenu.querySelector(".run-db-menu-summary")
+  : null;
+const benchmarkDatabaseAccordionTitle = document.querySelector(
+  '.spec-accord-title-row[data-accord="accordDatabases"]',
+);
 const benchmarkDatabaseSummary = document.getElementById(
   "benchmarkDatabaseSummary",
 );
@@ -70,6 +84,8 @@ const skipKeyContainsCheckDescription = document.getElementById(
 );
 const downloadJsonBtn = document.getElementById("downloadJsonBtn");
 const runWorkloadBtn = document.getElementById("runWorkloadBtn");
+const inlineRunWorkloadBtn = document.getElementById("inlineRunWorkloadBtn");
+const dbRunWorkloadBtn = document.getElementById("dbRunWorkloadBtn");
 const copyBtn = document.getElementById("copyBtn");
 const validationResult = document.getElementById("validationResult");
 const runsList = document.getElementById("inlineRunsList") || document.getElementById("tabRunsList") || document.getElementById("runsList");
@@ -100,6 +116,8 @@ let presetFlowController = null;
 let assistantPanelController = null;
 let workloadRunsPanelController = null;
 let jsonPreviewVisible = false;
+let generatedJsonSchemaIsValid = false;
+let generatedJsonCanSelectDatabases = false;
 
 const INITIAL_JSON_TEXT = "{}";
 const CUSTOM_BUILDER_STORAGE_KEY = "tectonic.customBuilderState.v1";
@@ -712,6 +730,7 @@ async function initApp() {
   } catch (e) {
     reportUiIssue("Failed to build operation controls", e);
   }
+  setGeneratedJsonValidationState(false, false);
   try {
     resetFormInterface({ stayInBuilder: false });
   } catch (e) {
@@ -746,6 +765,19 @@ async function initApp() {
   benchmarkDatabaseInputs.forEach((input) => {
     input.addEventListener("change", updateBenchmarkDatabaseSummary);
   });
+  inlineBenchmarkDatabaseInputs.forEach((input) => {
+    input.addEventListener("change", updateBenchmarkDatabaseSummary);
+  });
+  if (benchmarkDatabaseMenu) {
+    benchmarkDatabaseMenu.addEventListener("click", (event) => {
+      if (generatedJsonCanSelectDatabases) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      benchmarkDatabaseMenu.removeAttribute("open");
+    });
+  }
 
   if (workloadForm) {
     workloadForm.addEventListener("input", onFormChange);
@@ -1693,6 +1725,7 @@ function getWorkloadRunsPanelController() {
         runsList,
       },
       getCurrentWorkloadJson,
+      hasRunnableWorkload: hasRunnableWorkloadOperations,
       getSelectedDatabases() {
         return benchmarkDatabaseInputs
           .filter((input) => input && input.checked)
@@ -1732,6 +1765,103 @@ function updateBenchmarkDatabaseSummary() {
     moreChip.textContent = "+" + String(selected.length - 2) + " more";
     benchmarkDatabaseSummary.appendChild(moreChip);
   }
+}
+
+function setGeneratedJsonValidationState(schemaValid, canSelectDatabases) {
+  generatedJsonSchemaIsValid = schemaValid === true;
+  generatedJsonCanSelectDatabases =
+    generatedJsonSchemaIsValid && canSelectDatabases === true;
+  updateDatabaseSelectionAccess();
+}
+
+window.__hasValidGeneratedJson = function hasValidGeneratedJson() {
+  return generatedJsonSchemaIsValid === true;
+};
+
+window.__canSelectDatabases = function canSelectDatabases() {
+  return generatedJsonCanSelectDatabases === true;
+};
+
+window.__validateGeneratedJsonForTest = async function validateGeneratedJsonForTest(
+  json,
+) {
+  await validateGeneratedJson(json);
+  return {
+    schemaValid: generatedJsonSchemaIsValid === true,
+    canSelectDatabases: generatedJsonCanSelectDatabases === true,
+  };
+};
+
+function updateDatabaseSelectionAccess() {
+  const disabled = generatedJsonCanSelectDatabases !== true;
+  const disabledMessage = disabled
+    ? generatedJsonSchemaIsValid
+      ? "Add at least one operation before selecting databases."
+      : "Generate a schema-valid JSON spec before selecting databases."
+    : "";
+  allBenchmarkDatabaseInputs.forEach((input) => {
+    if (!input) {
+      return;
+    }
+    input.disabled = disabled;
+    const label = input.closest ? input.closest("label") : null;
+    if (label) {
+      label.classList.toggle("disabled", disabled);
+      label.setAttribute("aria-disabled", disabled ? "true" : "false");
+      setDisabledTooltip(label, disabledMessage);
+    }
+  });
+
+  [runWorkloadBtn, inlineRunWorkloadBtn, dbRunWorkloadBtn].forEach((button) => {
+    if (!button) {
+      return;
+    }
+    button.disabled = disabled;
+    setDisabledTooltip(button, disabledMessage);
+  });
+
+  if (benchmarkDatabaseMenu) {
+    benchmarkDatabaseMenu.classList.toggle("disabled", disabled);
+    setDisabledTooltip(benchmarkDatabaseMenu, disabledMessage);
+    benchmarkDatabaseMenu.setAttribute(
+      "aria-disabled",
+      disabled ? "true" : "false",
+    );
+    if (disabled) {
+      benchmarkDatabaseMenu.removeAttribute("open");
+    }
+  }
+  if (benchmarkDatabaseMenuSummary) {
+    setDisabledTooltip(benchmarkDatabaseMenuSummary, disabledMessage);
+    benchmarkDatabaseMenuSummary.setAttribute(
+      "aria-disabled",
+      disabled ? "true" : "false",
+    );
+    benchmarkDatabaseMenuSummary.tabIndex = disabled ? -1 : 0;
+  }
+  if (benchmarkDatabaseAccordionTitle) {
+    benchmarkDatabaseAccordionTitle.classList.toggle("disabled", disabled);
+    benchmarkDatabaseAccordionTitle.setAttribute(
+      "aria-disabled",
+      disabled ? "true" : "false",
+    );
+    setDisabledTooltip(benchmarkDatabaseAccordionTitle, disabledMessage);
+  }
+}
+
+function setDisabledTooltip(element, message) {
+  if (!element) {
+    return;
+  }
+  if (message) {
+    element.setAttribute("data-disabled-tooltip", message);
+    element.setAttribute("aria-label", message);
+    element.removeAttribute("title");
+    return;
+  }
+  element.removeAttribute("data-disabled-tooltip");
+  element.removeAttribute("aria-label");
+  element.removeAttribute("title");
 }
 
 function clearOperationFormState() {
@@ -4957,6 +5087,34 @@ function shouldAutoValidateJson(json) {
   return Object.keys(json).length > 0;
 }
 
+function hasRunnableWorkloadOperations(json) {
+  const sections = Array.isArray(json)
+    ? json
+    : json && Array.isArray(json.sections)
+      ? json.sections
+      : [];
+  if (sections.length === 0) {
+    return false;
+  }
+  return sections.some((section) => {
+    const groups = Array.isArray(section && section.groups)
+      ? section.groups
+      : [];
+    return groups.some((group) => {
+      if (!group || typeof group !== "object" || Array.isArray(group)) {
+        return false;
+      }
+      return operationOrder.some((op) => {
+        if (!Object.prototype.hasOwnProperty.call(group, op)) {
+          return false;
+        }
+        const spec = group[op];
+        return !!(spec && typeof spec === "object" && !Array.isArray(spec));
+      });
+    });
+  });
+}
+
 function stripValidationMetadata(json) {
   const cloned = cloneJsonValue(json);
   if (
@@ -4998,9 +5156,11 @@ async function validateGeneratedJson(json) {
   if (!shouldAutoValidateJson(json)) {
     validationResult.className = "validation-result";
     validationResult.textContent = "";
+    setGeneratedJsonValidationState(false, false);
     return;
   }
 
+  setGeneratedJsonValidationState(false, false);
   setValidationStatus("Validating...", "default");
   try {
     const validate = await getSchemaValidator();
@@ -5011,9 +5171,14 @@ async function validateGeneratedJson(json) {
       return;
     }
     if (valid) {
+      setGeneratedJsonValidationState(
+        true,
+        hasRunnableWorkloadOperations(json),
+      );
       setValidationStatus("Valid ✓", "valid");
       return;
     }
+    setGeneratedJsonValidationState(false, false);
     const errors = (validate.errors || [])
       .map((error) => {
         const path = error.instancePath || "/";
@@ -5025,6 +5190,7 @@ async function validateGeneratedJson(json) {
     if (validationToken !== latestValidationToken) {
       return;
     }
+    setGeneratedJsonValidationState(false, false);
     setValidationStatus(
       "Warning: validation failed: " +
         (error && error.message ? error.message : String(error)),
