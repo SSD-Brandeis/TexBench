@@ -1510,6 +1510,66 @@ test("worker assist endpoint preserves multi-phase fresh workloads instead of co
   assert.equal(phase3.range_queries.selectivity, 0.01);
 });
 
+test("worker assist endpoint reconciles vague write/read heavy phase shell output", async () => {
+  const prompt = "Generate a workload with two phases: write heavy and read heavy.";
+  const request = new Request("https://example.com/api/assist", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      prompt,
+      form_state: createFormState({}),
+      schema_hints: SCHEMA_HINTS,
+      current_json: null,
+      conversation: [],
+      answers: {},
+    }),
+  });
+
+  const response = await workerEntrypoint.fetch(request, {
+    AI: {
+      run: async () => ({
+        response: JSON.stringify({
+          summary:
+            "Two-phase workload in one section: first group write-heavy, second group read-heavy, using existing alphanumeric character set.",
+          patch: {
+            character_set: "alphanumeric",
+            sections: [
+              {
+                groups: [
+                  {
+                    enable_granular_stats: true,
+                  },
+                ],
+                name: "Section 1",
+                enable_granular_stats: true,
+              },
+            ],
+          },
+          clarifications: [],
+          assumptions: [],
+        }),
+      }),
+    },
+    ASSETS: {
+      fetch: async () => new Response("not found", { status: 404 }),
+    },
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.source, "ai");
+  assert.equal(Array.isArray(body.patch.sections), true);
+  assert.equal(body.patch.sections.length, 1);
+  assert.equal(body.patch.sections[0].groups.length, 2);
+  assert.equal(body.patch.sections[0].groups[0].inserts.op_count, 400000);
+  assert.equal(body.patch.sections[0].groups[0].point_queries.op_count, 100000);
+  assert.equal(body.patch.sections[0].groups[1].inserts.op_count, 100000);
+  assert.equal(body.patch.sections[0].groups[1].point_queries.op_count, 400000);
+  assert.doesNotMatch(body.summary, /^Updated the workload\./);
+});
+
 test("worker assist endpoint reconciles empty AI output back to the requested multi-phase structure", async () => {
   const prompt =
     "Generate a 3-phase workload with 200K total operations. Phase 1 should be write-heavy with 90% inserts and 10% point queries. Phase 2 should be read-heavy with 80% point queries and 20% inserts using a zipfian selection distribution. Phase 3 should be balanced with 50% inserts and 50% range queries. Use 1 KB values, 20-byte alphanumeric keys, and keep all phases in the same workload.";

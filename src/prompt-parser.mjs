@@ -62,7 +62,9 @@ export function createPromptParser(deps = {}) {
     selectionDistributionParamKeys = {},
     selectionParamDefaults = {},
     rangeQuerySelectivityProfiles = {},
+    defaultPercentMixTotalOperations = null,
     writeHeavyDefaultSplit = {},
+    readHeavyDefaultSplit = { read: 80, write: 20 },
     structuredWorkloadPattern = null,
     distributionRequiredKeys = {},
     parseHumanCountToken,
@@ -142,6 +144,11 @@ export function createPromptParser(deps = {}) {
       ) ||
       /\bfor all operations\b/.test(text)
     );
+  }
+
+  function promptUsesDefaultStructuredMix(lowerPrompt) {
+    const text = String(lowerPrompt || "").toLowerCase();
+    return /\b(?:write|read)[- ](?:heavy|only)\b/.test(text);
   }
 
   function extractPromptOperationCountScaleFactor(lowerPrompt) {
@@ -659,18 +666,20 @@ export function createPromptParser(deps = {}) {
 
     const lowerPrompt = text.toLowerCase();
     const sectionClauses = splitPromptIntoSectionClauses(text);
-    const declaredPhaseCount = /\bthree[- ]phase\b/.test(lowerPrompt)
+    const declaredPhaseCount = /\bthree[- ]phases?\b/.test(lowerPrompt)
       ? 3
-      : /\btwo[- ]phase\b/.test(lowerPrompt)
+      : /\btwo[- ]phases?\b/.test(lowerPrompt)
         ? 2
-        : /\bsingle[- ]shot\b|\bone[- ]phase\b/.test(lowerPrompt)
+        : /\bsingle[- ]shot\b|\bone[- ]phases?\b/.test(lowerPrompt)
           ? 1
           : null;
     const distributedTotalCount = extractPromptCountHint(text);
     const defaultTotalPerClause =
       distributedTotalCount !== null
         ? distributedTotalCount
-        : null;
+        : promptUsesDefaultStructuredMix(lowerPrompt)
+          ? positiveIntegerOrNull(defaultPercentMixTotalOperations)
+          : null;
     const phaseClauses = splitPromptIntoExplicitPhaseClauses(text);
     if (Array.isArray(phaseClauses) && phaseClauses.length > 0) {
       const perPhaseTotals = splitIntegerTotalAcrossClauses(
@@ -875,18 +884,22 @@ export function createPromptParser(deps = {}) {
   function splitPromptIntoPhaseClauses(prompt) {
     const groupAppendMarker =
       "(?:an?\\s+)?(?:another|new|next|second|third|2nd|3rd)\\s+group";
+    const phaseStartMarker =
+      `preload|interleave|interleaved|phase\\s+(?:1|2|3|one|two|three)|` +
+      `write[- ]heavy|write[- ]only|read[- ]heavy|read[- ]only|` +
+      `${groupAppendMarker}|add\\s+${groupAppendMarker}`;
     const normalized = String(prompt || "")
       .replace(/\bphase\s+(?:1|2|3|one|two|three)\b\s*:?\s*/gi, " || ")
       .replace(
         new RegExp(
-          `(?:\\r?\\n)+\\s*(?=(?:preload|interleave|interleaved|phase\\s+(?:1|2|3|one|two|three)|write[- ]heavy|write[- ]only|${groupAppendMarker}|add\\s+${groupAppendMarker})\\b)`,
+          `(?:\\r?\\n)+\\s*(?=(?:${phaseStartMarker})\\b)`,
           "gi",
         ),
         " || ",
       )
       .replace(
         new RegExp(
-          `[.!?]\\s*(?=(?:preload|interleave|interleaved|phase\\s+(?:1|2|3|one|two|three)|write[- ]heavy|write[- ]only|${groupAppendMarker}|add\\s+${groupAppendMarker})\\b)`,
+          `[.!?]\\s*(?=(?:${phaseStartMarker})\\b)`,
           "gi",
         ),
         " || ",
@@ -896,8 +909,12 @@ export function createPromptParser(deps = {}) {
         " || ",
       )
       .replace(
+        new RegExp(`\\band\\s+(?=(?:${phaseStartMarker})\\b)`, "gi"),
+        " || ",
+      )
+      .replace(
         new RegExp(
-          `,\\s*(?=(?:preload|interleave|interleaved|phase\\s+(?:1|2|3|one|two|three)|write[- ]heavy|write[- ]only|${groupAppendMarker}|add\\s+${groupAppendMarker})\\b)`,
+          `,\\s*(?=(?:${phaseStartMarker})\\b)`,
           "gi",
         ),
         " || ",
@@ -985,6 +1002,8 @@ export function createPromptParser(deps = {}) {
       );
     const isWriteOnly = /\bwrite[- ]only\b/.test(lowerClause);
     const isWriteHeavy = /\bwrite[- ]heavy\b/.test(lowerClause);
+    const isReadOnly = /\bread[- ]only\b/.test(lowerClause);
+    const isReadHeavy = /\bread[- ]heavy\b/.test(lowerClause);
 
     if (isPreload && !operations.includes("inserts")) {
       operations.unshift("inserts");
@@ -1005,7 +1024,10 @@ export function createPromptParser(deps = {}) {
     }
 
     let defaultPercents = null;
-    if (isWriteOnly) {
+    if (isReadOnly) {
+      operations = uniqueStrings(["point_queries", ...operations]);
+      defaultPercents = { point_queries: 100 };
+    } else if (isWriteOnly) {
       operations = uniqueStrings(["inserts", ...operations]);
       defaultPercents = { inserts: 100 };
     } else if (isWriteHeavy) {
@@ -1018,6 +1040,28 @@ export function createPromptParser(deps = {}) {
       defaultPercents = {
         inserts: writeHeavyDefaultSplit.write,
         [readOperation]: writeHeavyDefaultSplit.read,
+      };
+    } else if (isReadHeavy) {
+      const readOperation = operations.includes("range_queries")
+        ? "range_queries"
+        : operations.includes("point_queries")
+          ? "point_queries"
+          : "point_queries";
+      const writeOperation = operations.includes("updates")
+        ? "updates"
+        : operations.includes("merges")
+          ? "merges"
+          : operations.includes("inserts")
+            ? "inserts"
+            : "inserts";
+      operations = uniqueStrings([
+        readOperation,
+        ...operations,
+        writeOperation,
+      ]);
+      defaultPercents = {
+        [readOperation]: readHeavyDefaultSplit.read,
+        [writeOperation]: readHeavyDefaultSplit.write,
       };
     }
 

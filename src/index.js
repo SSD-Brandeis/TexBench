@@ -165,7 +165,7 @@ const STRING_PATTERN_DEFAULTS = {
   val_hot_probability: 0.8,
 };
 const STRUCTURED_WORKLOAD_PATTERN =
-  /\b(?:single[- ]shot|(?:one|two|three|\d+)[- ]phase|preload|interleave|interleaved|phase\s+[123]|(?:first|second|third|next|later|new|another)\s+phase|write[- ]heavy|write[- ]only|followed\s+by)\b/i;
+  /\b(?:single[- ]shot|(?:one|two|three|\d+)[- ]phases?|preload|interleave|interleaved|phase\s+[123]|(?:first|second|third|next|later|new|another)\s+phases?|write[- ]heavy|write[- ]only|read[- ]heavy|read[- ]only|followed\s+by)\b/i;
 const RANGE_QUERY_SELECTIVITY_PROFILES = {
   short: 0.001,
   long: 0.1,
@@ -175,12 +175,18 @@ const WRITE_HEAVY_DEFAULT_SPLIT = {
   write: 80,
   read: 20,
 };
+const READ_HEAVY_DEFAULT_SPLIT = {
+  read: 80,
+  write: 20,
+};
 const promptParser = createPromptParser({
   defaultSelectionDistributions: DEFAULT_SELECTION_DISTRIBUTIONS,
   selectionDistributionParamKeys: SELECTION_DISTRIBUTION_PARAM_KEYS,
   selectionParamDefaults: SELECTION_PARAM_DEFAULTS,
   rangeQuerySelectivityProfiles: RANGE_QUERY_SELECTIVITY_PROFILES,
+  defaultPercentMixTotalOperations: DEFAULT_PERCENT_MIX_TOTAL_OPERATIONS,
   writeHeavyDefaultSplit: WRITE_HEAVY_DEFAULT_SPLIT,
+  readHeavyDefaultSplit: READ_HEAVY_DEFAULT_SPLIT,
   structuredWorkloadPattern: STRUCTURED_WORKLOAD_PATTERN,
   distributionRequiredKeys: DISTRIBUTION_REQUIRED_KEYS,
   parseHumanCountToken,
@@ -2883,9 +2889,11 @@ function normalizeAssistPayload(
           options.answers,
         )
       : false;
-  if (structuredPromptOwnsLayout) {
-    reconcileStructuredPromptPatch(patch, prompt, schemaHints);
-  } else if (
+  const structuredPromptReconciled = structuredPromptOwnsLayout
+    ? reconcileStructuredPromptPatch(patch, prompt, schemaHints)
+    : false;
+  if (
+    !structuredPromptOwnsLayout &&
     !structuredLayoutEditApplied &&
     !explicitGroupAppendApplied &&
     structuredPrompt
@@ -2894,6 +2902,7 @@ function normalizeAssistPayload(
   }
   const targetedGroupEditApplied =
     !structuredPatchApplied &&
+    !structuredPromptReconciled &&
     !structuredLayoutEditApplied &&
     !explicitGroupAppendApplied &&
     !aiSatisfiedTargetedGroupEditIntent(
@@ -2911,6 +2920,7 @@ function normalizeAssistPayload(
       : false;
   if (
     !structuredPatchApplied &&
+    !structuredPromptReconciled &&
     !structuredLayoutEditApplied &&
     !explicitGroupAppendApplied &&
     !targetedGroupEditApplied
@@ -3281,14 +3291,11 @@ function extractPatchOperationSummaryPhrases(patch, schemaHints) {
   }
   const phrases = [];
   if (Array.isArray(patch.sections) && patch.sections.length > 0) {
-    patch.sections.forEach((section) => {
-      const groups = Array.isArray(section && section.groups)
-        ? section.groups
-        : [];
-      groups.forEach((group) => {
-        appendOperationSummaryPhrasesFromGroup(phrases, group, schemaHints);
-      });
-    });
+    appendAggregatedOperationSummaryPhrasesFromSections(
+      phrases,
+      patch.sections,
+      schemaHints,
+    );
   }
   if (phrases.length > 0) {
     return phrases;
@@ -3301,6 +3308,65 @@ function extractPatchOperationSummaryPhrases(patch, schemaHints) {
     );
   }
   return phrases;
+}
+
+function appendAggregatedOperationSummaryPhrasesFromSections(
+  target,
+  sections,
+  schemaHints,
+) {
+  const summaries = new Map();
+  (Array.isArray(sections) ? sections : []).forEach((section) => {
+    const groups = Array.isArray(section && section.groups)
+      ? section.groups
+      : [];
+    groups.forEach((group) => {
+      if (!group || typeof group !== "object") {
+        return;
+      }
+      (schemaHints.operation_order || []).forEach((operationName) => {
+        if (!Object.prototype.hasOwnProperty.call(group, operationName)) {
+          return;
+        }
+        const spec = group[operationName];
+        if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+          return;
+        }
+        if (
+          Object.prototype.hasOwnProperty.call(spec, "enabled") &&
+          spec.enabled === false
+        ) {
+          return;
+        }
+        const label = humanizeSummaryOperationName(
+          operationName,
+          spec,
+          schemaHints,
+        );
+        if (!label) {
+          return;
+        }
+        const key = operationName + "|" + label;
+        const existing = summaries.get(key) || {
+          label,
+          count: 0,
+          hasCount: false,
+        };
+        if (Number.isFinite(spec.op_count)) {
+          existing.count += Number(spec.op_count);
+          existing.hasCount = true;
+        }
+        summaries.set(key, existing);
+      });
+    });
+  });
+  summaries.forEach((entry) => {
+    target.push(
+      entry.hasCount
+        ? formatSummaryCount(entry.count) + " " + entry.label
+        : entry.label,
+    );
+  });
 }
 
 function appendOperationSummaryPhrasesFromGroup(target, group, schemaHints) {
@@ -3641,7 +3707,7 @@ function buildAmbiguousOperationClarification(
     return null;
   }
   const mentionsAnyOperation =
-    /\binsert(?:s|ion)?\b|\bupdate(?:s)?\b|\bmerge(?:s)?\b|\bread[- ]?modify[- ]?write\b|\brmw\b|\bpoint\s+quer(?:y|ie|ies)\b|\bpoint\s+read(?:s)?\b|\brange\s+quer(?:y|ie|ies)\b|\bpoint\s+delete(?:s)?\b|\brange\s+delete(?:s)?\b|\bempty\s+point\s+(?:quer(?:y|ie|ies)|read(?:s)?|delete(?:s)?)\b|\bsorted\b/.test(
+    /\binsert(?:s|ion)?\b|\bupdate(?:s)?\b|\bmerge(?:s)?\b|\bread[- ]?modify[- ]?write\b|\brmw\b|\bwrite[- ](?:heavy|only)\b|\bread[- ](?:heavy|only)\b|\bpoint\s+quer(?:y|ie|ies)\b|\bpoint\s+read(?:s)?\b|\brange\s+quer(?:y|ie|ies)\b|\bpoint\s+delete(?:s)?\b|\brange\s+delete(?:s)?\b|\bempty\s+point\s+(?:quer(?:y|ie|ies)|read(?:s)?|delete(?:s)?)\b|\bsorted\b/.test(
       lowerPrompt,
     );
   if (
@@ -3807,11 +3873,11 @@ function collapseUnexpectedStructuredPatchToOperations(patch, schemaHints) {
 
 function reconcileStructuredPromptPatch(patch, prompt, schemaHints) {
   if (!patch || typeof patch !== "object") {
-    return;
+    return false;
   }
   const expectedSections = deriveStructuredSectionsFromPrompt(prompt, schemaHints);
   if (!expectedSections) {
-    return;
+    return false;
   }
   const normalizedExpected = normalizeSectionsValue(expectedSections, schemaHints);
   if (
@@ -3828,6 +3894,7 @@ function reconcileStructuredPromptPatch(patch, prompt, schemaHints) {
     patch.clear_operations = false;
     patch.operations = {};
   }
+  return true;
 }
 
 function structuredSectionsSemanticallyMatch(actualSections, expectedSections) {
