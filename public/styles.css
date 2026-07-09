@@ -1500,7 +1500,8 @@ body {
 
 .spec-json-viewer pre {
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: 15px;
+    font-weight: 600;
     line-height: 1.6;
     color: #2d2d2d;
     white-space: pre-wrap;
@@ -3916,7 +3917,8 @@ textarea::placeholder {
     min-height: 0;
     overflow: auto;
     font-family: var(--font-mono);
-    font-size: 15px;
+    font-size: 17px;
+    font-weight: 600;
     line-height: 1.65;
     color: #2d2d2d;
     padding-right: 4px;
