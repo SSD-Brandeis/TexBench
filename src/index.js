@@ -3683,16 +3683,20 @@ function promptRequestsStructuredLayoutEdit(prompt) {
   if (!lowerPrompt) {
     return false;
   }
+  const descriptiveGroupRef =
+    "(?:an?\\s+)?(?:another|new|next|second|third|2nd|3rd)(?:\\s+[a-z0-9/-]+){0,6}\\s+group";
   return (
     /\b(?:then|next|after(?: that|wards)?|later|finally)\b/.test(lowerPrompt) ||
     /\b(?:add|append|make|turn|convert|split)\b[\s\S]{0,36}\bphase\b/.test(
       lowerPrompt,
     ) ||
     /\b(?:second|third|later|next)\s+phase\b/.test(lowerPrompt) ||
-    /\b(?:add|append|create|make)\b[\s\S]{0,36}\b(?:another|new|next|second|third)\s+group\b/.test(
-      lowerPrompt,
-    ) ||
-    /\b(?:another|new|next|second|third)\s+group\b/.test(lowerPrompt)
+    new RegExp(
+      "\\b(?:add|append|create|make)\\b[\\s\\S]{0,36}\\b" +
+        descriptiveGroupRef +
+        "\\b",
+    ).test(lowerPrompt) ||
+    new RegExp("\\b" + descriptiveGroupRef + "\\b").test(lowerPrompt)
   );
 }
 
@@ -4237,6 +4241,23 @@ function canonicalizeSectionsForStructuredEdit(rawSections, schemaHints) {
   return normalized;
 }
 
+function renumberDefaultAppendedGroupNames(groups, startIndex) {
+  if (!Array.isArray(groups)) {
+    return groups;
+  }
+  groups.forEach((group, offset) => {
+    if (!group || typeof group !== "object" || Array.isArray(group)) {
+      return;
+    }
+    const currentName =
+      typeof group.name === "string" ? group.name.trim() : "";
+    if (!currentName || /^Group \d+$/i.test(currentName)) {
+      group.name = buildDefaultGroupName(startIndex + offset);
+    }
+  });
+  return groups;
+}
+
 function applyPromptStructuredLayoutEditFallback(
   patch,
   formState,
@@ -4281,6 +4302,7 @@ function applyPromptStructuredLayoutEditFallback(
     if (!fallbackGroup) {
       return false;
     }
+    renumberDefaultAppendedGroupNames([fallbackGroup], currentGroups.length);
     const mergedSection = {
       groups: [...currentGroups, fallbackGroup],
     };
@@ -4316,6 +4338,7 @@ function applyPromptStructuredLayoutEditFallback(
   if (groupsToAppend.length === 0) {
     return false;
   }
+  renumberDefaultAppendedGroupNames(groupsToAppend, currentGroups.length);
 
   const mergedSection = {
     groups: [...currentGroups, ...groupsToAppend],
@@ -4363,10 +4386,19 @@ function buildAnsweredStructuredGroupFallback(
     patch && patch.operations && typeof patch.operations === "object"
       ? patch.operations
       : {};
+  const patchOps = Object.entries(operationsPatch)
+    .filter(
+      ([operationName, operationPatch]) =>
+        schemaHints.operation_order.includes(operationName) &&
+        operationPatch &&
+        typeof operationPatch === "object" &&
+        operationPatch.enabled !== false,
+    )
+    .map(([operationName]) => operationName);
   const nextGroup = {};
   const promptCount = extractPromptCountHint(prompt);
 
-  selectedOps.forEach((operationName) => {
+  uniqueStrings([...selectedOps, ...patchOps]).forEach((operationName) => {
     const currentPatch =
       operationsPatch[operationName] &&
       typeof operationsPatch[operationName] === "object"
@@ -4383,7 +4415,16 @@ function buildAnsweredStructuredGroupFallback(
     nextGroup[operationName] = configured;
   });
 
-  return Object.keys(nextGroup).length > 0 ? nextGroup : null;
+  if (Object.keys(nextGroup).length > 0) {
+    return nextGroup;
+  }
+  if (
+    promptRequestsExplicitGroupAppend(prompt) ||
+    promptRequestsStructuredLayoutEdit(prompt)
+  ) {
+    return {};
+  }
+  return null;
 }
 
 function seedGroupAppendOperationPatch(
@@ -4466,6 +4507,8 @@ function promptRequestsExplicitGroupAppend(prompt) {
   if (!lowerPrompt) {
     return false;
   }
+  const descriptiveGroupRef =
+    "(?:an?\\s+)?(?:another|new|next|second|third|2nd|3rd)(?:\\s+[a-z0-9/-]+){0,6}\\s+group";
   if (
     /\b(?:change|replace|turn|convert|edit|modify)\b/.test(lowerPrompt) &&
     /\bgroup\b/.test(lowerPrompt)
@@ -4473,15 +4516,15 @@ function promptRequestsExplicitGroupAppend(prompt) {
     return false;
   }
   return (
-    /\b(?:add|append|create|make)\b[\s\S]{0,36}\b(?:an?\s+)?(?:another|new|next|second|third|2nd|3rd)\s+group\b/.test(
-      lowerPrompt,
-    ) ||
+    new RegExp(
+      "\\b(?:add|append|create|make)\\b[\\s\\S]{0,36}\\b" +
+        descriptiveGroupRef +
+        "\\b",
+    ).test(lowerPrompt) ||
     /\b(?:put|place|move)\b[\s\S]{0,80}\b(?:into|to|as)\s+(?:an?\s+)?(?:second|third|2nd|3rd)\s+group\b/.test(
       lowerPrompt,
     ) ||
-    /\b(?:an?\s+)?(?:another|new|next)\s+group\b/.test(
-      lowerPrompt,
-    )
+    new RegExp("\\b" + descriptiveGroupRef + "\\b").test(lowerPrompt)
   );
 }
 

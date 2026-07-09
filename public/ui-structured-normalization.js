@@ -110,6 +110,71 @@
     return { [distributionName]: params };
   }
 
+  function distributionNameFromExpression(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const keys = Object.keys(value);
+    return keys.length === 1 ? keys[0] : null;
+  }
+
+  function selectionParamKeyForField(fieldName) {
+    return fieldName === "selection_n"
+      ? "n"
+      : fieldName.replace(/^selection_/, "");
+  }
+
+  function applySelectionUiMetadata(operationSpec, config) {
+    if (
+      !operationSpec ||
+      typeof operationSpec !== "object" ||
+      Array.isArray(operationSpec)
+    ) {
+      return operationSpec;
+    }
+    const selectionDistributionParams =
+      config && config.selectionDistributionParams
+        ? config.selectionDistributionParams
+        : {};
+    const validDistributions = Object.keys(selectionDistributionParams);
+    const explicitDistribution =
+      typeof operationSpec.selection_distribution === "string"
+        ? operationSpec.selection_distribution
+        : "";
+    const inferredDistribution = distributionNameFromExpression(
+      operationSpec.selection,
+    );
+    const distributionName = validDistributions.includes(explicitDistribution)
+      ? explicitDistribution
+      : validDistributions.includes(inferredDistribution)
+        ? inferredDistribution
+        : null;
+    if (!distributionName) {
+      return operationSpec;
+    }
+
+    operationSpec.selection_distribution = distributionName;
+    const rawParams =
+      operationSpec.selection &&
+      operationSpec.selection[distributionName] &&
+      typeof operationSpec.selection[distributionName] === "object" &&
+      !Array.isArray(operationSpec.selection[distributionName])
+        ? operationSpec.selection[distributionName]
+        : {};
+    (selectionDistributionParams[distributionName] || []).forEach(
+      (fieldName) => {
+        if (Object.prototype.hasOwnProperty.call(operationSpec, fieldName)) {
+          return;
+        }
+        const rawValue = rawParams[selectionParamKeyForField(fieldName)];
+        if (Number.isFinite(rawValue)) {
+          operationSpec[fieldName] = rawValue;
+        }
+      },
+    );
+    return operationSpec;
+  }
+
   function buildStructuredDefaultOperationSpec(op, characterSet, config) {
     const defaults = config.operationDefaults[op] || {};
     const rangeFormats = Array.isArray(config.rangeFormats)
@@ -119,7 +184,7 @@
     const withSorted = new Set(config.opsWithSorted || []);
     const withKey = new Set(config.opsWithKey || []);
     const withValue = new Set(config.opsWithValue || []);
-    const withSelection = new Set(config.opsWithSelection || []);
+    const withSelection = new Set((config && config.opsWithSelection) || []);
     const withRange = new Set(config.opsWithRange || []);
     const built = {};
 
@@ -177,6 +242,10 @@
     Object.entries(spec).forEach(function applyField(entry) {
       normalized[entry[0]] = cloneJsonValue(entry[1]);
     });
+    const withSelection = new Set((config && config.opsWithSelection) || []);
+    if (withSelection.has(op)) {
+      applySelectionUiMetadata(normalized, config);
+    }
     return normalized;
   }
 

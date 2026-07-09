@@ -1615,6 +1615,191 @@ test("worker assist endpoint reconciles empty AI output back to the requested mu
   assert.equal(body.patch.sections[0].groups[2].range_queries.op_count, 33333);
 });
 
+test("descriptive group append prompts preserve layout and percentage counts", async (t) => {
+  function createSeededPhasedState() {
+    return applyPatchToState(createFormState({}), {
+      sections: [
+        {
+          groups: [
+            {
+              inserts: {
+                enabled: true,
+                op_count: 80000,
+              },
+              point_queries: {
+                enabled: true,
+                op_count: 20000,
+                selection_distribution: "zipf",
+              },
+            },
+          ],
+        },
+      ],
+      sections_count: 1,
+      groups_per_section: 1,
+      clear_operations: false,
+      operations: {},
+    });
+  }
+
+  const cases = [
+    {
+      name: "read-heavy explicit update split",
+      prompt:
+        "Add another read-heavy group with with 20% updates and 80% point queries, where the total number of operations in the phase is 10K and point queries follow a uniform distribution.",
+      rawPatch: {
+        operations: {
+          updates: {
+            enabled: true,
+          },
+          point_queries: {
+            enabled: true,
+            op_count: 8000,
+            selection_distribution: "uniform",
+          },
+        },
+      },
+      expectedCounts: {
+        updates: 2000,
+        point_queries: 8000,
+      },
+      expectedDistributions: {
+        point_queries: "uniform",
+      },
+    },
+    {
+      name: "write heavy default split",
+      prompt: "Add another write heavy group for 10K operations.",
+      rawPatch: { operations: {} },
+      expectedCounts: {
+        updates: 8000,
+        point_queries: 2000,
+      },
+    },
+    {
+      name: "read heavy default split",
+      prompt: "Add another read heavy group for 10K operations.",
+      rawPatch: { operations: {} },
+      expectedCounts: {
+        updates: 2000,
+        point_queries: 8000,
+      },
+    },
+    {
+      name: "bare read-heavy group",
+      prompt: "another read-heavy group",
+      rawPatch: { operations: {} },
+      expectedCounts: {
+        updates: 200000,
+        point_queries: 800000,
+      },
+    },
+    {
+      name: "write-heavy explicit split",
+      prompt:
+        "Append another write-heavy group with 60% updates and 40% point queries for 20K operations.",
+      rawPatch: { operations: {} },
+      expectedCounts: {
+        updates: 12000,
+        point_queries: 8000,
+      },
+    },
+    {
+      name: "write only default",
+      prompt: "Add another write only group for 10K operations.",
+      rawPatch: { operations: {} },
+      expectedCounts: {
+        updates: 10000,
+      },
+      absentOperations: ["point_queries"],
+    },
+    {
+      name: "read only default",
+      prompt: "Add another read only group for 10K operations.",
+      rawPatch: { operations: {} },
+      expectedCounts: {
+        point_queries: 10000,
+      },
+      absentOperations: ["updates"],
+    },
+    {
+      name: "mixed read/write slash",
+      prompt:
+        "Add another mixed read/write group with 50% updates and 50% point queries for 20K operations.",
+      rawPatch: { operations: {} },
+      expectedCounts: {
+        updates: 10000,
+        point_queries: 10000,
+      },
+    },
+    {
+      name: "bare phase with model-supplied operation",
+      prompt: "add another phase",
+      rawPatch: {
+        operations: {
+          updates: {
+            enabled: true,
+            op_count: 1234,
+          },
+        },
+      },
+      expectedCounts: {
+        updates: 1234,
+      },
+      absentOperations: ["point_queries"],
+    },
+    {
+      name: "bare phase without operation details",
+      prompt: "add another phase",
+      rawPatch: { operations: {} },
+      expectedCounts: {},
+      absentOperations: ["updates", "point_queries"],
+    },
+  ];
+
+  for (const testCase of cases) {
+    await t.test(testCase.name, () => {
+      const result = applyPrompt({
+        prompt: testCase.prompt,
+        formState: createSeededPhasedState(),
+        rawPatch: testCase.rawPatch,
+      });
+
+      assert.equal(result.patch.sections_count, 1);
+      assert.equal(result.patch.groups_per_section, 2);
+      assert.deepEqual(sortedKeys(result.patch.operations), []);
+      assert.equal(result.patch.sections[0].groups.length, 2);
+      assert.equal(result.patch.sections[0].groups[1].name, "Group 2");
+      assert.equal(result.patch.sections[0].groups[0].inserts.op_count, 80000);
+      assert.equal(
+        result.patch.sections[0].groups[0].point_queries.op_count,
+        20000,
+      );
+
+      const appendedGroup = result.patch.sections[0].groups[1];
+      Object.entries(testCase.expectedCounts).forEach(
+        ([operationName, expectedCount]) => {
+          assert.equal(appendedGroup[operationName].op_count, expectedCount);
+        },
+      );
+      Object.entries(testCase.expectedDistributions || {}).forEach(
+        ([operationName, expectedDistribution]) => {
+          assert.equal(
+            appendedGroup[operationName].selection_distribution,
+            expectedDistribution,
+          );
+        },
+      );
+      (testCase.absentOperations || []).forEach((operationName) => {
+        assert.equal(
+          Object.prototype.hasOwnProperty.call(appendedGroup, operationName),
+          false,
+        );
+      });
+    });
+  }
+});
+
 test("point query paraphrases normalize to the same operation patch", () => {
   const prompts = [
     "Add 50k point queries",

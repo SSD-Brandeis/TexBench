@@ -56,6 +56,9 @@ const OPERATION_COUNT_INTENT_TERMS = [
   "create",
 ];
 
+const DESCRIPTIVE_GROUP_APPEND_PATTERN_SOURCE =
+  "(?:an?\\s+)?(?:another|new|next|second|third|2nd|3rd)(?:\\s+[a-z0-9/-]+){0,6}\\s+group";
+
 export function createPromptParser(deps = {}) {
   const {
     defaultSelectionDistributions = [],
@@ -375,6 +378,51 @@ export function createPromptParser(deps = {}) {
     return { [distribution]: payload };
   }
 
+  function clauseMentionsPreload(clause) {
+    return /\bpreload\b|\bseed\b|\bprime\b|\bload\s+the\s+db\b|\bload\s+the\s+database\b|\bload\s+database\b/.test(
+      String(clause || "").toLowerCase(),
+    );
+  }
+
+  function clauseRequestsDescriptiveGroupAppend(clause) {
+    const text = String(clause || "").toLowerCase();
+    if (!text) {
+      return false;
+    }
+    return new RegExp(`\\b${DESCRIPTIVE_GROUP_APPEND_PATTERN_SOURCE}\\b`).test(
+      text,
+    );
+  }
+
+  function defaultWriteOperationForClause(clauses, index) {
+    const safeClauses = Array.isArray(clauses) ? clauses : [];
+    if (clauseRequestsDescriptiveGroupAppend(safeClauses[index])) {
+      return "updates";
+    }
+    if (
+      index > 0 &&
+      safeClauses
+        .slice(0, index)
+        .some((clause) => clauseMentionsPreload(clause))
+    ) {
+      return "updates";
+    }
+    return null;
+  }
+
+  function selectStructuredWriteOperation(operations, fallbackOperation) {
+    if (operations.includes("updates")) {
+      return "updates";
+    }
+    if (operations.includes("merges")) {
+      return "merges";
+    }
+    if (operations.includes("inserts")) {
+      return "inserts";
+    }
+    return fallbackOperation || "inserts";
+  }
+
   function applyDetectedSelectionDistributionToOperationPatch(
     operationPatch,
     currentState,
@@ -572,6 +620,7 @@ export function createPromptParser(deps = {}) {
         deriveStructuredGroupFromClause(clause, schemaHints, {
           defaultPercentTotalCount:
             perClauseTotals[index] !== undefined ? perClauseTotals[index] : null,
+          defaultWriteOperation: defaultWriteOperationForClause(clauses, index),
         }),
       )
       .filter(
@@ -660,7 +709,9 @@ export function createPromptParser(deps = {}) {
 
   function deriveStructuredSectionsFromPrompt(prompt, schemaHints) {
     const text = typeof prompt === "string" ? prompt.trim() : "";
-    if (!text || !structuredWorkloadPattern || !structuredWorkloadPattern.test(text)) {
+    const hasStructuredIntent =
+      structuredWorkloadPattern && structuredWorkloadPattern.test(text);
+    if (!text || (!hasStructuredIntent && !clauseRequestsDescriptiveGroupAppend(text))) {
       return null;
     }
 
@@ -691,6 +742,10 @@ export function createPromptParser(deps = {}) {
           deriveStructuredGroupFromClause(phaseText, schemaHints, {
             defaultPercentTotalCount:
               perPhaseTotals[index] !== undefined ? perPhaseTotals[index] : null,
+            defaultWriteOperation: defaultWriteOperationForClause(
+              phaseClauses,
+              index,
+            ),
           }),
         )
         .filter(
@@ -735,7 +790,8 @@ export function createPromptParser(deps = {}) {
 
     const groups = buildStructuredGroupsFromPromptText(text, schemaHints, {
       defaultPercentTotalCount:
-        declaredPhaseCount && defaultTotalPerClause !== null
+        (declaredPhaseCount || promptUsesDefaultStructuredMix(lowerPrompt)) &&
+        defaultTotalPerClause !== null
           ? defaultTotalPerClause
           : null,
     });
@@ -882,8 +938,7 @@ export function createPromptParser(deps = {}) {
   }
 
   function splitPromptIntoPhaseClauses(prompt) {
-    const groupAppendMarker =
-      "(?:an?\\s+)?(?:another|new|next|second|third|2nd|3rd)\\s+group";
+    const groupAppendMarker = DESCRIPTIVE_GROUP_APPEND_PATTERN_SOURCE;
     const phaseStartMarker =
       `preload|interleave|interleaved|phase\\s+(?:1|2|3|one|two|three)|` +
       `write[- ]heavy|write[- ]only|read[- ]heavy|read[- ]only|` +
@@ -1024,21 +1079,33 @@ export function createPromptParser(deps = {}) {
     }
 
     let defaultPercents = null;
+    const defaultWriteOperation =
+      typeof options.defaultWriteOperation === "string"
+        ? options.defaultWriteOperation
+        : null;
     if (isReadOnly) {
       operations = uniqueStrings(["point_queries", ...operations]);
       defaultPercents = { point_queries: 100 };
     } else if (isWriteOnly) {
-      operations = uniqueStrings(["inserts", ...operations]);
-      defaultPercents = { inserts: 100 };
+      const writeOperation = selectStructuredWriteOperation(
+        operations,
+        defaultWriteOperation,
+      );
+      operations = uniqueStrings([writeOperation, ...operations]);
+      defaultPercents = { [writeOperation]: 100 };
     } else if (isWriteHeavy) {
       const readOperation = operations.includes("range_queries")
         ? "range_queries"
         : operations.includes("point_queries")
           ? "point_queries"
           : "point_queries";
-      operations = uniqueStrings(["inserts", ...operations, readOperation]);
+      const writeOperation = selectStructuredWriteOperation(
+        operations,
+        defaultWriteOperation,
+      );
+      operations = uniqueStrings([writeOperation, ...operations, readOperation]);
       defaultPercents = {
-        inserts: writeHeavyDefaultSplit.write,
+        [writeOperation]: writeHeavyDefaultSplit.write,
         [readOperation]: writeHeavyDefaultSplit.read,
       };
     } else if (isReadHeavy) {
@@ -1047,13 +1114,10 @@ export function createPromptParser(deps = {}) {
         : operations.includes("point_queries")
           ? "point_queries"
           : "point_queries";
-      const writeOperation = operations.includes("updates")
-        ? "updates"
-        : operations.includes("merges")
-          ? "merges"
-          : operations.includes("inserts")
-            ? "inserts"
-            : "inserts";
+      const writeOperation = selectStructuredWriteOperation(
+        operations,
+        defaultWriteOperation,
+      );
       operations = uniqueStrings([
         readOperation,
         ...operations,

@@ -167,3 +167,69 @@ test(
     );
   },
 );
+
+test(
+  "structured ui normalization derives selection controls from stored distribution expressions",
+  async () => {
+    const normalizer = await loadStructuredUiNormalizer();
+    const config = {
+      ...createNormalizerConfig(),
+      operationOrder: ["point_queries"],
+      operationDefaults: {
+        point_queries: {
+          op_count: 500000,
+          selection_distribution: "uniform",
+          selection_min: 0,
+          selection_max: 1,
+          selection_n: 1000000,
+          selection_s: 1.5,
+        },
+      },
+      selectionParamDefaults: {
+        selection_min: 0,
+        selection_max: 1,
+        selection_n: 1000000,
+        selection_s: 1.5,
+      },
+      selectionDistributionParams: {
+        uniform: ["selection_min", "selection_max"],
+        zipf: ["selection_n", "selection_s"],
+      },
+      opsWithOpCount: ["point_queries"],
+      opsWithKey: [],
+      opsWithValue: [],
+      opsWithSelection: ["point_queries"],
+    };
+    const sections = normalizer.normalizePatchedStructureSections(
+      [
+        {
+          groups: [
+            {
+              point_queries: {
+                op_count: 100,
+                selection: {
+                  zipf: {
+                    n: 12345,
+                    s: 1.2,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
+      config,
+    );
+
+    const pointQueries = sections[0].groups[0].point_queries;
+    assert.equal(pointQueries.selection_distribution, "zipf");
+    assert.equal(pointQueries.selection_n, 12345);
+    assert.equal(pointQueries.selection_s, 1.2);
+    assert.deepEqual(JSON.parse(JSON.stringify(pointQueries.selection)), {
+      zipf: {
+        n: 12345,
+        s: 1.2,
+      },
+    });
+  },
+);

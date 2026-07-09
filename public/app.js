@@ -2021,6 +2021,8 @@ function applyOperationSpecToForm(op, spec) {
   applyDefaultsToOperation(op);
 
   if (spec && typeof spec === "object") {
+    const selectionDistributionName =
+      getSelectionDistributionNameFromStoredOperation(spec);
     if (typeof spec.character_set === "string") {
       setOperationInputValue(op, "character_set", spec.character_set);
     }
@@ -2097,8 +2099,9 @@ function applyOperationSpecToForm(op, spec) {
         setOperationInputValue(op, field, spec[field]);
       }
     });
-    if (typeof spec.selection_distribution === "string") {
-      setOperationInputValue(op, "selection_distribution", spec.selection_distribution);
+    if (selectionDistributionName) {
+      setOperationInputValue(op, "selection_distribution", selectionDistributionName);
+      applySelectionExpressionParamsToForm(op, spec, selectionDistributionName);
     }
     if (typeof spec.key_pattern === "string") {
       setOperationInputValue(op, "key_pattern", spec.key_pattern);
@@ -4060,6 +4063,64 @@ function distributionNameFromExpression(value) {
   return keys.length === 1 ? keys[0] : null;
 }
 
+function selectionParamKeyForField(fieldName) {
+  return fieldName === "selection_n"
+    ? "n"
+    : fieldName.replace(/^selection_/, "");
+}
+
+function getSelectionDistributionNameFromStoredOperation(spec) {
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+    return null;
+  }
+  const validValues = getSelectionDistributionValues();
+  const explicitName =
+    typeof spec.selection_distribution === "string"
+      ? spec.selection_distribution
+      : "";
+  if (validValues.includes(explicitName)) {
+    return explicitName;
+  }
+  const rawExpression = sanitizeTypedExpression(spec.selection, "distribution");
+  const inferredName = distributionNameFromExpression(rawExpression);
+  return inferredName && validValues.includes(inferredName)
+    ? inferredName
+    : null;
+}
+
+function getSelectionParamsFromStoredExpression(spec, distributionName) {
+  const rawExpression = sanitizeTypedExpression(
+    spec && spec.selection,
+    "distribution",
+  );
+  if (
+    !rawExpression ||
+    !distributionName ||
+    !rawExpression[distributionName] ||
+    typeof rawExpression[distributionName] !== "object" ||
+    Array.isArray(rawExpression[distributionName])
+  ) {
+    return {};
+  }
+  return rawExpression[distributionName];
+}
+
+function applySelectionExpressionParamsToForm(op, spec, distributionName) {
+  const rawParams = getSelectionParamsFromStoredExpression(
+    spec,
+    distributionName,
+  );
+  getSelectionParamsForDistribution(distributionName).forEach((fieldName) => {
+    if (Object.prototype.hasOwnProperty.call(spec, fieldName)) {
+      return;
+    }
+    const rawValue = rawParams[selectionParamKeyForField(fieldName)];
+    if (Number.isFinite(rawValue)) {
+      setOperationInputValue(op, fieldName, rawValue);
+    }
+  });
+}
+
 function buildSelectionDistributionSpecFromStoredOperation(op, spec) {
   const defaults = OPERATION_DEFAULTS[op] || {};
   const rawExpression = sanitizeTypedExpression(
@@ -4091,10 +4152,7 @@ function buildSelectionDistributionSpecFromStoredOperation(op, spec) {
       defaults[fieldName] === undefined || defaults[fieldName] === null
         ? SELECTION_PARAM_DEFAULTS[fieldName]
         : defaults[fieldName];
-    const paramKey =
-      fieldName === "selection_n"
-        ? "n"
-        : fieldName.replace(/^selection_/, "");
+    const paramKey = selectionParamKeyForField(fieldName);
     const rawValue =
       spec && spec[fieldName] !== undefined && spec[fieldName] !== null
         ? spec[fieldName]
@@ -5690,9 +5748,26 @@ function applyAssistantPatch(patch) {
   }
 
   if (Array.isArray(patch.sections) && patch.sections.length > 0) {
+    const previousSections = Array.isArray(workloadStructureState)
+      ? workloadStructureState
+      : [];
+    const previousSectionCount = previousSections.length;
+    const previousGroupCount =
+      previousSections[0] && Array.isArray(previousSections[0].groups)
+        ? previousSections[0].groups.length
+        : 0;
     workloadStructureState = normalizePatchedStructureSections(patch.sections);
-    activeSectionIndex = 0;
-    activeGroupIndex = 0;
+    const nextSectionCount = workloadStructureState.length;
+    const nextGroupCount =
+      workloadStructureState[0] && Array.isArray(workloadStructureState[0].groups)
+        ? workloadStructureState[0].groups.length
+        : 0;
+    activeSectionIndex =
+      nextSectionCount > previousSectionCount ? previousSectionCount : 0;
+    activeGroupIndex =
+      activeSectionIndex === 0 && nextGroupCount > previousGroupCount
+        ? previousGroupCount
+        : 0;
     setCustomWorkloadModeState(true);
     syncLandingUi();
     loadActiveStructureIntoForm();
