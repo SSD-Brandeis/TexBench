@@ -3,7 +3,7 @@
     "id": "kvbench-i",
     "family": "KVBench",
     "label": "I: Empty PQ-heavy (preloading)",
-    "path": "/presets/kvbench/i.spec.json",
+    "path": "/presets/KVBench/i.spec.json",
     "source": "example-specs/kvbench/i.spec.json",
     "description": "Insert phase followed by point and empty-point reads."
   },
@@ -11,7 +11,7 @@
     "id": "kvbench-ii",
     "family": "KVBench",
     "label": "II: Interleaved inserts, deletes, PQs, updates",
-    "path": "/presets/kvbench/ii.spec.json",
+    "path": "/presets/KVBench/ii.spec.json",
     "source": "example-specs/kvbench/ii.spec.json",
     "description": "Insert-heavy kvbench workload with deletes, empty reads, and updates."
   },
@@ -19,7 +19,7 @@
     "id": "kvbench-iii",
     "family": "KVBench",
     "label": "III: Multi-distribution update and PQ (preloading)",
-    "path": "/presets/kvbench/iii.spec.json",
+    "path": "/presets/KVBench/iii.spec.json",
     "source": "example-specs/kvbench/iii.spec.json",
     "description": "Kvbench mix with updates, point queries, and empty-point queries."
   },
@@ -27,7 +27,7 @@
     "id": "kvbench-iv",
     "family": "KVBench",
     "label": "IV: Update and range delete-heavy (preloading)",
-    "path": "/presets/kvbench/iv.spec.json",
+    "path": "/presets/KVBench/iv.spec.json",
     "source": "example-specs/kvbench/iv.spec.json",
     "description": "Kvbench workload combining updates with range deletes."
   },
@@ -35,7 +35,7 @@
     "id": "kvbench-v",
     "family": "KVBench",
     "label": "V: Insert-heavy with skewed prefixes",
-    "path": "/presets/kvbench/v.spec.json",
+    "path": "/presets/KVBench/v.spec.json",
     "source": "example-specs/kvbench/v.spec.json",
     "description": "Single-group kvbench workload with inserts and point queries."
   },
@@ -43,7 +43,7 @@
     "id": "ycsb-a",
     "family": "YCSB",
     "label": "A: Update heavy",
-    "path": "/presets/ycsb/a.spec.json",
+    "path": "/presets/YCSB/a.spec.json",
     "source": "example-specs/ycsb/a.spec.json",
     "description": "Balanced read and update workload with an initial insert phase."
   },
@@ -51,7 +51,7 @@
     "id": "ycsb-b",
     "family": "YCSB",
     "label": "B: Read heavy",
-    "path": "/presets/ycsb/b.spec.json",
+    "path": "/presets/YCSB/b.spec.json",
     "source": "example-specs/ycsb/b.spec.json",
     "description": "Read-heavy workload with a small update slice."
   },
@@ -59,7 +59,7 @@
     "id": "ycsb-c",
     "family": "YCSB",
     "label": "C: Read only",
-    "path": "/presets/ycsb/c.spec.json",
+    "path": "/presets/YCSB/c.spec.json",
     "source": "example-specs/ycsb/c.spec.json",
     "description": "Read-only YCSB workload after the initial insert phase."
   },
@@ -67,7 +67,7 @@
     "id": "ycsb-d",
     "family": "YCSB",
     "label": "D: Read latest",
-    "path": "/presets/ycsb/d.spec.json",
+    "path": "/presets/YCSB/d.spec.json",
     "source": "example-specs/ycsb/d.spec.json",
     "description": "Read-latest YCSB workload with inserts and point queries."
   },
@@ -75,7 +75,7 @@
     "id": "ycsb-e",
     "family": "YCSB",
     "label": "E: Short ranges",
-    "path": "/presets/ycsb/e.spec.json",
+    "path": "/presets/YCSB/e.spec.json",
     "source": "example-specs/ycsb/e.spec.json",
     "description": "Scan-heavy YCSB workload with inserts and range queries."
   },
@@ -83,7 +83,7 @@
     "id": "ycsb-f",
     "family": "YCSB",
     "label": "F: Read-Modify-Writes",
-    "path": "/presets/ycsb/f.spec.json",
+    "path": "/presets/YCSB/f.spec.json",
     "source": "example-specs/ycsb/f.spec.json",
     "description": "Read-modify-write YCSB workload with point queries and merges."
   },
@@ -91,7 +91,7 @@
     "id": "tec-1",
     "family": "Tectonic",
     "label": "1: Multi-phased dynamic",
-    "path": "/presets/tectonic/1.spec.json",
+    "path": "/presets/Tectonic/1.spec.json",
     "source": "example-specs/tectonic/1.spec.json",
     "description": "Three phases: 1) Zipfian inserts/deletes, 2) Uniform empty point queries, 3) 50/50 insert/range queries."
   },

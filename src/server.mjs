@@ -532,6 +532,10 @@ function inferContentType(filePath) {
       return "image/x-icon";
     case ".txt":
       return "text/plain; charset=utf-8";
+    case ".woff2":
+      return "font/woff2";
+    case ".woff":
+      return "font/woff";
     default:
       return "application/octet-stream";
   }

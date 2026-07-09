@@ -152,14 +152,14 @@ const PROMPT_OPERATION_BLOCKED_PREFIXES = {
 const DEFAULT_OPERATION_ORDER = [
   "inserts",
   "updates",
-  "merges",
   "point_queries",
   "range_queries",
+  "merges",
   "point_deletes",
   "range_deletes",
-  "empty_point_queries",
-  "empty_point_deletes",
   "sorted",
+  "empty_point_deletes",
+  "empty_point_queries",
 ];
 const DEFAULT_SELECTION_DISTRIBUTIONS = [
   "uniform",
@@ -545,6 +545,11 @@ function deriveUiConfigFromSchema() {
     });
 
     if (derivedOps.length > 0) {
+      const canonicalIndex = (op) => {
+        const idx = DEFAULT_OPERATION_ORDER.indexOf(op);
+        return idx === -1 ? DEFAULT_OPERATION_ORDER.length : idx;
+      };
+      derivedOps.sort((a, b) => canonicalIndex(a) - canonicalIndex(b));
       operationOrder = derivedOps;
       operationLabels = derivedLabels;
       formOpsWithKeyFields = derivedKeyFields;
