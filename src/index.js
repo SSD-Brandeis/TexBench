@@ -165,7 +165,7 @@ const STRING_PATTERN_DEFAULTS = {
   val_hot_probability: 0.8,
 };
 const STRUCTURED_WORKLOAD_PATTERN =
-  /\b(?:single[- ]shot|(?:one|two|three|\d+)[- ]phases?|preload|interleave|interleaved|phase\s+[123]|(?:first|second|third|next|later|new|another)\s+phases?|write[- ]heavy|write[- ]only|read[- ]heavy|read[- ]only|followed\s+by)\b/i;
+  /\b(?:single[- ]shot|(?:one|two|three|\d+)[- ]phases?|preload|interleave|interleaved|phase\s+(?:\d+|1st|first|2nd|second|3rd|third|4th|fourth)|(?:\d+|1st|first|2nd|second|3rd|third|4th|fourth|next|later|new|another)\s+phases?|write[- ]heavy|write[- ]only|read[- ]heavy|read[- ]only|followed\s+by)\b/i;
 const RANGE_QUERY_SELECTIVITY_PROFILES = {
   short: 0.001,
   long: 0.1,
@@ -1341,6 +1341,7 @@ function buildAssistantMessages(
     "Use set_group_operation_fields for edits scoped to one existing group.",
     "Use rename_group_operation when converting one operation in a group into another.",
     "Use append_group when the user asks for another/new/next/second/third group or a later phase group.",
+    "If the user names the phase immediately after the current last phase, create it with append_group and put every requested operation in that new group.",
     "Use replace_sections only when defining or rewriting the full layout.",
     "Tectonic semantics: same section shares valid keys; same group is interleaved; different groups in one section are phased.",
     "For phased prompts, prefer one section with multiple groups.",
@@ -2666,6 +2667,20 @@ function aiSatisfiedStructuredLayoutEditIntent(
   if (appendedGroups.length < derivedGroups.length) {
     return false;
   }
+  const requestedOperations = getRequestedStructuredAppendOperations(
+    prompt,
+    schemaHints,
+  );
+  if (
+    requestedOperations.length > 0 &&
+    !requestedOperations.every((operationName) =>
+      appendedGroups.some((group) =>
+        configuredGroupOperationNames(group, schemaHints).includes(operationName),
+      ),
+    )
+  ) {
+    return false;
+  }
   return derivedGroups.every((group, index) =>
     groupSemanticallyMatches(appendedGroups[index], group),
   );
@@ -2674,6 +2689,7 @@ function aiSatisfiedStructuredLayoutEditIntent(
 function aiSatisfiedExplicitGroupAppendIntent(
   patch,
   formState,
+  prompt,
   schemaHints,
   answers,
 ) {
@@ -2700,6 +2716,10 @@ function aiSatisfiedExplicitGroupAppendIntent(
   }
   const nextOps = new Set(configuredGroupOperationNames(appendedGroup, schemaHints));
   if (nextOps.size === 0) {
+    return false;
+  }
+  const promptOps = getRequestedStructuredAppendOperations(prompt, schemaHints);
+  if (!promptOps.every((operationName) => nextOps.has(operationName))) {
     return false;
   }
   const answeredOps = extractAnsweredOperationsSet(answers, schemaHints);
@@ -2819,17 +2839,18 @@ function normalizeAssistPayload(
     schemaHints,
   );
   const structuredPrompt = isStructuredWorkloadPrompt(prompt);
-  const structuredLayoutEditRequested =
-    structuredPrompt &&
-    !promptDefinesFreshStructuredWorkload(prompt, formState, schemaHints) &&
-    promptRequestsStructuredLayoutEdit(prompt);
-  const explicitGroupAppendRequested =
-    !structuredPrompt && promptRequestsExplicitGroupAppend(prompt);
   const explicitGroupTarget = extractExplicitGroupTarget(
     prompt,
     formState,
     schemaHints,
   );
+  const structuredLayoutEditRequested =
+    structuredPrompt &&
+    !promptDefinesFreshStructuredWorkload(prompt, formState, schemaHints) &&
+    !explicitGroupTarget &&
+    promptRequestsStructuredLayoutEdit(prompt);
+  const explicitGroupAppendRequested =
+    !structuredPrompt && promptRequestsExplicitGroupAppend(prompt);
   const structuredPromptOwnsLayout =
     structuredPrompt &&
     promptDefinesFreshStructuredWorkload(prompt, formState, schemaHints);
@@ -2878,6 +2899,7 @@ function normalizeAssistPayload(
     !aiSatisfiedExplicitGroupAppendIntent(
       patch,
       formState,
+      prompt,
       schemaHints,
       options.answers,
     )
@@ -3687,7 +3709,7 @@ function promptRequestsStructuredLayoutEdit(prompt) {
     "(?:an?\\s+)?(?:another|new|next|second|third|2nd|3rd)(?:\\s+[a-z0-9/-]+){0,6}\\s+group";
   return (
     /\b(?:then|next|after(?: that|wards)?|later|finally)\b/.test(lowerPrompt) ||
-    /\b(?:add|append|make|turn|convert|split)\b[\s\S]{0,36}\bphase\b/.test(
+    /\b(?:add|append|make|turn|convert|split)\b[\s\S]{0,80}\bphase\b/.test(
       lowerPrompt,
     ) ||
     /\b(?:second|third|later|next)\s+phase\b/.test(lowerPrompt) ||
@@ -4286,10 +4308,24 @@ function applyPromptStructuredLayoutEditFallback(
   const nextSections = derivedSections
     ? canonicalizeSectionsForStructuredEdit(derivedSections, schemaHints)
     : [];
-  const derivedGroups =
+  let derivedGroups =
     nextSections.length > 0 && Array.isArray(nextSections[0].groups)
       ? nextSections[0].groups.map((group) => cloneJsonValue(group))
       : [];
+
+  const requestedAppendOperations = getRequestedStructuredAppendOperations(
+    prompt,
+    schemaHints,
+  );
+  if (
+    promptRequestsExplicitGroupAppend(prompt) &&
+    requestedAppendOperations.length > 0 &&
+    !derivedGroups.some(
+      (group) => configuredGroupOperationNames(group, schemaHints).length > 0,
+    )
+  ) {
+    derivedGroups = [];
+  }
 
   if (derivedGroups.length === 0) {
     const fallbackGroup = buildAnsweredStructuredGroupFallback(
@@ -4334,7 +4370,9 @@ function applyPromptStructuredLayoutEditFallback(
     prefixLength += 1;
   }
 
-  const groupsToAppend = derivedGroups.slice(prefixLength);
+  const groupsToAppend = promptRequestsExplicitGroupAppend(prompt)
+    ? derivedGroups
+    : derivedGroups.slice(prefixLength);
   if (groupsToAppend.length === 0) {
     return false;
   }
@@ -4377,10 +4415,7 @@ function buildAnsweredStructuredGroupFallback(
     return null;
   }
   const answeredOps = extractAnsweredOperationsSet(answers, schemaHints);
-  const promptOps = getMentionedOperationsFromPrompt(
-    String(prompt || "").toLowerCase(),
-    schemaHints,
-  );
+  const promptOps = getRequestedStructuredAppendOperations(prompt, schemaHints);
   const selectedOps = uniqueStrings([...answeredOps, ...promptOps]);
   const operationsPatch =
     patch && patch.operations && typeof patch.operations === "object"
@@ -4508,10 +4543,10 @@ function promptRequestsExplicitGroupAppend(prompt) {
     return false;
   }
   const descriptiveGroupRef =
-    "(?:an?\\s+)?(?:another|new|next|second|third|2nd|3rd)(?:\\s+[a-z0-9/-]+){0,6}\\s+group";
+    "(?:an?\\s+)?(?:another|new|next|second|third|2nd|3rd)(?:\\s+[a-z0-9/-]+){0,6}\\s+(?:group|phase)";
   if (
     /\b(?:change|replace|turn|convert|edit|modify)\b/.test(lowerPrompt) &&
-    /\bgroup\b/.test(lowerPrompt)
+    /\b(?:group|phase)\b/.test(lowerPrompt)
   ) {
     return false;
   }
@@ -4521,11 +4556,30 @@ function promptRequestsExplicitGroupAppend(prompt) {
         descriptiveGroupRef +
         "\\b",
     ).test(lowerPrompt) ||
-    /\b(?:put|place|move)\b[\s\S]{0,80}\b(?:into|to|as)\s+(?:an?\s+)?(?:second|third|2nd|3rd)\s+group\b/.test(
+    /\b(?:put|place|move)\b[\s\S]{0,80}\b(?:into|to|as)\s+(?:an?\s+)?(?:second|third|2nd|3rd)\s+(?:group|phase)\b/.test(
       lowerPrompt,
     ) ||
     new RegExp("\\b" + descriptiveGroupRef + "\\b").test(lowerPrompt)
   );
+}
+
+function getRequestedStructuredAppendOperations(prompt, schemaHints) {
+  const mentionedOperations = getMentionedOperationsFromPrompt(
+    prompt,
+    schemaHints,
+  );
+  if (mentionedOperations.length > 0) {
+    return mentionedOperations;
+  }
+  const lowerPrompt = String(prompt || "").toLowerCase();
+  if (
+    promptRequestsExplicitGroupAppend(lowerPrompt) &&
+    extractPromptCountHint(lowerPrompt) !== null &&
+    /\b(?:entries|records|keys)\b/.test(lowerPrompt)
+  ) {
+    return ["inserts"];
+  }
+  return [];
 }
 
 function parsePromptOrdinalIndex(token) {

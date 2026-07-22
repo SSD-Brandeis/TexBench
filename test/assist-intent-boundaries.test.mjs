@@ -157,11 +157,13 @@ function applyNormalizedPrompt({
   prompt,
   state,
   rawPatch = {},
+  rawProgram = null,
 }) {
   const normalized = __test.normalizeAssistPayload(
     {
       summary: "Applied prompt.",
       patch: rawPatch,
+      ...(Array.isArray(rawProgram) ? { program: rawProgram } : {}),
       clarifications: [],
       assumptions: [],
     },
@@ -308,6 +310,100 @@ test("intent boundaries: one-group refinements project into structured state", (
     effective.sections[0].groups[0].point_queries.selection_distribution,
     "normal",
   );
+});
+
+test("intent boundaries: an explicitly named next phase appends repeated inserts", () => {
+  const formState = createStructuredState([
+    {
+      inserts: {
+        enabled: true,
+        op_count: 1000000,
+      },
+    },
+    {
+      point_queries: {
+        enabled: true,
+        op_count: 10000,
+      },
+    },
+  ]);
+
+  const nextState = applyNormalizedPrompt({
+    prompt: "Add another 1M inserts in the 3rd phase",
+    state: formState,
+    rawProgram: [
+      {
+        kind: "set_operation_fields",
+        operation: "inserts",
+        fields: [
+          {
+            field: "op_count",
+            number_value: 1000000,
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(nextState.groups_per_section, 3);
+  assert.deepEqual(configuredOperations(nextState.sections[0].groups[0]), [
+    "inserts",
+  ]);
+  assert.deepEqual(configuredOperations(nextState.sections[0].groups[1]), [
+    "point_queries",
+  ]);
+  assert.deepEqual(configuredOperations(nextState.sections[0].groups[2]), [
+    "inserts",
+  ]);
+  assert.equal(nextState.sections[0].groups[2].inserts.op_count, 1000000);
+});
+
+test("intent boundaries: an empty model-created phase infers inserts from counted entries", () => {
+  const formState = createStructuredState([
+    {
+      inserts: {
+        enabled: true,
+        op_count: 1000000,
+      },
+    },
+    {
+      inserts: {
+        enabled: true,
+        op_count: 1000000,
+      },
+      point_queries: {
+        enabled: true,
+        op_count: 10000,
+      },
+    },
+  ]);
+
+  const nextState = applyNormalizedPrompt({
+    prompt: "Add a new phase with 2M entries at the end.",
+    state: formState,
+    rawPatch: {
+      sections: [
+        {
+          groups: [
+            { inserts: { op_count: 1000000 } },
+            {
+              inserts: { op_count: 2000000 },
+              point_queries: { op_count: 10000 },
+            },
+            { name: "Group 3" },
+          ],
+        },
+      ],
+      operations: {},
+    },
+  });
+
+  assert.equal(nextState.groups_per_section, 3);
+  assert.deepEqual(configuredOperations(nextState.sections[0].groups[2]), [
+    "inserts",
+  ]);
+  assert.equal(nextState.sections[0].groups[1].inserts.op_count, 1000000);
+  assert.equal(nextState.sections[0].groups[2].inserts.op_count, 2000000);
 });
 
 test("intent boundaries: unique matching multi-group refinements project without changing layout", () => {
