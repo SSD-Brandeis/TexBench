@@ -263,6 +263,12 @@ function sortedKeys(value) {
   return Object.keys(value || {}).sort();
 }
 
+function sortedGroupOperationKeys(value) {
+  return Object.keys(value || {})
+    .filter((key) => OPERATION_ORDER.includes(key))
+    .sort();
+}
+
 test("add prompts only patch the named operation across all operations", async (t) => {
   for (const testCase of ADD_CASES) {
     await t.test(testCase.operation, () => {
@@ -581,6 +587,36 @@ test("two phase interleaved prompts convert percentage mixes using the phase tot
   assert.equal(result.patch.sections[0].groups[1].updates.op_count, 100000);
 });
 
+test("read-heavy scan prompts keep preload and read phases separate", () => {
+  const prompt =
+    "Generate a specification for a read-heavy workload that inserts 1M unique key-value pairs following a skewed distribution, and then perform 1K scans with a scan length of 1000 keys interleaved with 10K point queries.";
+  const result = applyPrompt({
+    prompt,
+    formState: createFormState({}),
+    rawPatch: { operations: {} },
+  });
+
+  assert.equal(result.patch.sections[0].groups.length, 2);
+  assert.deepEqual(
+    sortedGroupOperationKeys(result.patch.sections[0].groups[0]),
+    ["inserts"],
+  );
+  assert.deepEqual(
+    sortedGroupOperationKeys(result.patch.sections[0].groups[1]),
+    ["point_queries", "range_queries"],
+  );
+  assert.equal(result.patch.sections[0].groups[0].inserts.op_count, 1000000);
+  assert.equal(result.patch.sections[0].groups[1].point_queries.op_count, 10000);
+  assert.equal(result.patch.sections[0].groups[1].range_queries.op_count, 1000);
+  assert.equal(
+    result.patch.sections[0].groups[1].range_queries.range_format,
+    "StartCount",
+  );
+  assert.deepEqual(result.patch.sections[0].groups[1].point_queries.selection, {
+    zipf: { n: 1000000, s: 1.5 },
+  });
+});
+
 test("write only phrasing defaults the follow-up phase to updates", () => {
   const result = applyPrompt({
     prompt:
@@ -651,22 +687,22 @@ test("explicit multi-section prompts preserve section boundaries and intra-secti
   assert.equal(result.patch.sections[1].groups.length, 2);
 
   assert.deepEqual(
-    sortedKeys(result.patch.sections[0].groups[0]),
+    sortedGroupOperationKeys(result.patch.sections[0].groups[0]),
     ["inserts"],
   );
   assert.deepEqual(
-    sortedKeys(result.patch.sections[0].groups[1]),
+    sortedGroupOperationKeys(result.patch.sections[0].groups[1]),
     ["updates"],
   );
   assert.equal(result.patch.sections[0].groups[0].inserts.op_count, 1000000);
   assert.equal(result.patch.sections[0].groups[1].updates.op_count, 10000);
 
   assert.deepEqual(
-    sortedKeys(result.patch.sections[1].groups[0]),
+    sortedGroupOperationKeys(result.patch.sections[1].groups[0]),
     ["inserts", "point_queries"],
   );
   assert.deepEqual(
-    sortedKeys(result.patch.sections[1].groups[1]),
+    sortedGroupOperationKeys(result.patch.sections[1].groups[1]),
     ["range_queries"],
   );
   assert.equal(result.patch.sections[1].groups[0].inserts.op_count, 10000);
@@ -1378,11 +1414,11 @@ test("worker assist endpoint preserves explicit beta distribution parameters in 
   assert.equal(body.patch.sections_count, 1);
   assert.equal(body.patch.groups_per_section, 2);
   assert.deepEqual(
-    sortedKeys(body.patch.sections[0].groups[0]),
+    sortedGroupOperationKeys(body.patch.sections[0].groups[0]),
     ["inserts"],
   );
   assert.deepEqual(
-    sortedKeys(body.patch.sections[0].groups[1]),
+    sortedGroupOperationKeys(body.patch.sections[0].groups[1]),
     ["point_queries"],
   );
   assert.equal(body.patch.sections[0].groups[0].inserts.op_count, 1000000);

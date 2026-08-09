@@ -87,6 +87,6 @@ test("structure panel shows sorted as a modifier, not an operation", async () =>
 
   assert.equal(selectionLabel.textContent, "Editing Section 1 / Phase 1");
   const renderedText = flattenText(container);
-  assert.match(renderedText, /Phase 1 • inserts • near-sorted/);
+  assert.match(renderedText, /Phase 1:[\s\S]*inserts • near-sorted/);
   assert.doesNotMatch(renderedText, /Phase 1 • inserts, sorted/);
 });

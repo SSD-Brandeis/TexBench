@@ -245,7 +245,35 @@ test("patchFromAssistProgram derives section metadata from replace_sections", ()
     SCHEMA_HINTS,
   );
 
-  assert.deepEqual(patch.sections, sections);
+  assert.deepEqual(patch.sections, [
+    {
+      name: "Section 1",
+      enable_granular_stats: true,
+      groups: [
+        {
+          name: "Group 1",
+          enable_granular_stats: true,
+          inserts: { op_count: 100 },
+        },
+      ],
+    },
+    {
+      name: "Section 2",
+      enable_granular_stats: true,
+      groups: [
+        {
+          name: "Group 1",
+          enable_granular_stats: true,
+          updates: { op_count: 200 },
+        },
+        {
+          name: "Group 2",
+          enable_granular_stats: true,
+          merges: { op_count: 300 },
+        },
+      ],
+    },
+  ]);
   assert.equal(patch.sections_count, 2);
   assert.equal(patch.groups_per_section, 2);
 });

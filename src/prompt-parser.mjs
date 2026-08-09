@@ -453,13 +453,6 @@ export function createPromptParser(deps = {}) {
         operationPatch[fieldName] = selectionParamDefaults[fieldName];
       }
     });
-    const selectionValue = buildSelectionDistributionValue(
-      distributionName,
-      operationPatch,
-    );
-    if (selectionValue) {
-      operationPatch.selection = selectionValue;
-    }
     return true;
   }
 
@@ -615,7 +608,7 @@ export function createPromptParser(deps = {}) {
       options.defaultPercentTotalCount,
       clauses.length,
     );
-    const groups = clauses
+    let groups = clauses
       .map((clause, index) =>
         deriveStructuredGroupFromClause(clause, schemaHints, {
           defaultPercentTotalCount:
@@ -631,6 +624,15 @@ export function createPromptParser(deps = {}) {
             operationPatchHasConfiguredValues(spec),
           ),
       );
+    const expectedGroupCount = positiveIntegerOrNull(options.expectedGroupCount);
+    if (
+      expectedGroupCount !== null &&
+      groups.length > expectedGroupCount
+    ) {
+      // A high-level phase overview may precede a concrete count-by-count
+      // restatement. Keep the final declared number of concrete groups.
+      groups = groups.slice(-expectedGroupCount);
+    }
     if (groups.length === 0) {
       return null;
     }
@@ -731,38 +733,8 @@ export function createPromptParser(deps = {}) {
         : promptUsesDefaultStructuredMix(lowerPrompt)
           ? positiveIntegerOrNull(defaultPercentMixTotalOperations)
           : null;
-    const phaseClauses = splitPromptIntoExplicitPhaseClauses(text);
-    if (Array.isArray(phaseClauses) && phaseClauses.length > 0) {
-      const perPhaseTotals = splitIntegerTotalAcrossClauses(
-        defaultTotalPerClause,
-        phaseClauses.length,
-      );
-      const groups = phaseClauses
-        .map((phaseText, index) =>
-          deriveStructuredGroupFromClause(phaseText, schemaHints, {
-            defaultPercentTotalCount:
-              perPhaseTotals[index] !== undefined ? perPhaseTotals[index] : null,
-            defaultWriteOperation: defaultWriteOperationForClause(
-              phaseClauses,
-              index,
-            ),
-          }),
-        )
-        .filter(
-          (group) =>
-            group &&
-            Object.keys(group).length > 0 &&
-            Object.values(group).some((spec) =>
-              operationPatchHasConfiguredValues(spec),
-            ),
-        );
-      if (groups.length === phaseClauses.length && groups.length > 0) {
-        applyStructuredPromptInsertShapeHints(groups, text);
-        applyStructuredPromptSelectionHints(groups, text, schemaHints);
-        applyStructuredPromptScanLengthHints(groups, text);
-        return [{ groups }];
-      }
-    }
+    // Sections are the outer structure. Phase labels may occur inside a
+    // section, and interpreting those globally would collapse all sections.
     if (Array.isArray(sectionClauses) && sectionClauses.length > 0) {
       const perSectionTotals = splitIntegerTotalAcrossClauses(
         defaultTotalPerClause,
@@ -788,12 +760,64 @@ export function createPromptParser(deps = {}) {
       }
     }
 
+    const phaseClauses = splitPromptIntoExplicitPhaseClauses(text);
+    let effectivePhaseClauses = phaseClauses;
+    if (
+      declaredPhaseCount !== null &&
+      Array.isArray(phaseClauses) &&
+      phaseClauses.length > declaredPhaseCount
+    ) {
+      const concreteTail = phaseClauses.slice(-declaredPhaseCount);
+      if (
+        concreteTail.every(
+          (clause) =>
+            extractPromptCountHint(clause) !== null &&
+            getMentionedOperationsFromPrompt(clause, schemaHints).length > 0,
+        )
+      ) {
+        // An overview is often followed by the same phases with exact counts.
+        // The concrete restatement is authoritative, not an extra phase.
+        effectivePhaseClauses = concreteTail;
+      }
+    }
+    if (Array.isArray(effectivePhaseClauses) && effectivePhaseClauses.length > 0) {
+      const perPhaseTotals = splitIntegerTotalAcrossClauses(
+        defaultTotalPerClause,
+        effectivePhaseClauses.length,
+      );
+      const groups = effectivePhaseClauses
+        .map((phaseText, index) =>
+          deriveStructuredGroupFromClause(phaseText, schemaHints, {
+            defaultPercentTotalCount:
+              perPhaseTotals[index] !== undefined ? perPhaseTotals[index] : null,
+            defaultWriteOperation: defaultWriteOperationForClause(
+              effectivePhaseClauses,
+              index,
+            ),
+          }),
+        )
+        .filter(
+          (group) =>
+            group &&
+            Object.keys(group).length > 0 &&
+            Object.values(group).some((spec) =>
+              operationPatchHasConfiguredValues(spec),
+            ),
+        );
+      if (groups.length === effectivePhaseClauses.length && groups.length > 0) {
+        applyStructuredPromptInsertShapeHints(groups, text);
+        applyStructuredPromptSelectionHints(groups, text, schemaHints);
+        applyStructuredPromptScanLengthHints(groups, text);
+        return [{ groups }];
+      }
+    }
     const groups = buildStructuredGroupsFromPromptText(text, schemaHints, {
       defaultPercentTotalCount:
         (declaredPhaseCount || promptUsesDefaultStructuredMix(lowerPrompt)) &&
         defaultTotalPerClause !== null
           ? defaultTotalPerClause
           : null,
+      expectedGroupCount: declaredPhaseCount,
     });
     if (!Array.isArray(groups) || groups.length === 0) {
       return null;
@@ -859,7 +883,7 @@ export function createPromptParser(deps = {}) {
             operationPatch.selection_distribution.trim()) ||
           distributionNameFromValue(explicitSelection) ||
           null;
-        if (currentDistribution !== "zipf") {
+        if (currentDistribution && currentDistribution !== "zipf") {
           return;
         }
 
@@ -1002,7 +1026,7 @@ export function createPromptParser(deps = {}) {
           "i",
         ),
         new RegExp(
-          `\\b${amountPatternSource}\\b\\s+(?:of\\s+)?(\\d[\\d,]*(?:\\.\\d+)?\\s*[kmb]?|\\d+(?:\\.\\d+)?)\\s*(%)?\\s+(?:new\\s+)?(?:keys?|records?|entries?|operations?|ops?)\\b`,
+          `\\b${amountPatternSource}\\b\\s+(?:of\\s+)?(\\d[\\d,]*(?:\\.\\d+)?\\s*[kmb]?|\\d+(?:\\.\\d+)?)\\s*(%)?\\s+(?:new\\s+)?(?:unique\\s+)?(?:keys?|records?|entries?|key[- ]value\\s+pairs?|operations?|ops?)\\b`,
           "i",
         ),
       ];
@@ -1046,8 +1070,16 @@ export function createPromptParser(deps = {}) {
     }
     const lowerClause = text.toLowerCase();
     let operations = getMentionedOperationsFromPrompt(lowerClause, schemaHints);
+    if (
+      /\bread[- ]heavy\b/.test(lowerClause) &&
+      operations.includes("inserts") &&
+      !/\bpoint\s+(?:quer(?:y|ie|ies)|reads?)\b|\bgets?\b/.test(lowerClause)
+    ) {
+      operations = operations.filter((operation) => operation !== "point_queries");
+    }
     const mentionsGenericReads =
       /\breads?\b/.test(lowerClause) &&
+      !/\bread[- ](?:heavy|only)\b/.test(lowerClause) &&
       !/\bpoint\s+reads?\b/.test(lowerClause) &&
       !/\bempty\s+point\s+reads?\b/.test(lowerClause) &&
       !/\bread[- ]?modify[- ]?write\b|\brmw\b/.test(lowerClause);
@@ -1058,7 +1090,11 @@ export function createPromptParser(deps = {}) {
     const isWriteOnly = /\bwrite[- ]only\b/.test(lowerClause);
     const isWriteHeavy = /\bwrite[- ]heavy\b/.test(lowerClause);
     const isReadOnly = /\bread[- ]only\b/.test(lowerClause);
-    const isReadHeavy = /\bread[- ]heavy\b/.test(lowerClause);
+    // A workload-level adjective in the lead-in must not turn an explicit
+    // preload phase into a mixed read/write phase. Later clauses carry the
+    // concrete read operations for that workload.
+    const isReadHeavy =
+      /\bread[- ]heavy\b/.test(lowerClause) && !operations.includes("inserts");
 
     if (isPreload && !operations.includes("inserts")) {
       operations.unshift("inserts");

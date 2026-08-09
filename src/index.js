@@ -764,6 +764,8 @@ export const __test = {
   interpretAssistProgram,
   normalizeAssistPayload,
   buildEffectiveState,
+  parseJsonFromText,
+  deriveStructuredSectionsFromPrompt,
   openAiAssistResponseJsonSchema: OPENAI_ASSIST_RESPONSE_JSON_SCHEMA,
 };
 
@@ -817,6 +819,8 @@ async function handleAssistRequest(request, env) {
     formState,
     schemaHints,
   );
+  const recoverableDeterministicPayload =
+    insertReadFallbackPayload || deterministicPayload;
   const shouldPreferAiForStructuredPrompt =
     !!env.AI &&
     typeof env.AI.run === "function" &&
@@ -836,10 +840,10 @@ async function handleAssistRequest(request, env) {
     return jsonResponse(normalized, 200);
   }
   if (!env.AI || typeof env.AI.run !== "function") {
-    if (insertReadFallbackPayload) {
+    if (recoverableDeterministicPayload) {
       return jsonResponse(
         normalizeDeterministicFallback(
-          insertReadFallbackPayload,
+          recoverableDeterministicPayload,
           "deterministic_fallback",
         ),
         200,
@@ -884,10 +888,10 @@ async function handleAssistRequest(request, env) {
   } catch (error) {
     console.error("Assist AI call failed:", error);
     logAssistFailureAiOutput("assist-error.exception", error, null);
-    if (insertReadFallbackPayload) {
+    if (recoverableDeterministicPayload) {
       return jsonResponse(
         normalizeDeterministicFallback(
-          insertReadFallbackPayload,
+          recoverableDeterministicPayload,
           "deterministic_fallback",
         ),
         200,
@@ -905,10 +909,10 @@ async function handleAssistRequest(request, env) {
 
   if (!outcome || !outcome.payload || typeof outcome.payload !== "object") {
     logAssistFailureAiOutput("assist-error.ai_invalid_output", null, outcome);
-    if (insertReadFallbackPayload) {
+    if (recoverableDeterministicPayload) {
       return jsonResponse(
         normalizeDeterministicFallback(
-          insertReadFallbackPayload,
+          recoverableDeterministicPayload,
           "deterministic_fallback",
         ),
         200,
@@ -3629,6 +3633,12 @@ function normalizeGroupValue(rawGroup, schemaHints, options = {}) {
     if (!operationPatchHasConfiguredValues(normalized)) {
       group[op] = {};
       return;
+    }
+    if (!normalized.selection && normalized.selection_distribution) {
+      normalized.selection = buildSelectionDistributionValue(
+        normalized.selection_distribution,
+        normalized,
+      );
     }
     group[op] = stripEnabledFromOperationPatch(normalized);
   });
@@ -6615,6 +6625,10 @@ function buildDeterministicInsertReadMixPayload(prompt, formState, schemaHints) 
       prompt,
       detectedDistribution,
     );
+    pointQuerySpec.selection = buildSelectionDistributionValue(
+      detectedDistribution,
+      pointQuerySpec,
+    );
   }
   const insertSpec = {
     op_count: Math.round((totalCount * insertPercent) / 100),
@@ -7927,6 +7941,16 @@ function normalizeOperationPatch(rawPatch, op, schemaHints) {
   if (!caps.has_range) {
     normalized.selectivity = null;
     normalized.range_format = null;
+  } else if (hasExplicitFields && normalized.enabled !== false) {
+    if (normalized.selectivity === null) {
+      normalized.selectivity = 0.01;
+    }
+    if (
+      normalized.range_format === null &&
+      rangeFormats.includes("StartCount")
+    ) {
+      normalized.range_format = "StartCount";
+    }
   }
   if (!caps.has_sorted) {
     normalized.k = null;
@@ -8288,6 +8312,20 @@ function buildEffectiveState(patch, formState, schemaHints) {
     : Array.isArray(formState.sections) && formState.sections.length > 0
       ? normalizeSectionsValue(formState.sections, schemaHints)
       : synthesizeSectionsFromFlatState(effective, schemaHints);
+  if (!patchHasStructuredSections && patch.operations) {
+    const explicitlyDisabled = schemaHints.operation_order.filter(
+      (operationName) => patch.operations[operationName]?.enabled === false,
+    );
+    if (explicitlyDisabled.length > 0) {
+      normalizedSections.forEach((section) => {
+        (section.groups || []).forEach((group) => {
+          explicitlyDisabled.forEach((operationName) => {
+            delete group[operationName];
+          });
+        });
+      });
+    }
+  }
   effective.sections_count =
     normalizedSections.length > 0
       ? normalizedSections.length
@@ -10000,34 +10038,107 @@ function uniqueStrings(values) {
 
 function parseJsonFromText(text) {
   const direct = safeJsonParse(text);
-  if (direct) {
+  if (isAssistPayloadShape(direct)) {
     return direct;
   }
 
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenceMatch && fenceMatch[1]) {
-    const fenced = safeJsonParse(fenceMatch[1].trim());
-    if (fenced) {
-      return fenced;
+  const candidates = extractBalancedJsonObjects(text)
+    .map((candidate) => safeJsonParse(candidate.text))
+    .filter((candidate) => isAssistPayloadShape(candidate));
+  if (candidates.length > 0) {
+    // Models sometimes emit an example or an abandoned draft before their
+    // final answer. The last complete, schema-shaped payload is authoritative.
+    return candidates[candidates.length - 1];
+  }
+
+  const recoveredCandidates = [];
+  const objectStarts = findJsonObjectStarts(text);
+  for (const start of objectStarts) {
+    const recovered = recoverTruncatedJsonObject(text.slice(start));
+    // A truncated legacy response may contain a syntactically complete but
+    // semantically partial `patch` before later fields are cut off. Command
+    // programs are the only format whose completed commands can be recovered
+    // without silently accepting such a partial patch.
+    if (isAssistPayloadShape(recovered) && Array.isArray(recovered.program)) {
+      recoveredCandidates.push(recovered);
     }
   }
+  if (recoveredCandidates.length > 0) {
+    return recoveredCandidates[recoveredCandidates.length - 1];
+  }
 
-  const firstBrace = text.indexOf("{");
-  const lastBrace = text.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    const slice = text.slice(firstBrace, lastBrace + 1);
-    const sliced = safeJsonParse(slice);
-    if (sliced) {
-      return sliced;
+  return direct || null;
+}
+
+function extractBalancedJsonObjects(text) {
+  if (typeof text !== "string" || !text) {
+    return [];
+  }
+  const candidates = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaping = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+    if (inString) {
+      if (escaping) {
+        escaping = false;
+      } else if (ch === "\\") {
+        escaping = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      if (depth === 0) {
+        start = index;
+      }
+      depth += 1;
+      continue;
+    }
+    if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        candidates.push({ start, text: text.slice(start, index + 1) });
+        start = -1;
+      }
     }
   }
+  return candidates;
+}
 
-  const recovered = recoverTruncatedJsonObject(text);
-  if (recovered) {
-    return recovered;
+function findJsonObjectStarts(text) {
+  if (typeof text !== "string" || !text) {
+    return [];
   }
-
-  return null;
+  const starts = [];
+  let inString = false;
+  let escaping = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+    if (inString) {
+      if (escaping) {
+        escaping = false;
+      } else if (ch === "\\") {
+        escaping = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
+      starts.push(index);
+    }
+  }
+  return starts;
 }
 
 function recoverTruncatedJsonObject(text) {
