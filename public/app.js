@@ -723,6 +723,12 @@ function reportUiIssue(prefix, errorLike) {
 
 async function initApp() {
   schema = await loadInitialSchema();
+  if (
+    globalThis.TectonicSystemCapacity &&
+    typeof globalThis.TectonicSystemCapacity.populate === "function"
+  ) {
+    void globalThis.TectonicSystemCapacity.populate();
+  }
   // Schema must be loaded before building controls/descriptions.
   deriveUiConfigFromSchema();
   populateCharacterSetOptions();

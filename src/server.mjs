@@ -19,6 +19,7 @@ import {
   handleWorkloadRequest,
   stopActiveRuns,
 } from "./local-tectonic-runner.mjs";
+import { collectSystemInfo } from "./system-info.mjs";
 
 const HOST =
   readString(process.env.APP_HOST || process.env.LOCAL_APP_HOST) || "0.0.0.0";
@@ -164,6 +165,15 @@ async function routeRequest(req, res) {
       return;
     }
     sendJson(res, 200, llmModelConfig);
+    return;
+  }
+
+  if (pathname === "/api/system-info") {
+    if (method !== "GET") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    sendJson(res, 200, collectSystemInfo());
     return;
   }
 

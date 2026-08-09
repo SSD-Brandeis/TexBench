@@ -234,6 +234,9 @@
                   <span>PrintDB</span>
                 </label>
               </div>
+              <p class="system-capacity" data-system-capacity aria-live="polite">
+                Detecting system capacity…
+              </p>
               <button class="db-run-btn" id="inlineRunWorkloadBtn">
                 Run Workload
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -526,6 +529,9 @@
                       Choose one or more database engines and run the current
                       workload spec.
                     </p>
+                    <p class="system-capacity" data-system-capacity aria-live="polite">
+                      Detecting system capacity…
+                    </p>
                   </div>
                   <div class="run-control-actions">
                     <details class="run-db-menu">
@@ -610,6 +616,9 @@
           <div class="db-card">
             <h3 class="db-card-title">Select Database Engines</h3>
             <p class="db-card-help">Choose one or more database engines to benchmark your workload against. The same specification will run in parallel across all selected engines.</p>
+            <p class="system-capacity" data-system-capacity aria-live="polite">
+              Detecting system capacity…
+            </p>
             <div class="db-option-list" id="dbOptionList">
               <label class="db-option-item">
                 <input type="checkbox" name="benchmarkDatabase" value="rocksdb" checked />
@@ -661,6 +670,7 @@
 
   <script src="/workload-runs.js"></script>
   <script src="/workload-runs-panel.js"></script>
+  <script src="/system-capacity.js"></script>
   <script src="/ui-structured-normalization.js"></script>
   <script src="/builder-session.js"></script>
   <script src="/range-scan.js"></script>

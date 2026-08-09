@@ -1808,6 +1808,23 @@ body {
     line-height: 1.5;
 }
 
+.system-capacity {
+    margin: 10px 0 18px;
+    padding: 10px 12px;
+    border: 1px solid #ded8ce;
+    border-radius: 9px;
+    background: #faf8f4;
+    color: #5f594f;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.system-capacity.unavailable {
+    color: #777;
+    background: #f7f7f7;
+    border-color: #e5e5e5;
+}
+
 .db-option-list {
     display: flex;
     flex-direction: column;
