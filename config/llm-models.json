@@ -1,0 +1,9 @@
+{
+  "defaultModel": "llama3:8b",
+  "models": [
+    { "id": "llama3:8b", "label": "Llama 3 8B" },
+    { "id": "mixtral:8x7b", "label": "Mixtral 8x7B" },
+    { "id": "qwen2.5:72b", "label": "Qwen 2.5 72B" },
+    { "id": "qwen2.5:14b", "label": "Qwen 2.5 14B" }
+  ]
+}

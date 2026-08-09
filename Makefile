@@ -54,22 +54,22 @@ check-demo-ai-env:
 	@test -n "$$CLOUDFLARE_ACCOUNT_ID" || (echo "CLOUDFLARE_ACCOUNT_ID is not set" >&2; exit 1)
 	@test -n "$$CLOUDFLARE_API_TOKEN" || (echo "CLOUDFLARE_API_TOKEN is not set" >&2; exit 1)
 
-dev: check-ai-env
-	$(NPM) run dev
+dev:
+	bash scripts/run-local-dev.sh
 
 test:
 	$(NPM) test
 
 test-demo:
-	AI_PROVIDER=ollama OLLAMA_MODEL=llama3:latest node --test test/ui-structured-normalization.test.mjs test/assist-interpreter-invariants.test.mjs test/assist-dsl-coverage.test.mjs test/assist-chat-session.test.mjs test/assist-intent-boundaries.test.mjs test/assist-intent-matrix.test.mjs test/assist-structural-paraphrases.test.mjs test/assist-natural-language-demo.test.mjs test/assist-natural-language-extended.test.mjs test/assist-provider-coverage.test.mjs
+	AI_PROVIDER=ollama OLLAMA_MODEL=llama3:8b node --test test/ui-structured-normalization.test.mjs test/assist-interpreter-invariants.test.mjs test/assist-dsl-coverage.test.mjs test/assist-chat-session.test.mjs test/assist-intent-boundaries.test.mjs test/assist-intent-matrix.test.mjs test/assist-structural-paraphrases.test.mjs test/assist-natural-language-demo.test.mjs test/assist-natural-language-extended.test.mjs test/assist-provider-coverage.test.mjs
 
 test-demo-ollama:
 	AI_PROVIDER=ollama node --test test/ui-structured-normalization.test.mjs test/assist-interpreter-invariants.test.mjs test/assist-dsl-coverage.test.mjs test/assist-chat-session.test.mjs test/assist-intent-boundaries.test.mjs test/assist-intent-matrix.test.mjs test/assist-structural-paraphrases.test.mjs test/assist-natural-language-demo.test.mjs test/assist-natural-language-extended.test.mjs test/assist-provider-coverage.test.mjs
 
 test-ollama-regressions:
-	AI_PROVIDER=ollama OLLAMA_MODEL=llama3:latest node --test test/assist-ollama-regressions.test.mjs
+	AI_PROVIDER=ollama OLLAMA_MODEL=llama3:8b node --test test/assist-ollama-regressions.test.mjs
 	@if node --input-type=module -e 'import("@playwright/test").then(() => process.exit(0)).catch(() => process.exit(1))'; then \
-		AI_PROVIDER=ollama OLLAMA_MODEL=llama3:latest npx --yes @playwright/test test test/assist-ollama-browser-smoke.spec.mjs --reporter=line; \
+		AI_PROVIDER=ollama OLLAMA_MODEL=llama3:8b npx --yes @playwright/test test test/assist-ollama-browser-smoke.spec.mjs --reporter=line; \
 	else \
 		echo "Skipping browser smoke: install @playwright/test to enable test/assist-ollama-browser-smoke.spec.mjs"; \
 	fi

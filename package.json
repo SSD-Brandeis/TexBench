@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "node src/server.mjs",
+    "dev": "bash scripts/run-assistant-dev.sh",
+    "dev:server": "node src/server.mjs",
     "start": "node src/server.mjs",
     "schema:coverage": "node src/schema-coverage.mjs",
     "test": "node --test",

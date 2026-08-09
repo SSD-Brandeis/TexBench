@@ -148,6 +148,12 @@
       <!-- Right: Describe Workload -->
       <div class="form-side" id="formSideRight">
         <h3 class="form-side-title">Describe Workload</h3>
+        <div class="step-field landing-model-field">
+          <label for="landingModelSelect">Model</label>
+          <select id="landingModelSelect" aria-label="LLM model" disabled>
+            <option value="">Loading models...</option>
+          </select>
+        </div>
         <div class="step-field">
           <textarea id="landingWorkloadPrompt" placeholder="Example: Generate an insert-heavy workload with 1 KB key-value size and 100K operations, with 80% inserts and 20% reads using a zipfian distribution."></textarea>
         </div>
@@ -402,6 +408,12 @@
                         <div class="assistant-composer">
                           <label for="assistantInput" class="assistant-composer-label"
                             id="assistantComposerLabel">Describe your workload</label>
+                          <label class="assistant-model-field" for="assistantModelSelect">
+                            <span>Model</span>
+                            <select id="assistantModelSelect" aria-label="LLM model" disabled>
+                              <option value="">Loading models...</option>
+                            </select>
+                          </label>
                           <textarea id="assistantInput" class="assistant-input"
                             placeholder="Example: Generate an insert-only workload with 1 KB key value size. The number of inserts is 100K."></textarea>
                           <div class="assistant-actions">

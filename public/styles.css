@@ -2417,6 +2417,36 @@ textarea::placeholder {
     font-weight: 600;
 }
 
+.assistant-model-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #6b6462;
+}
+
+.assistant-model-field select {
+    min-width: 190px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 10px;
+    background: #fff;
+    color: var(--text);
+    font: inherit;
+}
+
+.landing-model-field {
+    margin-bottom: 12px;
+}
+
+.landing-model-field label {
+    display: block;
+    margin-bottom: 6px;
+    color: #5a5250;
+    font-size: 14px;
+    font-weight: 600;
+}
+
 .assistant-input {
     width: 100%;
     min-height: 72px;

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/bootstrap-lib.sh"
 
 BOOTSTRAP_DOWNLOADED_NODE_BIN="$(bootstrap_node_bin)"
@@ -41,6 +41,7 @@ BOOTSTRAP_CASSANDRA_PID=""
 BOOTSTRAP_CASSANDRA_STARTED=0
 BOOTSTRAP_REDIS_PID=""
 BOOTSTRAP_REDIS_STARTED=0
+BOOTSTRAP_CLEANUP_DONE=0
 
 bootstrap_ensure_core_download_tooling() {
   bootstrap_install_curl_if_missing
@@ -111,6 +112,9 @@ bootstrap_install_java() {
   mkdir -p "$(dirname "$BOOTSTRAP_DOWNLOADED_JAVA_HOME")"
   mv "$top_dir" "$BOOTSTRAP_DOWNLOADED_JAVA_HOME"
   rm -rf "$tmp_extract"
+  # macOS JDK archives place java under Contents/Home. Resolve the executable
+  # again after extraction instead of retaining the pre-extraction fallback.
+  BOOTSTRAP_DOWNLOADED_JAVA_BIN="$(bootstrap_java_bin)"
   if [ ! -x "$BOOTSTRAP_DOWNLOADED_JAVA_BIN" ]; then
     bootstrap_fail "Java install completed but $BOOTSTRAP_DOWNLOADED_JAVA_BIN was not found."
   fi
@@ -128,7 +132,7 @@ bootstrap_select_java_runtime() {
   fi
   bootstrap_install_java
   BOOTSTRAP_JAVA_BIN="$BOOTSTRAP_DOWNLOADED_JAVA_BIN"
-  BOOTSTRAP_JAVA_HOME="$BOOTSTRAP_DOWNLOADED_JAVA_HOME"
+  BOOTSTRAP_JAVA_HOME="$(cd "$(dirname "$BOOTSTRAP_JAVA_BIN")/.." && pwd)"
 }
 
 bootstrap_install_npm_dependencies() {
@@ -255,9 +259,63 @@ bootstrap_start_ollama_for_session() {
   bootstrap_log "Ollama is ready at $BOOTSTRAP_OLLAMA_BASE_URL"
 }
 
-bootstrap_ensure_ollama_model() {
-  bootstrap_log "Ensuring Ollama model $BOOTSTRAP_OLLAMA_MODEL is available"
-  OLLAMA_HOST="$BOOTSTRAP_OLLAMA_HOST" "$BOOTSTRAP_OLLAMA_BIN" pull "$BOOTSTRAP_OLLAMA_MODEL"
+bootstrap_configured_ollama_models() {
+  "$BOOTSTRAP_NODE_BIN" --input-type=module -e '
+    import { readFileSync } from "node:fs";
+    const config = JSON.parse(readFileSync(process.argv[1], "utf8"));
+    for (const entry of config.models || []) {
+      if (entry && typeof entry.id === "string" && entry.id.trim()) {
+        process.stdout.write(entry.id.trim() + "\n");
+      }
+    }
+  ' "$BOOTSTRAP_LLM_MODEL_CONFIG"
+}
+
+bootstrap_verify_configured_ollama_models() {
+  local missing
+  missing="$(
+    curl --silent --fail "$BOOTSTRAP_OLLAMA_BASE_URL/api/tags" | \
+      "$BOOTSTRAP_NODE_BIN" --input-type=module -e '
+        import { readFileSync } from "node:fs";
+        const config = JSON.parse(readFileSync(process.argv[1], "utf8"));
+        const input = await new Promise((resolve, reject) => {
+          let text = "";
+          process.stdin.setEncoding("utf8");
+          process.stdin.on("data", (chunk) => { text += chunk; });
+          process.stdin.on("end", () => resolve(text));
+          process.stdin.on("error", reject);
+        });
+        const response = JSON.parse(input || "{}");
+        const installed = new Set();
+        for (const entry of response.models || []) {
+          for (const value of [entry && entry.name, entry && entry.model]) {
+            if (typeof value === "string" && value.trim()) {
+              installed.add(value.trim());
+            }
+          }
+        }
+        const missing = (config.models || [])
+          .map((entry) => entry && typeof entry.id === "string" ? entry.id.trim() : "")
+          .filter((model) => model && !installed.has(model));
+        process.stdout.write(missing.join("\n"));
+      ' "$BOOTSTRAP_LLM_MODEL_CONFIG"
+  )"
+  if [ -n "$missing" ]; then
+    bootstrap_fail "Ollama did not install every configured model. Missing: $(printf '%s' "$missing" | tr '\n' ' ')"
+  fi
+  bootstrap_log "Verified every configured Ollama model is installed"
+}
+
+bootstrap_ensure_ollama_models() {
+  local model
+  while IFS= read -r model; do
+    [ -n "$model" ] || continue
+    bootstrap_log "Ensuring Ollama model $model is available"
+    OLLAMA_HOST="$BOOTSTRAP_OLLAMA_HOST" "$BOOTSTRAP_OLLAMA_BIN" pull "$model"
+  done < <(bootstrap_configured_ollama_models)
+
+  bootstrap_verify_configured_ollama_models
+
   if [ -n "${BOOTSTRAP_OLLAMA_MODEL_DIGEST:-}" ]; then
     bootstrap_log "Verifying Ollama model digest $BOOTSTRAP_OLLAMA_MODEL_DIGEST"
     local digest
@@ -422,21 +480,36 @@ bootstrap_wait_for_cassandra() {
   return 1
 }
 
+bootstrap_try_reuse_cassandra() {
+  local cqlsh_bin cassandra_bin version_output
+  cqlsh_bin="${1:-}"
+  cassandra_bin="${2:-}"
+  if [ -z "$cqlsh_bin" ]; then
+    return 1
+  fi
+  version_output="$(bootstrap_cqlsh_show_version "$cqlsh_bin" || true)"
+  if ! printf '%s\n' "$version_output" | grep -Eq "Cassandra [0-9]+\.[0-9]+"; then
+    return 1
+  fi
+
+  BOOTSTRAP_CASSANDRA_BIN="$cassandra_bin"
+  BOOTSTRAP_CQLSH_BIN="$cqlsh_bin"
+  if printf '%s\n' "$version_output" | grep -q "Cassandra $BOOTSTRAP_CASSANDRA_VERSION"; then
+    bootstrap_log "Cassandra $BOOTSTRAP_CASSANDRA_VERSION is already functional at $BOOTSTRAP_CASSANDRA_HOST:$BOOTSTRAP_CASSANDRA_PORT, moving on"
+  else
+    bootstrap_log "Reusing the functional Cassandra instance at $BOOTSTRAP_CASSANDRA_HOST:$BOOTSTRAP_CASSANDRA_PORT"
+    bootstrap_log "The running Cassandra version differs from the managed $BOOTSTRAP_CASSANDRA_VERSION pin"
+  fi
+  printf '%s\n' "$version_output"
+  return 0
+}
+
 bootstrap_start_cassandra_for_session() {
-  local existing_cqlsh version_output
+  local existing_cqlsh existing_cassandra version_output
   existing_cqlsh="$(bootstrap_existing_cqlsh_bin || true)"
-  if [ -n "$existing_cqlsh" ]; then
-    version_output="$(bootstrap_cqlsh_show_version "$existing_cqlsh" || true)"
-    if printf '%s\n' "$version_output" | grep -q "Cassandra $BOOTSTRAP_CASSANDRA_VERSION"; then
-      BOOTSTRAP_CASSANDRA_BIN="$(bootstrap_existing_cassandra_bin)"
-      BOOTSTRAP_CQLSH_BIN="$existing_cqlsh"
-      bootstrap_log "Cassandra $BOOTSTRAP_CASSANDRA_VERSION is already functional at $BOOTSTRAP_CASSANDRA_HOST:$BOOTSTRAP_CASSANDRA_PORT, moving on"
-      printf '%s\n' "$version_output"
-      return
-    fi
-    if printf '%s\n' "$version_output" | grep -q "Cassandra "; then
-      bootstrap_fail "A Cassandra instance is already running at $BOOTSTRAP_CASSANDRA_HOST:$BOOTSTRAP_CASSANDRA_PORT, but it is not version $BOOTSTRAP_CASSANDRA_VERSION."
-    fi
+  existing_cassandra="$(bootstrap_existing_cassandra_bin || true)"
+  if bootstrap_try_reuse_cassandra "$existing_cqlsh" "$existing_cassandra"; then
+    return
   fi
 
   bootstrap_select_java_runtime
@@ -444,17 +517,26 @@ bootstrap_start_cassandra_for_session() {
   BOOTSTRAP_CASSANDRA_HOME="$BOOTSTRAP_DOWNLOADED_CASSANDRA_HOME"
   BOOTSTRAP_CASSANDRA_BIN="$BOOTSTRAP_DOWNLOADED_CASSANDRA_BIN"
   BOOTSTRAP_CQLSH_BIN="$BOOTSTRAP_DOWNLOADED_CQLSH_BIN"
+  # The downloaded cqlsh may be the first usable client on this machine. Retry
+  # discovery before starting a second Cassandra process on occupied ports.
+  if bootstrap_try_reuse_cassandra "$BOOTSTRAP_CQLSH_BIN" "$existing_cassandra"; then
+    return
+  fi
   bootstrap_prepare_cassandra_config
 
   bootstrap_log "Starting Cassandra $BOOTSTRAP_CASSANDRA_VERSION for this session"
   rm -f "$BOOTSTRAP_RUN_DIR/cassandra.pid"
-  PATH="$(bootstrap_java_bin_dir):$(dirname "$BOOTSTRAP_NODE_BIN"):$PATH" \
-    JAVA_HOME="${BOOTSTRAP_JAVA_HOME:-}" \
-    CASSANDRA_CONF="$BOOTSTRAP_CASSANDRA_CONF_DIR" \
-    CASSANDRA_LOG_DIR="$BOOTSTRAP_RUN_DIR/cassandra-logs" \
-    MAX_HEAP_SIZE="${BOOTSTRAP_CASSANDRA_MAX_HEAP_SIZE:-512M}" \
-    HEAP_NEWSIZE="${BOOTSTRAP_CASSANDRA_HEAP_NEWSIZE:-128M}" \
-    "$BOOTSTRAP_CASSANDRA_BIN" -p "$BOOTSTRAP_RUN_DIR/cassandra.pid" >"$BOOTSTRAP_RUN_DIR/cassandra.log" 2>&1
+  if ! PATH="$(bootstrap_java_bin_dir):$(dirname "$BOOTSTRAP_NODE_BIN"):$PATH" \
+      JAVA_HOME="${BOOTSTRAP_JAVA_HOME:-}" \
+      CASSANDRA_CONF="$BOOTSTRAP_CASSANDRA_CONF_DIR" \
+      CASSANDRA_LOG_DIR="$BOOTSTRAP_RUN_DIR/cassandra-logs" \
+      JMX_PORT="$BOOTSTRAP_CASSANDRA_JMX_PORT" \
+      MAX_HEAP_SIZE="${BOOTSTRAP_CASSANDRA_MAX_HEAP_SIZE:-512M}" \
+      HEAP_NEWSIZE="${BOOTSTRAP_CASSANDRA_HEAP_NEWSIZE:-128M}" \
+      "$BOOTSTRAP_CASSANDRA_BIN" -p "$BOOTSTRAP_RUN_DIR/cassandra.pid" >"$BOOTSTRAP_RUN_DIR/cassandra.log" 2>&1; then
+    sed -n '1,160p' "$BOOTSTRAP_RUN_DIR/cassandra.log" >&2 || true
+    bootstrap_fail "Cassandra failed to launch. See $BOOTSTRAP_RUN_DIR/cassandra.log."
+  fi
   BOOTSTRAP_CASSANDRA_PID="$(cat "$BOOTSTRAP_RUN_DIR/cassandra.pid" 2>/dev/null || true)"
   if [ -z "$BOOTSTRAP_CASSANDRA_PID" ]; then
     bootstrap_fail "Cassandra did not write a pid file. See $BOOTSTRAP_RUN_DIR/cassandra.log."
@@ -465,6 +547,7 @@ bootstrap_start_cassandra_for_session() {
 
   version_output="$(bootstrap_wait_for_cassandra "$BOOTSTRAP_CQLSH_BIN" 120 || true)"
   if [ -z "$version_output" ]; then
+    tail -n 120 "$BOOTSTRAP_RUN_DIR/cassandra.log" >&2 || true
     bootstrap_fail "Cassandra did not become ready. See $BOOTSTRAP_RUN_DIR/cassandra.log."
   fi
   bootstrap_log "Cassandra is functional at $BOOTSTRAP_CASSANDRA_HOST:$BOOTSTRAP_CASSANDRA_PORT"
@@ -582,6 +665,10 @@ bootstrap_start_redis_for_session() {
 }
 
 bootstrap_cleanup() {
+  if [ "$BOOTSTRAP_CLEANUP_DONE" = "1" ]; then
+    return
+  fi
+  BOOTSTRAP_CLEANUP_DONE=1
   if [ "$BOOTSTRAP_REDIS_STARTED" = "1" ] && [ -n "$BOOTSTRAP_REDIS_PID" ]; then
     bootstrap_log "Stopping session Redis"
     kill "$BOOTSTRAP_REDIS_PID" >/dev/null 2>&1 || true
@@ -602,7 +689,26 @@ bootstrap_cleanup() {
   fi
 }
 
-trap bootstrap_cleanup EXIT
+bootstrap_cleanup_on_exit() {
+  local exit_status="$?"
+  trap - EXIT INT TERM HUP
+  bootstrap_cleanup
+  exit "$exit_status"
+}
+
+bootstrap_exit_for_signal() {
+  case "${1:-}" in
+    INT) exit 130 ;;
+    TERM) exit 143 ;;
+    HUP) exit 129 ;;
+    *) exit 1 ;;
+  esac
+}
+
+trap bootstrap_cleanup_on_exit EXIT
+trap 'bootstrap_exit_for_signal INT' INT
+trap 'bootstrap_exit_for_signal TERM' TERM
+trap 'bootstrap_exit_for_signal HUP' HUP
 
 main() {
   bootstrap_require_commands tar
@@ -614,7 +720,7 @@ main() {
   bootstrap_start_redis_for_session
   bootstrap_install_ollama_if_missing
   bootstrap_start_ollama_for_session
-  bootstrap_ensure_ollama_model
+  bootstrap_ensure_ollama_models
 
   bootstrap_log "Starting app on 0.0.0.0:8787"
   PATH="$(bootstrap_java_bin_dir):$(dirname "$BOOTSTRAP_NODE_BIN"):$PATH" \

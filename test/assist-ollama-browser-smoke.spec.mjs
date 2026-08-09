@@ -37,7 +37,7 @@ async function startServer() {
     env: {
       ...process.env,
       AI_PROVIDER: "ollama",
-      OLLAMA_MODEL: process.env.OLLAMA_MODEL || "llama3:latest",
+      OLLAMA_MODEL: process.env.OLLAMA_MODEL || "llama3:8b",
       APP_HOST: "127.0.0.1",
       PORT: APP_PORT,
     },

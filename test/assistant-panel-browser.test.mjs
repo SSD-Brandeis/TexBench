@@ -206,6 +206,107 @@ function createRefs() {
   };
 }
 
+function createRefsWithModelSelect() {
+  return {
+    ...createRefs(),
+    assistantModelSelect: new FakeSelectElement(),
+  };
+}
+
+test("assistant model is locked for a conversation and unlocks when cleared", async () => {
+  globalThis.document = { createElement };
+  globalThis.HTMLSelectElement = FakeSelectElement;
+  globalThis.window = {
+    sessionStorage: {
+      getItem() {
+        return null;
+      },
+      setItem() {},
+    },
+  };
+
+  await import("../public/assistant-panel.js");
+
+  const refs = createRefsWithModelSelect();
+  const requestBodies = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    if (url === "/api/llm-models") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            defaultModel: "llama3:8b",
+            models: [
+              { id: "llama3:8b", label: "Llama 3" },
+              { id: "mixtral:8x7b", label: "Mixtral 8x7B" },
+            ],
+          };
+        },
+      };
+    }
+    requestBodies.push(JSON.parse(options.body));
+    return {
+      ok: true,
+      async json() {
+        return {
+          patch: { operations: { inserts: { enabled: true, op_count: 1 } } },
+          summary: "Updated the workload.",
+          clarifications: [],
+          assumptions: [],
+        };
+      },
+    };
+  };
+
+  try {
+    const controller = globalThis.TectonicAssistantPanel.createController({
+      refs,
+      applyAssistantPatch() {},
+      getActivePresetJson() {
+        return null;
+      },
+      getCurrentFormState() {
+        return {};
+      },
+      getCurrentWorkloadJson() {
+        return {};
+      },
+      getSchemaHintsForAssist() {
+        return {};
+      },
+      getSelectedOperations() {
+        return [];
+      },
+      updateJsonFromForm() {},
+    });
+
+    await controller.loadModels();
+    refs.assistantModelSelect.value = "mixtral:8x7b";
+    refs.assistantInput.value = "Create one insert";
+    await controller.handleApply();
+    assert.equal(refs.assistantModelSelect.disabled, true);
+
+    refs.assistantModelSelect.value = "llama3:8b";
+    refs.assistantInput.value = "Now make it two inserts";
+    await controller.handleApply();
+    assert.deepEqual(
+      requestBodies.map((body) => body.model),
+      ["mixtral:8x7b", "mixtral:8x7b"],
+    );
+    assert.ok(
+      requestBodies[1].conversation.every(
+        (turn) => turn.model === "mixtral:8x7b",
+      ),
+    );
+
+    controller.clearThread();
+    assert.equal(refs.assistantModelSelect.disabled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("assistant panel renders a natural assistant reply with assumptions and form guidance", async () => {
   globalThis.document = { createElement };
   globalThis.HTMLSelectElement = FakeSelectElement;

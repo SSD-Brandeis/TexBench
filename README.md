@@ -8,7 +8,7 @@ with `tectonic-cli`.
 
 ### 1. Use a GPU-backed machine
 
-The local assistant uses Ollama with `llama3:latest`. TexBench can technically
+The local assistant defaults to Ollama with the fixed `llama3:8b` tag. TexBench can technically
 run on a CPU-only machine, but the assistant will be too slow for a good
 interactive demo or day-to-day workflow. On CPU-only machines, expect slow
 responses and frequent Ollama request timeouts.
@@ -38,7 +38,7 @@ make
 ```
 
 The first run may take a while. It bootstraps the local runtime, downloads the
-pinned model and matching `tectonic-cli` binary, installs or starts the local
+configured models and matching `tectonic-cli` binary, installs or starts the local
 services TexBench needs, then starts the app.
 
 When it finishes, open:
@@ -54,6 +54,10 @@ exit.
 In the browser, use the preset flow or the assistant to create a workload spec,
 review the generated structure in the builder, then run it against one of the
 supported local database targets.
+
+The assistant model menu is populated exclusively from
+`config/llm-models.json`. A model is selected for the entire assistant
+conversation; clear the conversation before selecting another model.
 
 Supported database targets in the UI:
 
@@ -98,8 +102,8 @@ Benchmark artifacts are written under:
   functional on `127.0.0.1:6379`
 - verify Redis with `redis-cli PING`
 - start Ollama for the current app session if it is not already running
-- pull the pinned default local model (`llama3:latest`)
-- verify that Ollama resolves it to digest `365c0bd3c000`
+- pull every model listed in `config/llm-models.json`
+- verify that the default `llama3:8b` model resolves to digest `365c0bd3c000`
 - download the matching prebuilt `tectonic-cli` release asset for your platform
 - start the app on [http://127.0.0.1:8787](http://127.0.0.1:8787)
 
@@ -138,7 +142,7 @@ The default bootstrap path expects:
 `make` starts the app with:
 
 - `AI_PROVIDER=ollama`
-- `OLLAMA_MODEL=llama3:latest`
+- `OLLAMA_MODEL=llama3:8b`
 - `OLLAMA_TIMEOUT_MS=300000`
 - `AI_TIMEOUT_MS=300000`
 - `TECTONIC_BIN=<repo-local prebuilt binary>`
@@ -160,8 +164,16 @@ If you already have Node installed and want the traditional local dev flow:
 
 ```bash
 npm install
-AI_PROVIDER=ollama OLLAMA_MODEL=llama3:latest npm run dev
+npm run dev
 ```
+
+`npm run dev` starts Ollama, pulls and verifies every configured model, and
+then launches TexBench with `AI_PROVIDER=ollama`. It intentionally leaves
+Cassandra, Redis, and other benchmark services alone. Use `make dev` (or
+`make`) for the full benchmark environment. The full setup reuses an existing
+functional Cassandra instance even when its version differs from the managed
+`5.0.7` fallback. Use `npm run dev:server` to launch only the server with an
+environment you manage yourself.
 
 The repo-local bootstrap scripts live in
 [scripts/bootstrap-lib.sh](scripts/bootstrap-lib.sh) and

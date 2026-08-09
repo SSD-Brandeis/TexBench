@@ -92,12 +92,79 @@
       typeof config.assistEndpoint === "string" && config.assistEndpoint
         ? config.assistEndpoint
         : "/api/assist";
+    const modelsEndpoint =
+      typeof config.modelsEndpoint === "string" && config.modelsEndpoint
+        ? config.modelsEndpoint
+        : "/api/llm-models";
 
     const conversation = [];
     const clarificationIndex = new Map();
     const answerStore = {};
     let gateMessage = "";
     let hasUsedAssistant = false;
+    let conversationModel = "";
+    let modelsAvailable = false;
+
+    function getModelSelects() {
+      return [refs.assistantModelSelect, refs.landingModelSelect].filter(Boolean);
+    }
+
+    function syncModelSelectDisabled(isBusy) {
+      const selects = getModelSelects();
+      if (selects.length === 0) {
+        return;
+      }
+      selects.forEach(function syncSelect(select) {
+        select.disabled =
+          !!isBusy ||
+          !!conversationModel ||
+          !modelsAvailable ||
+          select.options.length === 0;
+      });
+    }
+
+    async function loadModels() {
+      const selects = getModelSelects();
+      if (selects.length === 0) {
+        return;
+      }
+      try {
+        const response = await fetch(modelsEndpoint, { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok || !data || !Array.isArray(data.models)) {
+          throw new Error("Model configuration is unavailable.");
+        }
+        selects.forEach(function populateSelect(select) {
+          select.innerHTML = "";
+          data.models.forEach(function appendModel(model) {
+            if (!model || typeof model.id !== "string" || !model.id.trim()) {
+              return;
+            }
+            const option = document.createElement("option");
+            option.value = model.id.trim();
+            option.textContent =
+              typeof model.label === "string" && model.label.trim()
+                ? model.label.trim()
+                : option.value;
+            select.appendChild(option);
+          });
+          select.value = data.defaultModel || "";
+        });
+        modelsAvailable = selects.every((select) => select.options.length > 0);
+        syncModelSelectDisabled(false);
+      } catch (_error) {
+        modelsAvailable = false;
+        selects.forEach(function showUnavailable(select) {
+          select.innerHTML = "";
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Models unavailable";
+          select.appendChild(option);
+          select.disabled = true;
+        });
+        setStatus("Models unavailable", "error");
+      }
+    }
 
     function readAssistantUsageFlag() {
       try {
@@ -151,6 +218,9 @@
       if (refs.assistantInput) {
         refs.assistantInput.disabled = !!isBusy;
       }
+      if (getModelSelects().length > 0) {
+        syncModelSelectDisabled(isBusy);
+      }
     }
 
     function setComposerHint(text) {
@@ -167,11 +237,13 @@
         delete answerStore[key];
       });
       gateMessage = "";
+      conversationModel = "";
       if (refs.assistantTimeline) {
         refs.assistantTimeline.innerHTML = "";
       }
       setComposerHint("");
       syncAssistantPlaceholder();
+      syncModelSelectDisabled(false);
     }
 
     function createTurnId() {
@@ -1654,10 +1726,16 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          model:
+            conversationModel ||
+            (refs.assistantModelSelect && refs.assistantModelSelect.value
+              ? refs.assistantModelSelect.value
+              : undefined),
           prompt: promptText,
           conversation: conversation.map(function mapTurn(turn) {
             return {
               role: turn.role === "assistant" ? "assistant" : "user",
+              model: conversationModel || undefined,
               text:
                 turn.role === "assistant"
                   ? turn.summary || turn.text || ""
@@ -1711,6 +1789,14 @@
             "Resolve required clarifications before sending the next prompt.",
         );
         return;
+      }
+
+      if (!conversationModel && refs.assistantModelSelect) {
+        conversationModel =
+          refs.assistantModelSelect.value ||
+          (refs.landingModelSelect && refs.landingModelSelect.value) ||
+          "";
+        syncModelSelectDisabled(false);
       }
 
       addTimelineTurn({
@@ -1811,6 +1897,17 @@
     function bindEvents() {
       hasUsedAssistant = readAssistantUsageFlag();
       syncAssistantPlaceholder();
+      void loadModels();
+      getModelSelects().forEach(function bindModelSync(select) {
+        select.addEventListener("change", function syncModelChoice() {
+          if (conversationModel) {
+            return;
+          }
+          getModelSelects().forEach(function updateOther(other) {
+            other.value = select.value;
+          });
+        });
+      });
       if (refs.assistantApplyBtn) {
         refs.assistantApplyBtn.addEventListener("click", handleApply);
       }
@@ -1833,6 +1930,7 @@
       bindEvents: bindEvents,
       clearThread: clearThread,
       handleApply: handleApply,
+      loadModels: loadModels,
       requestPatch: requestPatch,
       setBusy: setBusy,
       setComposerHint: setComposerHint,

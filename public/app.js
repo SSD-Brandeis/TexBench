@@ -100,6 +100,8 @@ const assistantComposerLabel = document.getElementById("assistantComposerLabel")
 const assistantStatus = document.getElementById("assistantStatus");
 const assistantTimeline = document.getElementById("assistantTimeline");
 const assistantComposerHint = document.getElementById("assistantComposerHint");
+const assistantModelSelect = document.getElementById("assistantModelSelect");
+const landingModelSelect = document.getElementById("landingModelSelect");
 const appShell = document.getElementById("appShell");
 const appHeader = document.getElementById("appHeader");
 const headerIntro = document.getElementById("headerIntro");
@@ -1684,10 +1686,13 @@ function getAssistantPanelController() {
         assistantClearBtn,
         assistantComposerHint,
         assistantInput,
+        assistantModelSelect,
+        landingModelSelect,
         assistantStatus,
         assistantTimeline,
       },
       assistEndpoint: ASSIST_ENDPOINT,
+      modelsEndpoint: "/api/llm-models",
       applyAssistantPatch,
       applyClarificationAnswerToForm,
       characterSetEnum,

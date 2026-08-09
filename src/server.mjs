@@ -11,6 +11,10 @@ import { createOpenAiCompatibleBindingFromEnv } from "./openai-ai-binding.mjs";
 import { createCloudflareAiBindingFromEnv } from "./cloudflare-ai-binding.mjs";
 import { createOllamaAiBindingFromEnv } from "./ollama-ai-binding.mjs";
 import {
+  isSupportedLlmModel,
+  loadLlmModelConfig,
+} from "./llm-model-config.mjs";
+import {
   getLocalRunnerConfig,
   handleWorkloadRequest,
   stopActiveRuns,
@@ -30,6 +34,7 @@ const SHUTDOWN_FORCE_EXIT_MS = readInteger(
   process.env.SHUTDOWN_FORCE_EXIT_MS,
   5000,
 );
+const llmModelConfig = loadLlmModelConfig();
 
 const aiProviderPreference =
   readString(process.env.AI_PROVIDER).toLowerCase() || "openai";
@@ -153,6 +158,15 @@ async function routeRequest(req, res) {
     return;
   }
 
+  if (pathname === "/api/llm-models") {
+    if (method !== "GET") {
+      sendJson(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    sendJson(res, 200, llmModelConfig);
+    return;
+  }
+
   if (pathname === "/api/health") {
     const workload = getLocalRunnerConfig();
     sendJson(res, 200, {
@@ -177,6 +191,40 @@ async function handleAssistRequest(req, res, url) {
     method === "GET" || method === "HEAD"
       ? undefined
       : await readRequestBody(req, MAX_REQUEST_BYTES);
+  let selectedModel = llmModelConfig.defaultModel;
+  if (body && body.byteLength > 0) {
+    let parsedBody;
+    try {
+      parsedBody = JSON.parse(body.toString("utf8"));
+    } catch {
+      sendJson(res, 400, { error: "Request body must be valid JSON." });
+      return;
+    }
+    if (readString(parsedBody && parsedBody.model)) {
+      selectedModel = readString(parsedBody.model);
+    }
+    const conversation = Array.isArray(parsedBody && parsedBody.conversation)
+      ? parsedBody.conversation
+      : [];
+    if (
+      conversation.some(
+        (turn) => readString(turn && turn.model) && readString(turn.model) !== selectedModel,
+      )
+    ) {
+      sendJson(res, 400, {
+        error: "The LLM model cannot be changed during a conversation.",
+        code: "conversation_model_mismatch",
+      });
+      return;
+    }
+  }
+  if (!isSupportedLlmModel(llmModelConfig, selectedModel)) {
+    sendJson(res, 400, {
+      error: "Unsupported LLM model.",
+      code: "unsupported_llm_model",
+    });
+    return;
+  }
   const headers = new Headers();
   Object.entries(req.headers || {}).forEach(([key, value]) => {
     if (Array.isArray(value)) {
@@ -194,8 +242,30 @@ async function handleAssistRequest(req, res, url) {
     body,
   });
 
-  const response = await workerEntrypoint.fetch(request, workerEnv);
+  const response = await workerEntrypoint.fetch(
+    request,
+    buildRequestWorkerEnv(workerEnv, selectedModel),
+  );
   await sendFetchResponse(res, response);
+}
+
+function buildRequestWorkerEnv(baseEnv, selectedModel) {
+  const out = {
+    ...baseEnv,
+    AI_NAME: selectedModel,
+    AI_MODELS: selectedModel,
+  };
+  if (isOllamaAssistProvider(baseEnv.AI_PROVIDER)) {
+    out.OLLAMA_MODEL = selectedModel;
+    out.OLLAMA_MODELS = selectedModel;
+  } else if (isOpenAiAssistProvider(baseEnv.AI_PROVIDER)) {
+    out.OPENAI_MODEL = selectedModel;
+    out.OPENAI_MODELS = selectedModel;
+  } else {
+    out.CLOUDFLARE_MODEL = selectedModel;
+    out.CLOUDFLARE_MODELS = selectedModel;
+  }
+  return out;
 }
 
 async function sendFetchResponse(res, response) {
