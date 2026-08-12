@@ -1616,12 +1616,17 @@ function getStructurePanelRenderer() {
       updateJsonFromForm();
     },
     onSelectGroup(sectionIndex, groupIndex) {
+      const clickedOpenPhase =
+        activeSectionIndex === sectionIndex && activeGroupIndex === groupIndex;
       persistActiveStructureFromForm();
       activeSectionIndex = sectionIndex;
       activeGroupIndex = groupIndex;
       pendingJsonFocusTarget = { sectionIndex, groupIndex };
       loadActiveStructureIntoForm();
       updateJsonFromForm();
+      // Toggle the edit form: clicking the already-open phase collapses it;
+      // any other case reveals it.
+      if (window.__toggleWorkloadForm) window.__toggleWorkloadForm(clickedOpenPhase);
     },
     onRemoveGroup(sectionIndex, groupIndex, section) {
       if (section.groups.length <= 1) {

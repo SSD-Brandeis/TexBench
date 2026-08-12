@@ -293,6 +293,21 @@ function copyTextToClipboard(text) {
     };
 })();
 
+// Show/collapse the workload edit form for the selected phase. Clicking the
+// already-open phase collapses it; any other case reveals it (so a phase is
+// always editable regardless of prior hidden/collapsed state).
+window.__toggleWorkloadForm = function (clickedOpenPhase) {
+    var wf = document.getElementById("workloadForm");
+    if (!wf) return;
+    var isHidden = wf.hidden || wf.classList.contains("spec-form-collapsed");
+    if (clickedOpenPhase && !isHidden) {
+        wf.classList.add("spec-form-collapsed");
+    } else {
+        wf.hidden = false;
+        wf.classList.remove("spec-form-collapsed");
+    }
+};
+
 // ── Confirmation dialog ──
 (function () {
     window.__confirmDialog = function (opts) {
@@ -692,16 +707,11 @@ function copyTextToClipboard(text) {
             if (removeBtn) return;
 
             if (pill) {
-                // The form may have been left hidden by an earlier flow (e.g. the
-                // LLM/Describe path) — always re-assert it's shown before toggling.
-                workloadForm.hidden = false;
-                // Toggle: if this pill was already active, hide form; otherwise show
-                if (pill.classList.contains("active") && !workloadForm.classList.contains("spec-form-collapsed")) {
-                    workloadForm.classList.add("spec-form-collapsed");
-                } else {
-                    workloadForm.classList.remove("spec-form-collapsed");
-                }
-            } else if (actionBtn || addSection || sectionLabel) {
+                // Phase clicks (incl. show/collapse toggle) are handled by
+                // onSelectGroup, which reliably knows the clicked phase index.
+                return;
+            }
+            if (actionBtn || addSection || sectionLabel) {
                 workloadForm.hidden = false;
                 workloadForm.classList.remove("spec-form-collapsed");
             }

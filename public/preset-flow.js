@@ -186,12 +186,26 @@
       }
 
       // Preset description (from the catalog JSON) drives the Workload Structure
-      // centered description and the results-section description.
+      // centered description and the results-section description, prefixed with
+      // the benchmark name (e.g. "YCSB-C: ...") built from family + variant.
       if (typeof window.__setWorkloadDescription === "function") {
-        window.__setWorkloadDescription(
-          typeof preset.description === "string" ? preset.description : "",
-          "preset",
-        );
+        const presetDesc =
+          typeof preset.description === "string" ? preset.description : "";
+        const presetLabel =
+          typeof preset.label === "string" ? preset.label : "";
+        const presetFamily =
+          typeof preset.family === "string" ? preset.family : "";
+        const colonIdx = presetLabel.indexOf(":");
+        const variant =
+          colonIdx > 0 && colonIdx <= 8 ? presetLabel.slice(0, colonIdx).trim() : "";
+        const presetName =
+          variant && presetFamily
+            ? presetFamily + "-" + variant
+            : presetFamily;
+        const prefixed = presetName
+          ? presetName + ": " + presetDesc
+          : presetDesc;
+        window.__setWorkloadDescription(prefixed, "preset");
       }
 
       const description = document.createElement("div");
