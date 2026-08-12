@@ -8,6 +8,22 @@
   ]);
   const START_ENDPOINT = "/api/workloads/runs";
   const POLL_INTERVAL_MS = 2500;
+  // Bridge so the module-level result panel can cancel via the active controller
+  let activeControllerCancel = null;
+  function cancelBatchRuns(batchRuns) {
+    // Cancel every database that hasn't finished yet — running AND to-be-run.
+    (batchRuns || []).forEach(function (r) {
+      if (
+        r &&
+        !TERMINAL_STATUSES.has(r.status) &&
+        r.links &&
+        r.links.cancel_path &&
+        typeof activeControllerCancel === "function"
+      ) {
+        activeControllerCancel(r);
+      }
+    });
+  }
   const WORKLOAD_RUNS_STORAGE_KEY = "tectonic.workloadRuns.v2";
   const SECONDS_DISPLAY_THRESHOLD_MICROS = 10000;
 
@@ -18,6 +34,90 @@
   }
 
   function defaultNoop() {}
+
+  // ── Succinct workload description (from the spec JSON) ──
+  function formatOpCount(n) {
+    if (!Number.isFinite(n)) return "";
+    if (n >= 1e6) return (n / 1e6).toFixed(n % 1e6 === 0 ? 0 : 1) + "M";
+    if (n >= 1e3) return (n / 1e3).toFixed(n % 1e3 === 0 ? 0 : 1) + "K";
+    return String(n);
+  }
+  function prettyOpName(opName) {
+    return String(opName || "").replace(/_/g, " ").trim();
+  }
+  function extractDistributionLabel(op) {
+    if (!op || typeof op !== "object") return "";
+    var src =
+      op.selection && typeof op.selection === "object"
+        ? op.selection
+        : op.key && typeof op.key === "object"
+          ? op.key
+          : op.val && typeof op.val === "object"
+            ? op.val
+            : null;
+    if (!src) return "";
+    var distName = Object.keys(src)[0];
+    if (!distName) return "";
+    var pretty = {
+      uniform: "uniform",
+      zipf: "zipfian",
+      zipfian: "zipfian",
+      normal: "normal",
+      pareto: "pareto",
+      latest: "latest",
+      hotspot: "hotspot",
+    };
+    return pretty[distName] || distName;
+  }
+  function describeOperation(opName, op) {
+    var label = prettyOpName(opName);
+    var bits = [];
+    if (op && Number.isFinite(Number(op.op_count))) {
+      bits.push(formatOpCount(Number(op.op_count)) + " ops");
+    }
+    var dist = extractDistributionLabel(op);
+    if (dist) bits.push(dist);
+    return label + (bits.length ? " (" + bits.join(", ") + ")" : "");
+  }
+  function buildSpecDescription(specJson) {
+    if (!specJson || typeof specJson !== "object") return "";
+    var sections = Array.isArray(specJson.sections) ? specJson.sections : [];
+    if (sections.length === 0) return "";
+    var sectionStrs = sections
+      .map(function (section, si) {
+        var groups =
+          section && Array.isArray(section.groups)
+            ? section.groups
+            : section && Array.isArray(section.phases)
+              ? section.phases
+              : [];
+        var phaseStrs = groups
+          .map(function (group, gi) {
+            if (!group || typeof group !== "object") return "";
+            var opStrs = Object.keys(group)
+              // Only real operations (which carry an op_count) — skip phase
+              // metadata like "name" and "enable_granular_stats".
+              .filter(function (opName) {
+                var op = group[opName];
+                return (
+                  op &&
+                  typeof op === "object" &&
+                  Number.isFinite(Number(op.op_count))
+                );
+              })
+              .map(function (opName) {
+                return describeOperation(opName, group[opName]);
+              })
+              .filter(Boolean);
+            if (opStrs.length === 0) return "";
+            return "Phase " + (gi + 1) + ": " + opStrs.join(" + ");
+          })
+          .filter(Boolean);
+        return "Section " + (si + 1) + ": [" + phaseStrs.join("; ") + "]";
+      })
+      .filter(Boolean);
+    return sectionStrs.join("   ");
+  }
 
   function readPersistedRuns() {
     try {
@@ -1469,9 +1569,13 @@
     var isActive = ACTIVE_STATUSES.has(run.status);
     var isDone = run.status === "succeeded";
     var isFail = run.status === "failed" || run.status === "timed_out";
+    // Succeeded overall, but the log reported failed operations
+    var hasOpErrors = isDone && run.operation_errors === true;
     var pct = isDone ? 100 : (run.progress && Number.isFinite(run.progress.percent) ? run.progress.percent : (isActive ? 50 : 0));
     var offset = circ - (pct / 100) * circ;
-    var color = isDone ? "#22c55e" : isFail ? "#ef4444" : "#f59e0b";
+    var color = isDone
+      ? (hasOpErrors ? "#f59e0b" : "#22c55e")
+      : isFail ? "#ef4444" : "#f59e0b";
 
     var wrap = document.createElement("div");
     wrap.className = "db-progress-item";
@@ -1496,8 +1600,19 @@
     prog.setAttribute("transform", "rotate(-90 " + (size / 2) + " " + (size / 2) + ")");
     if (isActive) prog.setAttribute("class", "ring-animate");
     svg.appendChild(prog);
-    // Check mark for done
-    if (isDone) {
+    // Done: check mark normally, exclamation mark if the log had errors
+    if (isDone && hasOpErrors) {
+      var exLine = document.createElementNS(ns, "line");
+      exLine.setAttribute("x1", "16"); exLine.setAttribute("y1", "9");
+      exLine.setAttribute("x2", "16"); exLine.setAttribute("y2", "18");
+      exLine.setAttribute("stroke", color); exLine.setAttribute("stroke-width", "2.5");
+      exLine.setAttribute("stroke-linecap", "round");
+      svg.appendChild(exLine);
+      var exDot = document.createElementNS(ns, "circle");
+      exDot.setAttribute("cx", "16"); exDot.setAttribute("cy", "22");
+      exDot.setAttribute("r", "1.4"); exDot.setAttribute("fill", color);
+      svg.appendChild(exDot);
+    } else if (isDone) {
       var check = document.createElementNS(ns, "polyline");
       check.setAttribute("points", "10,17 14,21 22,12");
       check.setAttribute("fill", "none"); check.setAttribute("stroke", "#22c55e");
@@ -1516,6 +1631,36 @@
   function buildResultPanel(batchRuns, isExpanded) {
     var panel = document.createElement("div");
     panel.className = "results-panel" + (isExpanded ? " expanded" : "");
+
+    // Cancel × (top-right) — while any database is still running or pending
+    var hasUnfinished = (batchRuns || []).some(function (r) {
+      return r && !TERMINAL_STATUSES.has(r.status);
+    });
+    if (hasUnfinished) {
+      panel.classList.add("has-cancel");
+      var cancelX = document.createElement("button");
+      cancelX.type = "button";
+      cancelX.className = "results-panel-cancel";
+      cancelX.title = "Cancel run";
+      cancelX.setAttribute("aria-label", "Cancel this run");
+      cancelX.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+      cancelX.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var doCancel = function () { cancelBatchRuns(batchRuns); };
+        if (typeof window !== "undefined" && typeof window.__confirmDialog === "function") {
+          window.__confirmDialog({
+            message: "Cancel this running workload? Databases still in progress will be stopped.",
+            confirmLabel: "Yes, cancel",
+            dismissLabel: "Keep running",
+            onConfirm: doCancel,
+          });
+        } else {
+          doCancel();
+        }
+      });
+      panel.appendChild(cancelX);
+    }
 
     // Header
     var header = document.createElement("div");
@@ -1536,6 +1681,17 @@
     }
     header.appendChild(titleWrap);
 
+    // Succinct workload description — centered between title and status circles
+    var specDesc = batchRuns[0] && batchRuns[0].spec_description
+      ? batchRuns[0].spec_description
+      : "";
+    if (specDesc) {
+      var descEl = document.createElement("div");
+      descEl.className = "results-panel-desc";
+      descEl.textContent = specDesc;
+      header.appendChild(descEl);
+    }
+
     // Circle progress indicators
     var circles = document.createElement("div");
     circles.className = "results-panel-circles";
@@ -1555,8 +1711,17 @@
 
     // Build plots for succeeded runs
     var succeeded = batchRuns.filter(function (r) { return r.status === "succeeded" && r.benchmark_stats; });
-    // Sort by batch_index so x-axis labels stay consistent regardless of finish order
+    // Sort by canonical database order (RocksDB, Cassandra, ScyllaDB, Redis,
+    // PrintDB) so bars/plots always appear in that order; fall back to
+    // batch_index for anything outside the list.
+    var DB_PLOT_ORDER = ["rocksdb", "cassandra", "scylla", "redis", "printdb"];
+    var dbPlotIndex = function (db) {
+      var i = DB_PLOT_ORDER.indexOf(String(db || "").trim().toLowerCase());
+      return i === -1 ? DB_PLOT_ORDER.length : i;
+    };
     succeeded.sort(function (a, b) {
+      var d = dbPlotIndex(a.database) - dbPlotIndex(b.database);
+      if (d !== 0) return d;
       var ai = Number.isFinite(a.batch_index) ? a.batch_index : 0;
       var bi = Number.isFinite(b.batch_index) ? b.batch_index : 0;
       return ai - bi;
@@ -1666,7 +1831,13 @@
         body.appendChild(row1);
       }
 
-      // Download links
+      // Databases whose logs reported failed operations (run still "succeeded")
+      var erroredDbs = [];
+      succeeded.forEach(function (r) {
+        if (r.operation_errors) erroredDbs.push(dbDisplayName(r.database));
+      });
+
+      // Footer: download links + (if any) the failed-operations notice
       var links = document.createElement("div");
       links.className = "results-panel-links";
       succeeded.forEach(function (r) {
@@ -1675,10 +1846,25 @@
           a.className = "results-download-link";
           a.href = r.links.output_download_path;
           a.target = "_blank";
-          a.textContent = "Download " + dbDisplayName(r.database);
+          if (r.operation_errors) {
+            a.classList.add("has-errors");
+            a.textContent = "Download " + dbDisplayName(r.database) + " log";
+          } else {
+            a.textContent = "Download " + dbDisplayName(r.database);
+          }
           links.appendChild(a);
         }
       });
+      // Notice naming the affected databases — same row as the download links
+      if (erroredDbs.length > 0) {
+        var warn = document.createElement("p");
+        warn.className = "results-panel-warning";
+        warn.textContent =
+          erroredDbs.join(", ") +
+          (erroredDbs.length > 1 ? " logs report" : " log reports") +
+          " failed operations — download the log to review.";
+        links.appendChild(warn);
+      }
       if (links.children.length > 0) body.appendChild(links);
     }
 
@@ -3073,6 +3259,12 @@
                   : "",
               cancel_path: "",
             },
+      // A successful run whose log reported failed operations
+      operation_errors: input.operation_errors === true,
+      // Client-side fields (not from the server)
+      spec_description:
+        typeof input.spec_description === "string" ? input.spec_description : "",
+      is_past: input.is_past === true,
     };
   }
 
@@ -3087,8 +3279,68 @@
       normalizeRunEntry(entry, createRunId()),
     );
     const expandedRunIds = new Set();
+    const notifiedFailedRuns = new Set();
+    let pastResultsExpanded = false;
     let pollTimer = null;
     let requestInFlight = false;
+
+    // Move all runs to "past" (called when a new workload is configured, and
+    // on page load since restored runs belong to a previous session).
+    function markRunsAsPast() {
+      let changed = false;
+      runs.forEach(function (run) {
+        if (run && !run.is_past) {
+          run.is_past = true;
+          changed = true;
+        }
+      });
+      if (changed) {
+        persistRuns();
+        render();
+      }
+    }
+
+    // Surface newly-failed runs as a top-left toast (once per run).
+    function notifyFailedRuns() {
+      runs.forEach(function (run) {
+        if (!run) {
+          return;
+        }
+        var failed = run.status === "failed" || run.status === "timed_out";
+        if (!failed) {
+          return;
+        }
+        var key = run.run_id || run.database + ":" + run.created_at;
+        if (notifiedFailedRuns.has(key)) {
+          return;
+        }
+        notifiedFailedRuns.add(key);
+        var dbName = dbDisplayName(run.database) || "Workload";
+        var reason =
+          run.error && typeof run.error.message === "string" && run.error.message.trim()
+            ? run.error.message.trim()
+            : run.progress_text && run.progress_text.trim()
+              ? run.progress_text.trim()
+              : run.status === "timed_out"
+                ? "The run timed out."
+                : "The run failed.";
+        if (typeof window !== "undefined" && typeof window.__showToast === "function") {
+          window.__showToast(dbName + " run failed. " + reason, "error");
+        }
+      });
+    }
+
+    // Failures restored from storage on page load must NOT re-toast on every
+    // refresh — mark them as already-notified so only new failures surface.
+    runs.forEach(function (run) {
+      if (run && (run.status === "failed" || run.status === "timed_out")) {
+        notifiedFailedRuns.add(run.run_id || run.database + ":" + run.created_at);
+      }
+      // Restored runs belong to a previous session → show under Past Results.
+      if (run) {
+        run.is_past = true;
+      }
+    });
 
     function persistRuns() {
       writePersistedRuns(runs);
@@ -3117,6 +3369,23 @@
       }
       if (!Number.isFinite(normalized.batch_size) && Number.isFinite(existing.batch_size)) {
         normalized.batch_size = existing.batch_size;
+      }
+      // Client-only fields aren't in server poll updates — keep existing values
+      const rawObj = rawRun && typeof rawRun === "object" ? rawRun : {};
+      if (!("spec_description" in rawObj) || !normalized.spec_description) {
+        normalized.spec_description =
+          normalized.spec_description || existing.spec_description || "";
+      }
+      if (!("is_past" in rawObj)) {
+        normalized.is_past = existing.is_past;
+      }
+      if (!("operation_errors" in rawObj)) {
+        normalized.operation_errors = existing.operation_errors;
+      }
+      // Partial updates (e.g. cancel) don't include links — keep the existing
+      // download/cancel paths rather than wiping them.
+      if (!rawObj.links && existing.links) {
+        normalized.links = existing.links;
       }
       Object.assign(existing, normalized);
       persistRuns();
@@ -3199,16 +3468,12 @@
           body && typeof body.status === "string" && body.status.trim()
             ? body.status.trim()
             : "cancelled";
-        const optimisticStatus = ACTIVE_STATUSES.has(run.status)
-          ? run.status
-          : nextStatus;
+        // Reflect the server's post-cancel status immediately (usually
+        // "cancelled") instead of leaving the run visibly "running".
         mergeRun({
           run_id: run.run_id,
-          status: optimisticStatus,
-          progress_text:
-            optimisticStatus === nextStatus
-              ? getCancelProgressText(body)
-              : "Cancellation requested.",
+          status: nextStatus,
+          progress_text: getCancelProgressText(body),
           error: null,
         });
         render();
@@ -3221,26 +3486,70 @@
       if (!runsListEl) {
         return;
       }
+      notifyFailedRuns();
       const scrollState = captureScrollState(runsListEl);
       runsListEl.innerHTML = "";
+      void scrollState;
       if (runs.length === 0) {
         expandedRunIds.clear();
-        const empty = document.createElement("p");
+        notifiedFailedRuns.clear();
+      }
+
+      var currentRuns = runs.filter(function (r) { return r && !r.is_past; });
+      var pastRuns = runs.filter(function (r) { return r && r.is_past; });
+
+      // ── Current session ──
+      if (currentRuns.length === 0) {
+        var empty = document.createElement("p");
         empty.className = "runs-empty";
         empty.textContent =
           'No runs yet. Select databases and click "Run Workload" to start a benchmark.';
         runsListEl.appendChild(empty);
-        return;
+      } else {
+        var batches = groupRunsIntoBatches(currentRuns);
+        var dashboard = document.createElement("div");
+        dashboard.className = "results-dashboard";
+        batches.forEach(function (batchRuns, i) {
+          dashboard.appendChild(buildResultPanel(batchRuns, i === 0));
+        });
+        runsListEl.appendChild(dashboard);
       }
 
-      // Group runs into batch panels
-      var batches = groupRunsIntoBatches(runs);
-      var dashboard = document.createElement("div");
-      dashboard.className = "results-dashboard";
-      batches.forEach(function (batchRuns, i) {
-        dashboard.appendChild(buildResultPanel(batchRuns, i === 0));
-      });
-      runsListEl.appendChild(dashboard);
+      // ── Past results (hidden behind a toggle) ──
+      if (pastRuns.length > 0) {
+        var pastBatches = groupRunsIntoBatches(pastRuns);
+        var wrap = document.createElement("div");
+        wrap.className = "past-results" + (pastResultsExpanded ? " open" : "");
+        var toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "past-results-toggle";
+        var chevron =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+        var labelText = function () {
+          return (pastResultsExpanded ? "Hide" : "View") +
+            " Past Results (" + pastBatches.length + ")";
+        };
+        toggle.innerHTML = chevron + "<span>" + labelText() + "</span>";
+        var pastBody = document.createElement("div");
+        pastBody.className = "past-results-body";
+        pastBody.hidden = !pastResultsExpanded;
+        var pastDash = document.createElement("div");
+        pastDash.className = "results-dashboard";
+        pastBatches.forEach(function (batchRuns) {
+          pastDash.appendChild(buildResultPanel(batchRuns, false));
+        });
+        pastBody.appendChild(pastDash);
+        toggle.addEventListener("click", function () {
+          pastResultsExpanded = !pastResultsExpanded;
+          pastBody.hidden = !pastResultsExpanded;
+          wrap.classList.toggle("open", pastResultsExpanded);
+          var lbl = toggle.querySelector("span");
+          if (lbl) lbl.textContent = labelText();
+        });
+        wrap.appendChild(toggle);
+        wrap.appendChild(pastBody);
+        runsListEl.appendChild(wrap);
+      }
     }
 
     async function startRun(specJson, options) {
@@ -3275,10 +3584,20 @@
         const body = await parseJsonResponse(response);
         const responseRuns =
           Array.isArray(body.runs) && body.runs.length > 0 ? body.runs : [body];
+        // Presets carry a human description from the catalog; custom workloads
+        // fall back to the auto-generated section/phase breakdown.
+        const activeDesc =
+          typeof window !== "undefined" ? window.__activeWorkloadDescription : null;
+        const specDescription =
+          activeDesc && activeDesc.source === "preset" && activeDesc.text
+            ? activeDesc.text
+            : buildSpecDescription(specJson);
         let merged = null;
         for (let index = responseRuns.length - 1; index >= 0; index -= 1) {
           merged = mergeRun({
             ...responseRuns[index],
+            spec_description: specDescription,
+            is_past: false,
             database:
               responseRuns[index] &&
               typeof responseRuns[index].database === "string" &&
@@ -3302,6 +3621,7 @@
     function clear() {
       runs.length = 0;
       expandedRunIds.clear();
+      notifiedFailedRuns.clear();
       stopPolling();
       clearPersistedRuns();
       render();
@@ -3325,7 +3645,9 @@
           if (runs.some(function (r) { return r.run_id === serverRun.run_id; })) return;
           // Only add runs that have benchmark stats (completed)
           if (!serverRun.benchmark_stats) return;
-          runs.push(normalizeRunEntry(serverRun, serverRun.run_id));
+          var entry = normalizeRunEntry(serverRun, serverRun.run_id);
+          entry.is_past = true; // server history belongs to past sessions
+          runs.push(entry);
           added++;
         });
         if (added > 0) {
@@ -3341,10 +3663,15 @@
       void pollRuns();
     }
     void loadHistoricalRuns();
+    // Let the app move current runs to "past" when a new workload is configured
+    window.__markWorkloadRunsPast = markRunsAsPast;
+    // Let the module-level result panel cancel through this controller
+    activeControllerCancel = cancelRun;
     return {
       startRun,
       clear,
       dispose,
+      markRunsAsPast,
       pollNow: pollRuns,
     };
   }

@@ -53,6 +53,12 @@
         runsListEl: refs.runsList,
         onError(message) {
           setValidationStatus(message, "invalid");
+          if (
+            typeof window !== "undefined" &&
+            typeof window.__showToast === "function"
+          ) {
+            window.__showToast(message, "error");
+          }
         },
         onBusyChange(isBusy) {
           setBusy(isBusy);

@@ -454,6 +454,7 @@ async function handleRunStatus(res, runId) {
       run.benchmark_stats && typeof run.benchmark_stats === "object"
         ? run.benchmark_stats
         : null,
+    operation_errors: run.operation_errors === true,
   });
 }
 
@@ -758,6 +759,9 @@ async function startTectonicRun(run) {
     }
 
     run.benchmark_stats = parseBenchmarkStats(benchmarkOutput);
+    // A run can succeed overall yet have individual operations fail (e.g.
+    // Cassandra/ScyllaDB range queries). Surface that so the UI can flag it.
+    run.operation_errors = detectOperationErrors(benchmarkOutput);
     run.status = "succeeded";
     setRunProgressText(run, buildBenchmarkCompletionText(run.benchmark_stats));
     run.error = null;
@@ -774,6 +778,37 @@ function markRunFailed(run, code, message) {
     code,
     message,
   };
+}
+
+// A successful run's log may still contain per-operation errors (e.g. a
+// database that fails range queries). Detect those without flagging benign
+// mentions ("0 errors", "error rate", numeric metric lines).
+const OPERATION_ERROR_PATTERN =
+  /(\berror\b|\berrors\b|\bfailed\b|\bfailure\b|\bpanic(?:ked)?\b|\bexception\b|\btimed out\b|\btimeout\b|\brefused\b)/i;
+const OPERATION_ERROR_BENIGN =
+  /\b(no\s+errors?|0\s+errors?|error[_\s-]?rate|errors?:\s*0\b|failed:\s*0\b|failures?:\s*0\b)\b/i;
+function detectOperationErrors(outputText) {
+  const lines = String(outputText || "").split(/\r?\n/);
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      continue;
+    }
+    if (OPERATION_ERROR_BENIGN.test(line)) {
+      continue;
+    }
+    // Only skip a "[section] label: value" line when the value is numeric
+    // (a real stats metric). Error lines like "[Cassandra] Error: ..." keep
+    // a non-numeric value and are NOT skipped.
+    const statMatch = line.match(/^\[[^\]]+\]\s+[^:]+:\s+(.+)$/);
+    if (statMatch && /^[-+]?[\d.]/.test(statMatch[1].trim())) {
+      continue;
+    }
+    if (OPERATION_ERROR_PATTERN.test(line)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function setRunProgressText(run, text) {

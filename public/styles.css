@@ -90,7 +90,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    max-width: 1100px;
+    max-width: 1280px;
     margin: 0 auto;
     padding: 14px 32px;
 }
@@ -206,9 +206,9 @@ body {
     align-items: center;
     justify-content: center;
     background: #ffffff;
-    padding: 100px 48px 100px;
+    padding: 60px 48px 60px;
     position: relative;
-    gap: 100px;
+    gap: 48px;
 }
 
 .landing-hero h1 {
@@ -218,7 +218,7 @@ body {
     letter-spacing: -3px;
     color: #2d2d2d;
     line-height: 1.1;
-    max-width: 1000px;
+    max-width: 1280px;
     text-align: center;
 }
 
@@ -259,7 +259,7 @@ body {
 /* Section 2: Description — dark charcoal */
 .landing-about {
     background: #2d2d2d;
-    padding: clamp(100px, 12vw, 140px) 24px;
+    padding: clamp(56px, 7vw, 80px) 24px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -267,7 +267,7 @@ body {
 }
 
 .landing-about-inner {
-    max-width: 720px;
+    max-width: 1280px;
     text-align: center;
 }
 
@@ -281,7 +281,7 @@ body {
 }
 
 .landing-about p {
-    font-size: clamp(14px, 1.6vw, 16px);
+    font-size: clamp(17px, 2vw, 20px);
     line-height: 1.7;
     color: rgba(255, 255, 255, 0.55);
     margin-bottom: 10px;
@@ -332,7 +332,7 @@ body {
     width: 200px;
     height: 56px;
     background: #b33a3a;
-    top: 64px;
+    top: 62px;
     transform: translateX(-25%);
     animation: disc-drift-mid 3s ease-in-out infinite alternate;
     z-index: 3;
@@ -342,7 +342,7 @@ body {
     width: 200px;
     height: 56px;
     background: #3a3a3a;
-    top: 122px;
+    top: 118px;
     transform: translateX(-65%);
     animation: disc-drift-bot 3s ease-in-out infinite alternate;
     z-index: 2;
@@ -360,11 +360,11 @@ body {
 }
 
 .disc-smoke.upper {
-    top: 58px;
+    top: 56px;
 }
 
 .disc-smoke.lower {
-    top: 118px;
+    top: 114px;
 }
 
 .smoke-puff {
@@ -494,7 +494,7 @@ body {
 .disc-float-item {
     position: absolute;
     font-family: var(--font-serif);
-    font-size: 12px;
+    font-size: 15px;
     font-weight: 600;
     letter-spacing: 0.3px;
     white-space: nowrap;
@@ -508,7 +508,7 @@ body {
 
 /* Left side: workload names */
 .disc-float-item.wl {
-    color: rgba(179, 58, 58, 0.7);
+    color: rgba(179, 58, 58, 0.9);
     text-align: right;
 }
 
@@ -527,6 +527,8 @@ body {
 
 .disc-float-item .db-icon svg {
     display: block;
+    width: 18px;
+    height: 18px;
 }
 
 /* Right side: plots */
@@ -674,7 +676,7 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 60px 24px 100px;
+    padding: 40px 24px 60px;
     position: relative;
     min-height: 400px;
 }
@@ -689,8 +691,581 @@ body {
     align-items: flex-start;
     gap: 0;
     width: 100%;
-    max-width: 1000px;
+    max-width: 1280px;
     transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+/* ── Branch selector: choose a path before the forms appear ── */
+.forms-branch {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 1280px;
+}
+
+.landing-forms.branch-select .forms-branch {
+    display: flex;
+}
+
+/* Hide the forms + back button until a branch is chosen */
+.landing-forms.branch-select .forms-row,
+.landing-forms.branch-select .forms-back {
+    display: none;
+}
+
+/* Focus mode: a form is open — hide everything but navbar, form and back
+   button, and center the form on the screen (vertically + horizontally) */
+body.form-focused #landingHero,
+body.form-focused #landingAbout {
+    display: none;
+}
+
+body.form-focused .landing-forms {
+    min-height: 100vh;
+    justify-content: center;
+    padding-top: 88px;
+}
+
+/* Spec/app view: hide the home sections too, keeping only navbar + the
+   Workload Specification panels */
+body.app-active #landingHero,
+body.app-active #landingAbout {
+    display: none;
+}
+
+body.app-active .landing-forms {
+    padding-top: 80px;
+}
+
+/* Suppress the transient app-shell / form-row flash while the spec view loads.
+   The final view uses the panels moved into the summary, not these. */
+body.app-active #appShell,
+body.app-active .forms-row {
+    display: none;
+}
+
+/* "Overview" jumps to the (now hidden) hero — hide it once away from home */
+body.form-focused .navbar-link.overview,
+body.app-active .navbar-link.overview {
+    display: none;
+}
+
+.branch-root {
+    display: flex;
+    justify-content: center;
+}
+
+.branch-root-node {
+    font-family: var(--font-serif);
+    font-size: 20px;
+    font-weight: 700;
+    color: #ffffff;
+    padding: 14px 30px;
+    border: 2px solid #2d2d2d;
+    border-radius: 40px;
+    background: #2d2d2d;
+    letter-spacing: 0.2px;
+    animation: root-pulse 3.4s ease-in-out infinite;
+}
+
+@keyframes root-pulse {
+    0%, 100% {
+        box-shadow: 0 4px 14px rgba(45, 45, 45, 0.12);
+    }
+    50% {
+        box-shadow: 0 8px 24px rgba(45, 45, 45, 0.24);
+    }
+}
+
+/* Vertical trunk from root down to the horizontal branch bar.
+   A thin accent band travels down it (root → bubbles). */
+.branch-trunk {
+    width: 3px;
+    height: 44px;
+    background-color: #b8b2ae;
+    background-image: linear-gradient(to bottom, transparent, var(--accent), transparent);
+    background-repeat: no-repeat;
+    background-size: 100% 28px;
+    background-position: 0 -28px;
+    animation: flow-line 2.3s linear infinite;
+}
+
+@keyframes flow-line {
+    0% {
+        background-position: 0 -28px;
+    }
+    100% {
+        background-position: 0 66px;
+    }
+}
+
+.branch-bubbles {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 0;
+}
+
+/* "Choose one" label sitting on the center of the horizontal branch */
+.branch-choose {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+    background: #ffffff;
+    padding: 3px 14px;
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+/* Each slot draws its connector up to the shared horizontal bar.
+   Symmetric horizontal padding spaces the bubbles while keeping the
+   slot edges adjacent, so the connector bars meet with no break. */
+.branch-slot {
+    position: relative;
+    padding: 46px clamp(70px, 11vw, 150px) 0;
+}
+
+.branch-slot::before {
+    /* vertical drop from bar into the bubble — accent band continues down */
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 3px;
+    height: 46px;
+    background-color: #b8b2ae;
+    background-image: linear-gradient(to bottom, transparent, var(--accent), transparent);
+    background-repeat: no-repeat;
+    background-size: 100% 28px;
+    background-position: 0 -28px;
+    animation: flow-line 2.3s linear infinite;
+    animation-delay: 0.45s;
+}
+
+.branch-slot::after {
+    /* horizontal bar half — trimmed on the outer edges */
+    content: "";
+    position: absolute;
+    top: 0;
+    height: 3px;
+    background: #b8b2ae;
+    left: 0;
+    right: 0;
+}
+
+.branch-slot:first-of-type::after {
+    left: 50%;
+}
+
+.branch-slot:last-of-type::after {
+    right: 50%;
+}
+
+.branch-bubble {
+    position: relative;
+    width: clamp(250px, 28vw, 300px);
+    height: clamp(250px, 28vw, 300px);
+    border-radius: 45% 55% 52% 48% / 55% 47% 53% 45%;
+    border: 4px solid #d4cfcc;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.07);
+    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+/* Bolder bubbles: thicker line + light fill matching each breathing color */
+.branch-bubble.standard {
+    border-color: rgba(179, 58, 58, 0.55);
+    background: #f3dede;
+}
+
+.branch-bubble.custom {
+    border-color: rgba(45, 45, 45, 0.5);
+    background: #e9e6e4;
+    border-radius: 55% 45% 48% 52% / 45% 55% 47% 53%;
+}
+
+/* Arrowhead at the end of each drop connector, pointing at the bubble */
+.branch-bubble::before {
+    content: "";
+    position: absolute;
+    top: -13px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 12px solid #b8b2ae;
+    pointer-events: none;
+}
+
+/* Expanding "ping" ring — draws attention, palette-only */
+.branch-bubble::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+}
+
+.branch-bubble.standard::after {
+    animation: ping-accent 3.2s ease-out infinite;
+}
+
+.branch-bubble.custom::after {
+    animation: ping-dark 3.2s ease-out infinite;
+    animation-delay: -1.6s;
+}
+
+@keyframes ping-accent {
+    0% {
+        box-shadow: 0 0 0 0 rgba(179, 58, 58, 0.3);
+    }
+    70%, 100% {
+        box-shadow: 0 0 0 18px rgba(179, 58, 58, 0);
+    }
+}
+
+@keyframes ping-dark {
+    0% {
+        box-shadow: 0 0 0 0 rgba(45, 45, 45, 0.24);
+    }
+    70%, 100% {
+        box-shadow: 0 0 0 18px rgba(45, 45, 45, 0);
+    }
+}
+
+.branch-bubble:hover {
+    box-shadow: 0 20px 44px rgba(0, 0, 0, 0.14);
+}
+
+.branch-bubble.standard:hover {
+    border-color: var(--accent);
+}
+
+.branch-bubble.custom:hover {
+    border-color: #2d2d2d;
+}
+
+.branch-bubble-core {
+    position: absolute;
+    top: 9%;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding: 0 22px;
+    text-align: center;
+    pointer-events: none;
+}
+
+.branch-bubble-title {
+    font-family: var(--font-serif);
+    font-size: clamp(19px, 2.1vw, 23px);
+    font-weight: 700;
+    color: #2d2d2d;
+}
+
+.branch-bubble-hint {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.4;
+}
+
+/* Names swimming around the bubbles */
+.branch-name {
+    position: absolute;
+    white-space: nowrap;
+    font-family: var(--font-serif);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+    pointer-events: none;
+}
+
+.branch-name.center {
+    transform: translateX(-50%);
+}
+
+.branch-bubble.custom .branch-name {
+    color: rgba(45, 45, 45, 0.92);
+    font-size: 19px;
+}
+
+.branch-name > span {
+    display: inline-block;
+    animation: branch-swim 5s ease-in-out infinite alternate;
+}
+
+.branch-name:nth-child(2) > span {
+    animation-duration: 6.2s;
+    animation-delay: -1.4s;
+}
+
+.branch-name:nth-child(3) > span {
+    animation-duration: 5.6s;
+    animation-delay: -0.8s;
+}
+
+.branch-name:nth-child(4) > span {
+    animation-duration: 6.8s;
+    animation-delay: -2.1s;
+}
+
+@keyframes branch-swim {
+    from {
+        transform: translate(-2px, 2px);
+    }
+    to {
+        transform: translate(2px, -3px);
+    }
+}
+
+/* Respect reduced-motion: keep the visuals, drop the perpetual motion */
+@media (prefers-reduced-motion: reduce) {
+    .branch-root-node,
+    .branch-trunk,
+    .branch-slot::before,
+    .branch-bubble,
+    .branch-bubble::after,
+    .branch-name > span {
+        animation: none;
+    }
+}
+
+/* Back link (visible once a form is picked, hidden after spec loads) */
+.forms-back {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    align-self: center;
+    width: auto;
+    margin-bottom: 20px;
+    padding: 12px 24px;
+    background: #2d2d2d;
+    border: 2px solid #2d2d2d;
+    border-radius: 26px;
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 600;
+    color: #ffffff;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.forms-back svg {
+    width: 18px;
+    height: 18px;
+}
+
+.forms-back:hover {
+    background: #1a1a1a;
+    border-color: #1a1a1a;
+}
+
+/* ── Toast notifications (top-left) ── */
+.toast-container {
+    position: fixed;
+    top: 76px;
+    left: 20px;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: min(380px, calc(100vw - 40px));
+    pointer-events: none;
+}
+
+.toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    padding: 14px 14px 14px 16px;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--text-dim);
+    border-radius: 10px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.18);
+    opacity: 0;
+    transform: translateX(-18px);
+    transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.toast.hide {
+    opacity: 0;
+    transform: translateX(-18px);
+}
+
+.toast-error {
+    border-left-color: var(--accent);
+}
+
+.toast-icon {
+    flex-shrink: 0;
+    color: var(--text-dim);
+    margin-top: 1px;
+}
+
+.toast-error .toast-icon {
+    color: var(--accent);
+}
+
+.toast-icon svg {
+    display: block;
+    width: 21px;
+    height: 21px;
+}
+
+.toast-text {
+    flex: 1;
+    font-family: var(--font-serif);
+    font-size: 15.5px;
+    line-height: 1.42;
+    color: var(--text);
+}
+
+.toast-close {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+    font-size: 20px;
+    line-height: 1;
+    color: #9a9a9a;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.toast-close:hover {
+    background: #f2efee;
+    color: var(--text);
+}
+
+/* Benchmark family hint — a popup to the RIGHT of the field, shown only
+   while choosing a family (so the open dropdown can't cover it) */
+.family-field {
+    position: relative;
+}
+
+.family-hint {
+    display: none;
+    position: absolute;
+    left: calc(100% + 18px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 20;
+    width: max-content;
+    max-width: 320px;
+    padding: 16px 22px;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
+    font-family: var(--font-serif);
+    font-size: 18px;
+    font-style: italic;
+    color: var(--text-dim);
+    line-height: 1.5;
+}
+
+/* left-pointing arrow toward the field */
+.family-hint::before {
+    content: "";
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    border-top: 10px solid transparent;
+    border-bottom: 10px solid transparent;
+    border-right: 10px solid #ffffff;
+    filter: drop-shadow(-1px 0 0 var(--border));
+}
+
+.family-hint.show {
+    display: block;
+    animation: family-hint-in 0.25s ease;
+}
+
+.family-hint b {
+    color: var(--accent);
+    font-weight: 700;
+    font-style: normal;
+}
+
+@keyframes family-hint-in {
+    from {
+        opacity: 0;
+        transform: translate(-6px, -50%);
+    }
+    to {
+        opacity: 1;
+        transform: translate(0, -50%);
+    }
+}
+
+/* Stack the hint below the field on narrow screens (no room on the right) */
+@media (max-width: 900px) {
+    .family-hint {
+        position: static;
+        transform: none;
+        max-width: none;
+        margin-top: 8px;
+        box-shadow: none;
+    }
+    .family-hint::before {
+        display: none;
+    }
+    .family-hint.show {
+        animation: none;
+    }
+}
+
+.landing-forms.branch-picked:not(.spec-loaded) .forms-back {
+    display: inline-flex;
+}
+
+/* Single-form reveal: show only the chosen side, centered horizontally */
+.forms-row.pick-left,
+.forms-row.pick-right {
+    justify-content: center;
+}
+
+.forms-row.pick-left .forms-or,
+.forms-row.pick-left #formSideRight,
+.forms-row.pick-right .forms-or,
+.forms-row.pick-right #formSideLeft {
+    display: none;
+}
+
+.forms-row.pick-left #formSideLeft,
+.forms-row.pick-right #formSideRight {
+    flex: 0 1 640px;
+    max-width: 640px;
+    padding: 0;
 }
 
 .forms-row.collapsed {
@@ -714,13 +1289,14 @@ body {
 }
 
 .forms-collapsed-tab {
-    position: absolute;
+    position: fixed;
+    top: 50%;
     writing-mode: vertical-lr;
-    padding: 28px 13px;
+    padding: 30px 16px;
     font-family: var(--font-serif);
-    font-size: 19px;
+    font-size: 21px;
     font-weight: 500;
-    letter-spacing: 1.5px;
+    letter-spacing: 1.6px;
     color: #ffffff;
     background: #b33a3a;
     border: none;
@@ -738,12 +1314,76 @@ body {
 .forms-collapsed-tab.left {
     left: 0;
     border-radius: 10px 0px 0px 10px;
-    transform: rotate(180deg);
+    /* Rotate the whole tab 180°: square edge to the left, rounded to the
+       right, plates land at the bottom and "Home" is rotated with it.
+       translateY(-50%) keeps it centered in the viewport. */
+    writing-mode: horizontal-tb;
+    transform: translateY(-50%) rotate(180deg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 13px;
+    padding: 20px 11px;
+}
+
+.forms-collapsed-tab.left .ct-label {
+    writing-mode: vertical-lr;
+    letter-spacing: 1.5px;
+}
+
+/* Mini animated tectonic plates on the Home tab — small and upright */
+.ct-plates {
+    position: relative;
+    width: 26px;
+    height: 23px;
+    flex-shrink: 0;
+}
+
+.ct-disc {
+    position: absolute;
+    left: 50%;
+    width: 21px;
+    height: 7px;
+    border-radius: 50% / 40%;
+}
+
+.ct-disc-top {
+    top: 0;
+    background: #ffffff;
+    animation: ct-drift-a 3s ease-in-out infinite alternate;
+}
+
+.ct-disc-mid {
+    top: 8px;
+    background: #2d2d2d;
+    animation: ct-drift-b 3s ease-in-out infinite alternate;
+}
+
+.ct-disc-bot {
+    top: 16px;
+    background: #ffffff;
+    animation: ct-drift-c 3s ease-in-out infinite alternate;
+}
+
+@keyframes ct-drift-a {
+    from { transform: translateX(-62%); }
+    to { transform: translateX(-44%); }
+}
+
+@keyframes ct-drift-b {
+    from { transform: translateX(-34%); }
+    to { transform: translateX(-52%); }
+}
+
+@keyframes ct-drift-c {
+    from { transform: translateX(-58%); }
+    to { transform: translateX(-42%); }
 }
 
 .forms-collapsed-tab.right {
     right: 0;
     border-radius: 10px 0px 0px 10px;
+    transform: translateY(-50%);
 }
 
 .form-side {
@@ -1124,17 +1764,15 @@ body {
     position: fixed;
     right: 0;
     width: 320px;
-    height: 75vh;
-    top: 60%;
-    transform: translateY(-50%);
+    top: 60px;
+    bottom: 0;
     background: #ffffff;
     border: 1px solid #e0dcda;
     border-right: none;
-    border-radius: 2;
     display: none;
     flex-direction: column;
     z-index: 20;
-    /* JS will clip top/bottom to landing-forms bounds */
+    /* Fixed, full height under the navbar — JS syncs top to the navbar height */
 }
 
 .spec-chat-panel.active {
@@ -3071,6 +3709,21 @@ textarea::placeholder {
     color: #922e2e;
 }
 
+/* Preset workload description — inline in the header row, centered between
+   the "Workload Structure" title and the Add Section button */
+.structure-workload-desc {
+    flex: 1;
+    align-self: center;
+    margin: 0 18px;
+    max-width: 90ch;
+    text-align: center;
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-style: italic;
+    line-height: 1.45;
+    color: var(--text-dim);
+}
+
 .structure-tree {
     display: flex;
     flex-direction: column;
@@ -4960,17 +5613,131 @@ textarea::placeholder {
 }
 
 .results-panel {
+    position: relative;
     border: 1px solid #ddd;
     border-radius: 6px;
     background: #f7f7f8;
     overflow: hidden;
 }
 
+/* Cancel × on a running result panel (top-right corner) */
+/* Make room in the header so the corner × never overlaps the status circles */
+.results-panel.has-cancel .results-panel-header {
+    padding-right: 46px;
+}
+
+.results-panel-cancel {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    color: #9a8f8c;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.results-panel-cancel svg {
+    width: 15px;
+    height: 15px;
+}
+
+.results-panel-cancel:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #ffffff;
+}
+
+/* Confirmation dialog */
+.confirm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(30, 26, 25, 0.42);
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+
+.confirm-overlay.show {
+    opacity: 1;
+}
+
+.confirm-box {
+    width: min(420px, 100%);
+    background: #ffffff;
+    border-radius: 14px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+    padding: 24px 24px 20px;
+    transform: translateY(8px);
+    transition: transform 0.18s ease;
+}
+
+.confirm-overlay.show .confirm-box {
+    transform: translateY(0);
+}
+
+.confirm-message {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.5;
+    color: var(--text);
+    margin-bottom: 20px;
+}
+
+.confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.confirm-btn {
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.confirm-dismiss {
+    background: #ffffff;
+    border-color: var(--border-strong);
+    color: var(--text);
+}
+
+.confirm-dismiss:hover {
+    background: var(--surface-soft);
+}
+
+.confirm-ok {
+    background: var(--accent);
+    color: #ffffff;
+}
+
+.confirm-ok:hover {
+    background: var(--accent-hover);
+}
+
 .results-panel-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 20px;
+    gap: 12px;
+    padding: 8px 20px;
     user-select: none;
 }
 
@@ -4994,6 +5761,7 @@ textarea::placeholder {
     display: flex;
     gap: 14px;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .db-progress-item {
@@ -5045,9 +5813,66 @@ textarea::placeholder {
     margin-bottom: 12px;
 }
 
+/* Succinct workload description — centered in the (compact) panel header */
+.results-panel-desc {
+    flex: 1;
+    margin: 0 18px;
+    text-align: center;
+    font-family: var(--font-serif);
+    font-size: 13px;
+    font-style: italic;
+    line-height: 1.4;
+    color: var(--text-dim);
+}
+
+/* Past Results — collapsed by default behind a toggle */
+.past-results {
+    margin-top: 26px;
+    border-top: 1px solid var(--divider);
+    padding-top: 18px;
+}
+
+.past-results-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    background: #ffffff;
+    border: 1px solid var(--border-strong);
+    border-radius: 22px;
+    font-family: var(--font-serif);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.past-results-toggle:hover {
+    background: var(--surface-soft);
+    border-color: var(--text-dim);
+}
+
+.past-results-toggle svg {
+    width: 18px;
+    height: 18px;
+    transition: transform 0.2s ease;
+}
+
+.past-results.open .past-results-toggle svg {
+    transform: rotate(180deg);
+}
+
+.past-results-body {
+    margin-top: 16px;
+}
+
 .results-plot-cell {
-    flex: 1 1 340px;
-    min-width: 300px;
+    /* Cap plot size to the width of 4 plots in a row (gap: 12px → 3 gaps).
+       A 5th plot wraps to the next row at the same size. */
+    flex: 1 1 calc((100% - 36px) / 4);
+    max-width: calc((100% - 36px) / 4);
+    min-width: 200px;
     background: #fff;
     border: 1px solid #e5e5e5;
     border-radius: 6px;
@@ -5078,6 +5903,8 @@ textarea::placeholder {
 
 .results-panel-links {
     display: flex;
+    align-items: center;
+    flex-wrap: wrap;
     gap: 12px;
     padding-top: 14px;
     border-top: 1px solid #e5e5e5;
@@ -5093,6 +5920,27 @@ textarea::placeholder {
 
 .results-download-link:hover {
     color: #374151;
+}
+
+/* A database whose log reported failed operations */
+.results-download-link.has-errors {
+    color: var(--error);
+    font-weight: 600;
+    text-decoration-color: var(--error);
+}
+
+.results-download-link.has-errors:hover {
+    color: #b91c1c;
+}
+
+/* Notice naming databases with failed operations — right side of links row */
+.results-panel-warning {
+    margin: 0 0 0 auto;
+    text-align: right;
+    font-family: var(--font-serif);
+    font-size: 14px;
+    font-style: italic;
+    color: var(--error);
 }
 
 /* Override parent constraint for results */

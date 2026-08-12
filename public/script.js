@@ -76,11 +76,11 @@ function copyTextToClipboard(text) {
 
     // Slot positions (top %) for left and right zones
     var leftSlots = [
-        { top: 5, size: 10 },
-        { top: 25, size: 9 },
-        { top: 48, size: 11 },
-        { top: 68, size: 9 },
-        { top: 88, size: 10 }
+        { top: 5, size: 15 },
+        { top: 25, size: 14 },
+        { top: 48, size: 16 },
+        { top: 68, size: 14 },
+        { top: 88, size: 15 }
     ];
 
     var rightSlots = [
@@ -238,7 +238,13 @@ function copyTextToClipboard(text) {
     var aboutSection = document.getElementById("landingAbout");
     var formsSection = document.getElementById("landingForms");
     function checkNavbar() {
-        if (window.scrollY > 50) {
+        // Auto-hide only on the home page when at the top; always show once we
+        // are on the forms page (form-focused) or the spec page (app-active).
+        if (
+            window.scrollY > 50 ||
+            document.body.classList.contains("form-focused") ||
+            document.body.classList.contains("app-active")
+        ) {
             navbar.classList.add("visible");
         } else {
             navbar.classList.remove("visible");
@@ -246,9 +252,14 @@ function copyTextToClipboard(text) {
         var formsTop = formsSection.getBoundingClientRect().top;
         var aboutTop = aboutSection.getBoundingClientRect().top;
         var aboutBottom = aboutSection.getBoundingClientRect().bottom;
+        // Reliable "reached the bubbles" detection: forms section meaningfully in
+        // view, OR the page is scrolled to the bottom (short last section case).
+        var atBottom =
+            window.innerHeight + Math.ceil(window.scrollY) >=
+            document.documentElement.scrollHeight - 2;
         overviewLink.classList.remove("active");
         benchmarkLink.classList.remove("active");
-        if (formsTop < window.innerHeight / 2) {
+        if (formsTop < window.innerHeight * 0.6 || atBottom) {
             benchmarkLink.classList.add("active");
         } else if (aboutTop < window.innerHeight / 2 && aboutBottom > 0) {
             overviewLink.classList.add("active");
@@ -256,6 +267,142 @@ function copyTextToClipboard(text) {
     }
     window.addEventListener("scroll", checkNavbar, { passive: true });
     checkNavbar();
+})();
+
+// ── Active workload description (preset vs custom) ──
+// Presets carry a human description in the catalog JSON — shown in the center
+// of the Workload Structure block AND carried to the results section. Custom
+// (Describe Workload) workloads have no structure-block description; the
+// results section uses the auto-generated one instead.
+(function () {
+    window.__activeWorkloadDescription = { text: "", source: "" };
+    window.__setWorkloadDescription = function (text, source) {
+        var t = typeof text === "string" ? text.trim() : "";
+        var s = source === "preset" ? "preset" : "custom";
+        window.__activeWorkloadDescription = { text: t, source: s };
+        var el = document.getElementById("workloadStructureDesc");
+        if (el) {
+            if (s === "preset" && t) {
+                el.textContent = t;
+                el.hidden = false;
+            } else {
+                el.textContent = "";
+                el.hidden = true;
+            }
+        }
+    };
+})();
+
+// ── Confirmation dialog ──
+(function () {
+    window.__confirmDialog = function (opts) {
+        opts = opts || {};
+        var message = opts.message || "Are you sure?";
+        var confirmLabel = opts.confirmLabel || "Confirm";
+        var dismissLabel = opts.dismissLabel || "Cancel";
+        var onConfirm = typeof opts.onConfirm === "function" ? opts.onConfirm : function () {};
+
+        var overlay = document.createElement("div");
+        overlay.className = "confirm-overlay";
+        var box = document.createElement("div");
+        box.className = "confirm-box";
+        var msg = document.createElement("p");
+        msg.className = "confirm-message";
+        msg.textContent = message;
+        var row = document.createElement("div");
+        row.className = "confirm-actions";
+        var noBtn = document.createElement("button");
+        noBtn.type = "button";
+        noBtn.className = "confirm-btn confirm-dismiss";
+        noBtn.textContent = dismissLabel;
+        var yesBtn = document.createElement("button");
+        yesBtn.type = "button";
+        yesBtn.className = "confirm-btn confirm-ok";
+        yesBtn.textContent = confirmLabel;
+
+        function close() {
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            document.removeEventListener("keydown", onKey);
+        }
+        function onKey(e) { if (e.key === "Escape") close(); }
+        noBtn.addEventListener("click", close);
+        yesBtn.addEventListener("click", function () { close(); onConfirm(); });
+        overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+        document.addEventListener("keydown", onKey);
+
+        row.appendChild(noBtn);
+        row.appendChild(yesBtn);
+        box.appendChild(msg);
+        box.appendChild(row);
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+        requestAnimationFrame(function () { overlay.classList.add("show"); });
+        yesBtn.focus();
+    };
+})();
+
+// ── Toast notifications (top-left) ──
+(function () {
+    var container = null;
+    function ensureContainer() {
+        if (container && document.body.contains(container)) return container;
+        container = document.createElement("div");
+        container.className = "toast-container";
+        document.body.appendChild(container);
+        return container;
+    }
+    function dismiss(toast) {
+        if (!toast) return;
+        if (toast._timer) clearTimeout(toast._timer);
+        toast.classList.remove("show");
+        toast.classList.add("hide");
+        setTimeout(function () {
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+        }, 300);
+    }
+    var ERROR_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+    var INFO_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+    window.__showToast = function (message, type) {
+        if (!message) return null;
+        var c = ensureContainer();
+        var toast = document.createElement("div");
+        toast.className = "toast" + (type ? " toast-" + type : "");
+        var icon = document.createElement("span");
+        icon.className = "toast-icon";
+        icon.innerHTML = type === "error" ? ERROR_ICON : INFO_ICON;
+        var text = document.createElement("div");
+        text.className = "toast-text";
+        text.textContent = message;
+        var close = document.createElement("button");
+        close.type = "button";
+        close.className = "toast-close";
+        close.setAttribute("aria-label", "Dismiss");
+        close.textContent = "×";
+        close.addEventListener("click", function () { dismiss(toast); });
+        toast.appendChild(icon);
+        toast.appendChild(text);
+        toast.appendChild(close);
+        c.appendChild(toast);
+        requestAnimationFrame(function () { toast.classList.add("show"); });
+        toast._timer = setTimeout(function () { dismiss(toast); }, 9000);
+        return toast;
+    };
+})();
+
+// Benchmark family hint — appears while choosing a family, hides once selected
+(function () {
+    var familySelect = document.getElementById("landingPresetFamily");
+    var familyHint = document.getElementById("familyHint");
+    if (!familySelect || !familyHint) return;
+    familySelect.addEventListener("focus", function () {
+        familyHint.classList.add("show");
+    });
+    familySelect.addEventListener("blur", function () {
+        familyHint.classList.remove("show");
+    });
+    familySelect.addEventListener("change", function () {
+        familyHint.classList.remove("show");
+    });
 })();
 
 // Sync landing dropdowns from preset-flow catalog
@@ -396,11 +543,15 @@ function copyTextToClipboard(text) {
     var inlineRunBtn = document.getElementById("inlineRunWorkloadBtn");
     if (inlineRunBtn) {
         inlineRunBtn.addEventListener("click", function () {
-            // Sync inline checkboxes to original right-rail checkboxes
+            // Sync inline checkboxes to ALL benchmarkDatabase inputs by value
+            // (rightRail + dbOptionList) so no stale default (e.g. RocksDB) runs
             var inlineChecks = document.querySelectorAll("#dbInlineOptions input[name='benchmarkDatabaseInline']");
-            var origChecks = document.querySelectorAll("#rightRail input[name='benchmarkDatabase']");
-            inlineChecks.forEach(function (chk, i) {
-                if (origChecks[i]) origChecks[i].checked = chk.checked;
+            var inlineState = {};
+            inlineChecks.forEach(function (chk) { inlineState[chk.value] = chk.checked; });
+            document.querySelectorAll("input[name='benchmarkDatabase']").forEach(function (orig) {
+                if (Object.prototype.hasOwnProperty.call(inlineState, orig.value)) {
+                    orig.checked = inlineState[orig.value];
+                }
             });
             // Click the original run button to trigger the actual run
             var origRunBtn = document.getElementById("runWorkloadBtn");
@@ -446,6 +597,11 @@ function copyTextToClipboard(text) {
     // ── Show spec summary view ──
     function showSpecSummary(options) {
         var openChat = options && options.openChat;
+        document.body.classList.remove("form-focused");
+        // Nothing should be pre-selected on the Select Databases screen
+        if (window.__resetDatabaseSelection) window.__resetDatabaseSelection();
+        // A new workload is being configured — move prior runs to Past Results
+        if (window.__markWorkloadRunsPast) window.__markWorkloadRunsPast();
         var formsRow = document.getElementById("formsRow");
         var summaryView = document.getElementById("specSummaryView");
         var collapsedTabs = document.getElementById("formsCollapsedTabs");
@@ -536,6 +692,9 @@ function copyTextToClipboard(text) {
             if (removeBtn) return;
 
             if (pill) {
+                // The form may have been left hidden by an earlier flow (e.g. the
+                // LLM/Describe path) — always re-assert it's shown before toggling.
+                workloadForm.hidden = false;
                 // Toggle: if this pill was already active, hide form; otherwise show
                 if (pill.classList.contains("active") && !workloadForm.classList.contains("spec-form-collapsed")) {
                     workloadForm.classList.add("spec-form-collapsed");
@@ -543,6 +702,7 @@ function copyTextToClipboard(text) {
                     workloadForm.classList.remove("spec-form-collapsed");
                 }
             } else if (actionBtn || addSection || sectionLabel) {
+                workloadForm.hidden = false;
                 workloadForm.classList.remove("spec-form-collapsed");
             }
         });
@@ -647,6 +807,7 @@ function copyTextToClipboard(text) {
         // Show navbar always in app mode
         navbar.classList.add("visible");
         document.body.classList.add("app-active");
+        document.body.classList.remove("form-focused");
         overviewLink.classList.remove("active");
         benchmarkLink.classList.remove("active");
 
@@ -726,27 +887,116 @@ function copyTextToClipboard(text) {
         jsonViewer.style.display = "";
         document.getElementById("specSummaryBody").classList.remove("with-json");
 
-        // Scroll to forms
-        setTimeout(function () {
-            landingForms.scrollIntoView({ behavior: "smooth" });
-        }, 100);
+        // Scroll to forms (skipped during a full home reset)
+        if (!window.__resettingHome) {
+            setTimeout(function () {
+                landingForms.scrollIntoView({ behavior: "smooth" });
+            }, 100);
+        }
     }
 
     // Spec badge click → go back to forms
     specBadge.addEventListener("click", exitApp);
 
-    // "Let's Benchmark" nav link → exit spec view if active
+    // "Let's Benchmark" nav link — on the home page it scrolls to the bubbles;
+    // on the forms/spec pages it is just an active indicator and does nothing.
     if (benchmarkLink) {
-        benchmarkLink.addEventListener("click", function () {
-            var summaryView = document.getElementById("specSummaryView");
-            if (summaryView && summaryView.classList.contains("active")) {
-                exitApp();
+        benchmarkLink.addEventListener("click", function (e) {
+            if (
+                document.body.classList.contains("form-focused") ||
+                document.body.classList.contains("app-active")
+            ) {
+                e.preventDefault();
             }
         });
     }
 
-    // Collapsed side tab — Left ("Standard Benchmarks") → expand forms back
-    document.getElementById("collapsedTabLeft").addEventListener("click", exitApp);
+    // ── Branch selector → reveal only the chosen form, centered on screen ──
+    function pickBranch(which) {
+        var formsRow = document.getElementById("formsRow");
+        landingForms.classList.remove("branch-select");
+        landingForms.classList.add("branch-picked");
+        formsRow.classList.remove("pick-left", "pick-right");
+        formsRow.classList.add(which === "right" ? "pick-right" : "pick-left");
+        // Focus mode: hide everything except navbar, form and back button
+        document.body.classList.add("form-focused");
+        navbar.classList.add("visible");
+        window.scrollTo(0, 0);
+    }
+
+    function backToBranch() {
+        var formsRow = document.getElementById("formsRow");
+        landingForms.classList.remove("branch-picked");
+        formsRow.classList.remove("pick-left", "pick-right");
+        landingForms.classList.add("branch-select");
+        // Leave focus mode and return to the bubbles screen
+        document.body.classList.remove("form-focused");
+        // Refresh the form details so re-entering a bubble starts clean
+        clearLandingForms();
+        if (window.__setWorkloadDescription) window.__setWorkloadDescription("", "custom");
+        landingForms.scrollIntoView({ block: "start" });
+    }
+
+    var branchStandard = document.getElementById("branchStandard");
+    var branchCustom = document.getElementById("branchCustom");
+    if (branchStandard) branchStandard.addEventListener("click", function () { pickBranch("left"); });
+    if (branchCustom) branchCustom.addEventListener("click", function () { pickBranch("right"); });
+    var formsBack = document.getElementById("formsBack");
+    if (formsBack) formsBack.addEventListener("click", backToBranch);
+
+    // ── TexBench brand icon → full reset back to the home page ──
+    function clearLandingForms() {
+        ["landingPresetFamily", "landingPresetFile"].forEach(function (id) {
+            var sel = document.getElementById(id);
+            if (sel) {
+                sel.selectedIndex = 0;
+                sel.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+        });
+        var scale = document.getElementById("landingPresetScale");
+        if (scale) scale.value = "1";
+        var prompt = document.getElementById("landingWorkloadPrompt");
+        if (prompt) {
+            prompt.value = "";
+            prompt.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+    }
+
+    function resetToHome() {
+        var summaryView = document.getElementById("specSummaryView");
+        var inApp =
+            document.body.classList.contains("app-active") ||
+            (summaryView && summaryView.classList.contains("active"));
+        if (inApp) {
+            window.__resettingHome = true;
+            exitApp();
+            window.__resettingHome = false;
+        }
+        // Leave focus mode and reset the branch selector to its initial state
+        document.body.classList.remove("form-focused");
+        var formsRow = document.getElementById("formsRow");
+        if (formsRow) formsRow.classList.remove("pick-left", "pick-right", "collapsed");
+        landingForms.classList.remove("branch-picked", "spec-loaded", "chat-open");
+        landingForms.classList.add("branch-select");
+        // Fully reset the workload builder so nothing is cached from last time
+        if (window.__resetWorkloadBuilder) window.__resetWorkloadBuilder();
+        // Clear the forms and return to the very top (home)
+        clearLandingForms();
+        // Instant jump to the top, and hide the navbar (home state)
+        window.scrollTo({ top: 0, behavior: "instant" });
+        navbar.classList.remove("visible");
+    }
+
+    var navbarBrand = document.querySelector(".navbar-brand");
+    if (navbarBrand) {
+        navbarBrand.addEventListener("click", function (e) {
+            e.preventDefault();
+            resetToHome();
+        });
+    }
+
+    // Collapsed side tab — Left ("Home") → full reset back to the home page
+    document.getElementById("collapsedTabLeft").addEventListener("click", resetToHome);
 
     // Collapsed side tab — Right ("Describe Workload") → open chat panel & hide tab
     var collapsedTabRight = document.getElementById("collapsedTabRight");
@@ -775,18 +1025,13 @@ function copyTextToClipboard(text) {
     function positionChatPanel() {
         var chatPanel = document.getElementById("specChatPanel");
         if (!chatPanel || !chatPanel.classList.contains("active")) return;
-        var progressTabs = document.getElementById("specProgressTabs");
-        var sRect = landingForms.getBoundingClientRect();
-        var navH = 60;
-        // Top: below the A/B/C bar (whether sticky or inline)
-        var progressBottom = progressTabs ? progressTabs.getBoundingClientRect().bottom : navH;
-        var topBound = Math.max(progressBottom, navH);
-        // Bottom: end of landing-forms or viewport
-        var bottomBound = Math.min(sRect.bottom, window.innerHeight);
-        var chatH = bottomBound - topBound;
-        if (chatH < 200) chatH = 200;
-        chatPanel.style.top = topBound + "px";
-        chatPanel.style.height = chatH + "px";
+        // Fixed, full height from just under the navbar to the viewport bottom.
+        // Constant regardless of scroll position.
+        var navEl = document.querySelector(".navbar");
+        var navH = navEl ? Math.round(navEl.getBoundingClientRect().height) : 60;
+        chatPanel.style.top = navH + "px";
+        chatPanel.style.bottom = "0px";
+        chatPanel.style.height = "";
         chatPanel.style.transform = "none";
     }
 
@@ -875,36 +1120,13 @@ function copyTextToClipboard(text) {
 
     // Position collapsed tabs within the forms section on scroll
     function positionCollapsedTabs() {
-        var wrapper = document.getElementById("formsCollapsedTabs");
-        if (!wrapper || !wrapper.classList.contains("active")) return;
-        var section = document.getElementById("landingForms");
+        // Tabs are now position:fixed and centered in the viewport via CSS
+        // (top: 50% + translateY(-50%)). Clear any stale inline top so the
+        // CSS centering always wins, regardless of scroll position.
         var tabL = document.getElementById("collapsedTabLeft");
         var tabR = document.getElementById("collapsedTabRight");
-        if (!section || !tabL || !tabR) return;
-
-        var sRect = section.getBoundingClientRect();
-        var tabH = tabL.offsetHeight;
-        var viewH = window.innerHeight;
-
-        // The section top in viewport = sRect.top
-        // We want tabs to:
-        //   - Touch the top of the section (dark section bottom edge) when scrolled up
-        //   - Center in viewport when the section fills the view
-        //   - Never go below the section bottom
-
-        // Ideal: vertically centered in the visible portion of the section
-        var visibleTop = Math.max(sRect.top, 0);
-        var visibleBot = Math.min(sRect.bottom, viewH);
-        var visibleCenter = (visibleTop + visibleBot) / 2;
-
-        // Convert to position relative to the section
-        var topInSection = visibleCenter - sRect.top - tabH / 2;
-
-        // Clamp: don't go above section start or below section end
-        topInSection = Math.max(0, Math.min(topInSection, sRect.height - tabH));
-
-        tabL.style.top = topInSection + "px";
-        tabR.style.top = topInSection + "px";
+        if (tabL) tabL.style.top = "";
+        if (tabR) tabR.style.top = "";
     }
 
     window.addEventListener("scroll", positionCollapsedTabs, { passive: true });

@@ -168,6 +168,9 @@
       refs.presetSelectionNote.replaceChildren();
       if (typeof activePresetId !== "string" || activePresetId.trim() === "") {
         refs.presetSelectionNote.hidden = true;
+        if (typeof window.__setWorkloadDescription === "function") {
+          window.__setWorkloadDescription("", "custom");
+        }
         return;
       }
 
@@ -176,7 +179,19 @@
       });
       if (!preset) {
         refs.presetSelectionNote.hidden = true;
+        if (typeof window.__setWorkloadDescription === "function") {
+          window.__setWorkloadDescription("", "custom");
+        }
         return;
+      }
+
+      // Preset description (from the catalog JSON) drives the Workload Structure
+      // centered description and the results-section description.
+      if (typeof window.__setWorkloadDescription === "function") {
+        window.__setWorkloadDescription(
+          typeof preset.description === "string" ? preset.description : "",
+          "preset",
+        );
       }
 
       const description = document.createElement("div");
@@ -376,6 +391,7 @@
       if (!refs.presetFamilySelect) {
         return;
       }
+      const familyOrder = ["YCSB", "db_bench", "KVBench", "Tectonic"];
       const families = Array.from(
         new Set(
           presetCatalog
@@ -384,7 +400,14 @@
             })
             .filter(Boolean),
         ),
-      ).sort();
+      ).sort(function orderFamilies(a, b) {
+        const ia = familyOrder.indexOf(a);
+        const ib = familyOrder.indexOf(b);
+        if (ia === -1 && ib === -1) return a.localeCompare(b);
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+      });
       refs.presetFamilySelect.innerHTML = "";
       const defaultOption = document.createElement("option");
       defaultOption.value = "";

@@ -64,6 +64,31 @@ const allBenchmarkDatabaseInputs = [
   ...benchmarkDatabaseInputs,
   ...inlineBenchmarkDatabaseInputs,
 ];
+// Canonical database ordering used for run submission and results/plots.
+const BENCHMARK_DB_ORDER = ["rocksdb", "cassandra", "scylla", "redis", "printdb"];
+function benchmarkDbOrderIndex(value) {
+  const i = BENCHMARK_DB_ORDER.indexOf(String(value || "").trim().toLowerCase());
+  return i === -1 ? BENCHMARK_DB_ORDER.length : i;
+}
+// Selected = checked AND enabled (a disabled-but-checked box must not count),
+// de-duplicated, and returned in the canonical order.
+function collectSelectedBenchmarkDatabases() {
+  const seen = new Set();
+  const selected = [];
+  benchmarkDatabaseInputs.forEach((input) => {
+    if (!input || !input.checked || input.disabled) {
+      return;
+    }
+    const value = String(input.value || "").trim();
+    if (!value || seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    selected.push(value);
+  });
+  selected.sort((a, b) => benchmarkDbOrderIndex(a) - benchmarkDbOrderIndex(b));
+  return selected;
+}
 const benchmarkDatabaseMenu = document.querySelector(".run-db-menu");
 const benchmarkDatabaseMenuSummary = benchmarkDatabaseMenu
   ? benchmarkDatabaseMenu.querySelector(".run-db-menu-summary")
@@ -775,12 +800,30 @@ async function initApp() {
     runsController.init();
   }
   updateBenchmarkDatabaseSummary();
-  benchmarkDatabaseInputs.forEach((input) => {
-    input.addEventListener("change", updateBenchmarkDatabaseSummary);
+  // Every DB checkbox mirrors its state (by value) to all other DB groups so
+  // the visible "Select Databases" UI and the run-time inputs never diverge.
+  const onDatabaseToggle = (event) => {
+    const src = event && event.target ? event.target : null;
+    if (src) {
+      const value = String(src.value || "").trim();
+      const checked = !!src.checked;
+      allBenchmarkDatabaseInputs.forEach((input) => {
+        if (
+          input &&
+          input !== src &&
+          String(input.value || "").trim() === value
+        ) {
+          input.checked = checked;
+        }
+      });
+    }
+    updateBenchmarkDatabaseSummary();
+    syncRunButtonsDisabled();
+  };
+  allBenchmarkDatabaseInputs.forEach((input) => {
+    input.addEventListener("change", onDatabaseToggle);
   });
-  inlineBenchmarkDatabaseInputs.forEach((input) => {
-    input.addEventListener("change", updateBenchmarkDatabaseSummary);
-  });
+  syncRunButtonsDisabled();
   if (benchmarkDatabaseMenu) {
     benchmarkDatabaseMenu.addEventListener("click", (event) => {
       if (generatedJsonCanSelectDatabases) {
@@ -1743,10 +1786,7 @@ function getWorkloadRunsPanelController() {
       getCurrentWorkloadJson,
       hasRunnableWorkload: hasRunnableWorkloadOperations,
       getSelectedDatabases() {
-        return benchmarkDatabaseInputs
-          .filter((input) => input && input.checked)
-          .map((input) => String(input.value || "").trim())
-          .filter(Boolean);
+        return collectSelectedBenchmarkDatabases();
       },
       setValidationStatus,
     });
@@ -1758,10 +1798,7 @@ function updateBenchmarkDatabaseSummary() {
     return;
   }
   benchmarkDatabaseSummary.replaceChildren();
-  const selected = benchmarkDatabaseInputs
-    .filter((input) => input && input.checked)
-    .map((input) => String(input.value || "").trim())
-    .filter(Boolean);
+  const selected = collectSelectedBenchmarkDatabases();
   if (selected.length === 0) {
     const emptyChip = document.createElement("span");
     emptyChip.className = "run-db-chip empty";
@@ -1808,6 +1845,29 @@ window.__validateGeneratedJsonForTest = async function validateGeneratedJsonForT
   };
 };
 
+// Run buttons are disabled when the spec can't select databases yet OR when
+// no database is selected.
+function syncRunButtonsDisabled() {
+  const cannotSelect = generatedJsonCanSelectDatabases !== true;
+  const noDatabaseSelected =
+    collectSelectedBenchmarkDatabases().length === 0;
+  const runDisabled = cannotSelect || noDatabaseSelected;
+  const message = cannotSelect
+    ? generatedJsonSchemaIsValid
+      ? "Add at least one operation before selecting databases."
+      : "Generate a schema-valid JSON spec before selecting databases."
+    : noDatabaseSelected
+      ? "Select at least one database to run."
+      : "";
+  [runWorkloadBtn, inlineRunWorkloadBtn, dbRunWorkloadBtn].forEach((button) => {
+    if (!button) {
+      return;
+    }
+    button.disabled = runDisabled;
+    setDisabledTooltip(button, message);
+  });
+}
+
 function updateDatabaseSelectionAccess() {
   const disabled = generatedJsonCanSelectDatabases !== true;
   const disabledMessage = disabled
@@ -1828,13 +1888,7 @@ function updateDatabaseSelectionAccess() {
     }
   });
 
-  [runWorkloadBtn, inlineRunWorkloadBtn, dbRunWorkloadBtn].forEach((button) => {
-    if (!button) {
-      return;
-    }
-    button.disabled = disabled;
-    setDisabledTooltip(button, disabledMessage);
-  });
+  syncRunButtonsDisabled();
 
   if (benchmarkDatabaseMenu) {
     benchmarkDatabaseMenu.classList.toggle("disabled", disabled);
@@ -6152,7 +6206,26 @@ function resetFormInterface(options) {
   if (stayInBuilder) {
     persistCustomBuilderState();
   }
+  if (typeof window.__setWorkloadDescription === "function") {
+    window.__setWorkloadDescription("", "custom");
+  }
 }
+
+// Exposed so the home reset (script.js) can fully clear the workload structure
+window.__resetWorkloadBuilder = function resetWorkloadBuilder() {
+  resetFormInterface();
+};
+
+// Exposed so entering the Select Databases screen starts with nothing selected
+window.__resetDatabaseSelection = function resetDatabaseSelection() {
+  allBenchmarkDatabaseInputs.forEach((input) => {
+    if (input) {
+      input.checked = false;
+    }
+  });
+  updateBenchmarkDatabaseSummary();
+  syncRunButtonsDisabled();
+};
 
 function downloadGeneratedJson() {
   const text = jsonOutput.value;
