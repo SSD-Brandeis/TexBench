@@ -3727,7 +3727,7 @@ textarea::placeholder {
     flex: 1;
     align-self: center;
     margin: 0 18px;
-    max-width: 90ch;
+    max-width: 100ch;
     text-align: center;
     font-family: var(--font-serif);
     font-size: 17px;
