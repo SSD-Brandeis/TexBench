@@ -5,7 +5,7 @@
     "label": "I: Empty PQ-heavy (preloading)",
     "path": "/presets/kvbench/i.spec.json",
     "source": "example-specs/kvbench/i.spec.json",
-    "description": "Insert phase followed by point and empty-point reads."
+    "description": "After preloading 1M keys, this read workload is dominated by empty point queries over skewed key prefixes, with a smaller share of uniform lookups on existing keys."
   },
   {
     "id": "kvbench-ii",
@@ -13,7 +13,7 @@
     "label": "II: Interleaved inserts, deletes, PQs, updates",
     "path": "/presets/kvbench/ii.spec.json",
     "source": "example-specs/kvbench/ii.spec.json",
-    "description": "Insert-heavy kvbench workload with deletes, empty reads, and updates."
+    "description": "An insert-heavy workload that interleaves uniform inserts, point deletes, empty point queries, and updates within a single execution phase."
   },
   {
     "id": "kvbench-iii",
@@ -21,7 +21,7 @@
     "label": "III: Multi-distribution update and PQ (preloading)",
     "path": "/presets/kvbench/iii.spec.json",
     "source": "example-specs/kvbench/iii.spec.json",
-    "description": "Kvbench mix with updates, point queries, and empty-point queries."
+    "description": "After preloading 1M keys, updates follow a skewed Zipfian access pattern while point and empty-point queries stay uniform — a workload where different operations use different distributions."
   },
   {
     "id": "kvbench-iv",
@@ -29,7 +29,7 @@
     "label": "IV: Update and range delete-heavy (preloading)",
     "path": "/presets/kvbench/iv.spec.json",
     "source": "example-specs/kvbench/iv.spec.json",
-    "description": "Kvbench workload combining updates with range deletes."
+    "description": "After preloading 1M keys, it pairs Zipfian-skewed updates with range deletes in equal measure, exercising point writes alongside range invalidations."
   },
   {
     "id": "kvbench-v",
@@ -37,7 +37,7 @@
     "label": "V: Insert-heavy with skewed prefixes",
     "path": "/presets/kvbench/v.spec.json",
     "source": "example-specs/kvbench/v.spec.json",
-    "description": "Single-group kvbench workload with inserts and point queries."
+    "description": "A single-phase, insert-dominated workload whose keys cluster around skewed prefixes, with a small fraction of point queries reading them back."
   },
   {
     "id": "ycsb-a",
@@ -93,7 +93,7 @@
     "label": "1: Multi-phased dynamic",
     "path": "/presets/tectonic/1.spec.json",
     "source": "example-specs/tectonic/1.spec.json",
-    "description": "Three phases: 1) Zipfian inserts/deletes, 2) Uniform empty point queries, 3) 50/50 insert/range queries."
+    "description": "Three sequential phases shifting from write-heavy to read-heavy: Zipfian inserts with point deletes, then uniform empty point queries, then a balanced 50/50 mix of inserts and range queries."
   },
   {
     "id": "tec-2",
@@ -101,7 +101,7 @@
     "label": "2: Interleaved multi-distributional",
     "path": "/presets/tectonic/2.spec.json",
     "source": "example-specs/tectonic/2.spec.json",
-    "description": ""
+    "description": "A single interleaved phase mixing five operations — inserts, latest-distributed point queries, empty point queries, uniform point deletes, and Pareto-distributed range deletes — each from a distinct distribution to stress systems under mixed, concurrent load."
   },
   {
     "id": "tec-3",
@@ -109,7 +109,7 @@
     "label": "3: Near-sorted ingestion",
     "path": "/presets/tectonic/3.spec.json",
     "source": "example-specs/tectonic/3.spec.json",
-    "description": ""
+    "description": "Pure ingestion of near-sorted keys: data arrives mostly in order (like a time-series store) with controlled disorder — 1% of keys displaced by up to 10% of the dataset — to test tolerance to near-sortedness."
   },
   {
     "id": "tec-4",
@@ -117,7 +117,7 @@
     "label": "4: Slow phase transitioning",
     "path": "/presets/tectonic/4.spec.json",
     "source": "example-specs/tectonic/4.spec.json",
-    "description": ""
+    "description": "Three phases that gradually shift from write- to read-heavy — inserts fall 70%→50%→30% as point and range queries rise — with range-query selectivity varying uniformly between 0.1 and 0.2."
   },
   {
     "id": "tec-5",
@@ -125,7 +125,7 @@
     "label": "5: Discrete phase transitioning",
     "path": "/presets/tectonic/5.spec.json",
     "source": "example-specs/tectonic/5.spec.json",
-    "description": ""
+    "description": "A sharp two-phase switch from write-heavy (90% inserts) to read-heavy (70% point queries), evaluating how a system responds to a sudden change in access pattern."
   },
   {
     "id": "tec-6",
@@ -133,7 +133,7 @@
     "label": "6: Variable entry size",
     "path": "/presets/tectonic/6.spec.json",
     "source": "example-specs/tectonic/6.spec.json",
-    "description": ""
+    "description": "A balanced 50/50 insert and point-query workload where key and value sizes each vary uniformly from 32B to 256B, simulating document or blob stores where entry-size variability drives I/O and memory usage."
   },
   {
     "id": "tec-7",
@@ -141,7 +141,7 @@
     "label": "7: Skewed access",
     "path": "/presets/tectonic/7.spec.json",
     "source": "example-specs/tectonic/7.spec.json",
-    "description": ""
+    "description": "Skewed access where a small set of hot keys dominates — half the workload inserts keys clustered on a hot 10% prefix, and half issues heavily skewed point queries — typical of caching and real-time analytics."
   },
   {
     "id": "dbbench-test-1",
@@ -165,7 +165,7 @@
     "label": "Test 3: Multi-Random Read",
     "path": "/presets/db_bench/3.spec.json",
     "source": "/example-specs/db_bench/3.spec.json",
-    "description": "Measures batched multi-get performance for existing keys."
+    "description": "Models RocksDB's multi-get read pattern as random point lookups over the 900M key dataset; tectonic issues the reads individually, with no batched multi-get primitive."
   },
   {
     "id": "dbbench-test-4",

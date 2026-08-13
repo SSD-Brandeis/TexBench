@@ -1,58 +1,77 @@
 {
+  "$schema": "../workload_schema.json",
   "sections": [
     {
       "groups": [
         {
+          "name": "Phase 1 (Write-heavy)",
+          "enable_granular_stats": true,
           "inserts": {
-            "op_count": 450000,
+            "op_count": 900000,
             "key": {
-              "uniform": { "len": 20 }
+              "uniform": {
+                "len": 20
+              }
             },
             "val": {
-              "uniform": { "len": 256 }
+              "uniform": {
+                "len": 256
+              }
             }
-          }
-        },
-        {
-          "point_queries": {
-            "op_count": 50000,
-            "selection": {
-              "uniform": {}
-            }
-          }
-        }
-      ]
-    },
-    {
-      "groups": [
-        {
-          "inserts": {
+          },
+          "empty_point_queries": {
             "op_count": 50000,
             "key": {
-              "uniform": { "len": 20 }
-            },
-            "val": {
-              "uniform": { "len": 256 }
+              "uniform": {
+                "len": 20
+              }
             }
-          }
-        },
-        {
-          "point_queries": {
-            "op_count": 350000,
+          },
+          "range_queries": {
+            "op_count": 50000,
             "selection": {
-              "uniform": {}
-            }
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            },
+            "selectivity": 0.01
           }
         },
         {
-          "updates": {
+          "name": "Phase 2 (Read-heavy)",
+          "enable_granular_stats": true,
+          "inserts": {
             "op_count": 100000,
-            "val": {
-              "uniform": { "len": 256 }
+            "key": {
+              "uniform": {
+                "len": 20
+              }
             },
-            "selection": {
-              "uniform": {}
+            "val": {
+              "uniform": {
+                "len": 256
+              }
             }
+          },
+          "point_queries": {
+            "op_count": 700000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            }
+          },
+          "range_queries": {
+            "op_count": 200000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            },
+            "selectivity": 0.01
           }
         }
       ]

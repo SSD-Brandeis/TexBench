@@ -1,38 +1,45 @@
 {
+  "$schema": "../workload_schema.json",
   "sections": [
     {
       "groups": [
         {
+          "name": "Skewed Access",
+          "enable_granular_stats": true,
           "inserts": {
             "op_count": 500000,
             "key": {
-              "uniform": { "len": 20 }
+              "segmented": {
+                "separator": "",
+                "segments": [
+                  {
+                    "hot_range": {
+                      "len": 2,
+                      "probability": 0.1,
+                      "amount": 10
+                    }
+                  },
+                  {
+                    "uniform": {
+                      "len": 18
+                    }
+                  }
+                ]
+              }
             },
             "val": {
-              "uniform": { "len": 256 }
+              "uniform": {
+                "len": 256
+              }
             }
-          }
-        }
-      ]
-    },
-    {
-      "groups": [
-        {
+          },
           "point_queries": {
-            "op_count": 450000,
+            "op_count": 500000,
             "selection": {
-              "zipf": { "n": 500000, "s": 2.0 }
-            }
-          }
-        },
-        {
-          "updates": {
-            "op_count": 50000,
-            "val": {
-              "uniform": { "len": 256 }
-            },
-            "selection": {
-              "zipf": { "n": 500000, "s": 2.0 }
+              "zipf": {
+                "s": 2,
+                "n": 500000
+              }
             }
           }
         }

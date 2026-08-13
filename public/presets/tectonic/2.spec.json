@@ -1,53 +1,60 @@
 {
+  "$schema": "../workload_schema.json",
   "sections": [
     {
       "groups": [
         {
+          "name": "Interleaved Multi-distributional",
+          "enable_granular_stats": true,
           "inserts": {
-            "op_count": 200000,
+            "op_count": 500000,
             "key": {
-              "uniform": { "len": 20 }
+              "uniform": {
+                "len": 20
+              }
             },
             "val": {
-              "uniform": { "len": 256 }
+              "uniform": {
+                "len": 256
+              }
             }
-          }
-        },
-        {
+          },
           "point_queries": {
             "op_count": 200000,
             "selection": {
-              "zipf": { "n": 200000, "s": 1.5 }
+              "latest": {
+                "s": 0.99,
+                "n": 500000
+              }
             }
-          }
-        },
-        {
-          "range_queries": {
+          },
+          "empty_point_queries": {
             "op_count": 100000,
-            "selection": {
-              "normal": { "mean": 0.5, "std_dev": 0.2 }
-            },
-            "selectivity": 0.005,
-            "range_format": "StartCount"
-          }
-        },
-        {
-          "updates": {
-            "op_count": 150000,
-            "val": {
-              "uniform": { "len": 256 }
-            },
-            "selection": {
-              "uniform": {}
+            "key": {
+              "uniform": {
+                "len": 20
+              }
             }
-          }
-        },
-        {
+          },
           "point_deletes": {
             "op_count": 100000,
             "selection": {
-              "pareto": { "scale": 1, "shape": 2 }
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
             }
+          },
+          "range_deletes": {
+            "op_count": 100000,
+            "selection": {
+              "pareto": {
+                "scale": 1,
+                "shape": 2
+              }
+            },
+            "selectivity": 0.0001,
+            "range_format": "StartEnd"
           }
         }
       ]

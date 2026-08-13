@@ -1,12 +1,27 @@
 {
+  "$schema": "../workload_schema.json",
   "sections": [
     {
       "groups": [
         {
+          "name": "Near-sorted Ingestion",
+          "enable_granular_stats": true,
           "sorted": {
+            "k": 10000,
+            "l": 100000
+          },
+          "inserts": {
             "op_count": 1000000,
-            "k": 10,
-            "l": 100
+            "key": {
+              "uniform": {
+                "len": 20
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 256
+              }
+            }
           }
         }
       ]
