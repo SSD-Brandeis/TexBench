@@ -4328,7 +4328,7 @@ function sanitizeStoredOperationSpecForJson(op, spec) {
   return sanitized;
 }
 
-function sanitizeStoredGroupSpecForJson(group) {
+function sanitizeStoredGroupSpecForJson(group, fallbackName) {
   if (!group || typeof group !== "object" || Array.isArray(group)) {
     return {};
   }
@@ -4336,6 +4336,11 @@ function sanitizeStoredGroupSpecForJson(group) {
   const sanitized = {};
   if (typeof group.name === "string" && group.name.trim()) {
     sanitized.name = group.name.trim();
+  } else if (typeof fallbackName === "string" && fallbackName.trim()) {
+    // Give every group a stable, human-readable name so the tectonic granular
+    // stats block is labelled ("Phase 1") instead of its default index label
+    // ("Section 0 Group 0").
+    sanitized.name = fallbackName.trim();
   }
   sanitized.enable_granular_stats = true;
   if (typeof group.character_set === "string" && group.character_set.trim()) {
@@ -4367,10 +4372,16 @@ function buildJsonFromForm() {
   }
   ensureWorkloadStructureState();
 
-  const sections = workloadStructureState.map((sectionState) => {
+  const multiSection = workloadStructureState.length > 1;
+  const sections = workloadStructureState.map((sectionState, sectionIndex) => {
     const section = {
       groups: Array.isArray(sectionState.groups)
-        ? sectionState.groups.map((group) => sanitizeStoredGroupSpecForJson(group))
+        ? sectionState.groups.map((group, groupIndex) => {
+            const fallbackGroupName = multiSection
+              ? "Section " + (sectionIndex + 1) + " Phase " + (groupIndex + 1)
+              : "Phase " + (groupIndex + 1);
+            return sanitizeStoredGroupSpecForJson(group, fallbackGroupName);
+          })
         : [],
     };
     if (
@@ -4380,7 +4391,13 @@ function buildJsonFromForm() {
     ) {
       section.name = sectionState.name.trim();
     }
-    section.enable_granular_stats = true;
+    // Per-section granular stats only add value when there is more than one
+    // section; for a single section they duplicate the Overall Stats block and
+    // read as a misleading extra "phase". Group-level granular stats (set per
+    // group) still provide the per-phase breakdown.
+    if (multiSection) {
+      section.enable_granular_stats = true;
+    }
     if (
       sectionState &&
       typeof sectionState.character_set === "string" &&

@@ -5905,6 +5905,66 @@ textarea::placeholder {
     letter-spacing: 0.06em;
 }
 
+/* Segmented toggle between the Full Comparison and Phase-wise Breakdown views */
+.results-view-toggle {
+    display: inline-flex;
+    margin-bottom: 16px;
+    border: 1px solid var(--border-strong);
+    border-radius: 22px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.results-view-tab {
+    appearance: none;
+    -webkit-appearance: none;
+    border: none;
+    background: transparent;
+    padding: 8px 20px;
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.results-view-tab + .results-view-tab {
+    border-left: 1px solid var(--border-strong);
+}
+
+.results-view-tab:hover {
+    color: var(--text);
+    background: var(--surface-soft);
+}
+
+.results-view-tab.active {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* Per-phase latency breakdown — heading + one labelled sub-row per phase */
+.results-phase-heading {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--divider);
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-weight: 700;
+    color: #1f2937;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.results-phase-title {
+    margin: 12px 0 8px;
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-weight: 600;
+    font-style: italic;
+    color: var(--text-dim);
+}
+
 .paper-chart {
     width: 100%;
     height: auto;

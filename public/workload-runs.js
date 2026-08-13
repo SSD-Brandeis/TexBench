@@ -486,6 +486,15 @@
       return Number.parseInt(rawValue, 10).toLocaleString();
     }
 
+    if (rawValue.endsWith("ns")) {
+      const numberPart = rawValue.slice(0, -2).trim();
+      const parsed = Number.parseFloat(numberPart);
+      if (!Number.isFinite(parsed)) {
+        return rawValue;
+      }
+      return formatDurationMicrosForMetric(parsed / 1000);
+    }
+
     if (rawValue.endsWith("us")) {
       const numberPart = rawValue.slice(0, -2).trim();
       return formatDurationMicrosForMetric(Number.parseFloat(numberPart));
@@ -563,6 +572,10 @@
     const rawValue = String(metric.value || "").trim();
     if (!rawValue) {
       return null;
+    }
+    if (/ns$/i.test(rawValue)) {
+      const parsedNs = parseNumericMetricValue(rawValue.slice(0, -2));
+      return parsedNs === null ? null : parsedNs / 1000;
     }
     if (/us$/i.test(rawValue)) {
       return parseNumericMetricValue(rawValue.slice(0, -2));
@@ -1125,6 +1138,100 @@
         p99: parseLatencyMetricValueMicros(fm(["99th_percentile_latency", "percentile_99_latency"])),
       };
     });
+  }
+
+  // Operation display names tectonic emits inside each granular stats block,
+  // longest-first so multi-word names match before their single-word prefixes.
+  var PHASE_OP_PREFIXES = [
+    "Point Query",
+    "Range Query",
+    "Range Delete",
+    "Insert",
+    "Update",
+    "Delete",
+    "Merge",
+  ];
+  function phaseMetricOperationName(label) {
+    var text = String(label || "").trim();
+    for (var i = 0; i < PHASE_OP_PREFIXES.length; i++) {
+      if (text.indexOf(PHASE_OP_PREFIXES[i]) === 0) return PHASE_OP_PREFIXES[i];
+    }
+    return null; // "Overall …" phase-level aggregates (avg only, no distribution)
+  }
+
+  // Per-phase latency, one entry per granular block (section/group), broken down
+  // by the operations executed within that phase. Tectonic only emits these
+  // blocks when enable_granular_stats is set, and the phase-level [Overall] line
+  // carries only average latency — so box plots are drawn per operation within
+  // the phase, reusing the full min/max/avg/p95/p99 stats.
+  function extractPhaseLatencyData(run) {
+    if (!run || !run.benchmark_stats) return [];
+    var phases = normalizeStatsBuckets(run.benchmark_stats.phases);
+    return phases
+      .map(function (phase) {
+        var metrics = normalizeMetricsList(phase.metrics);
+        var opGroups = new Map();
+        metrics.forEach(function (m) {
+          var opName = phaseMetricOperationName(m.label);
+          if (!opName) return;
+          if (!opGroups.has(opName)) opGroups.set(opName, []);
+          opGroups.get(opName).push(m);
+        });
+        var operations = [];
+        opGroups.forEach(function (opMetrics, opName) {
+          function fm(candidates) {
+            for (var c = 0; c < candidates.length; c++) {
+              var found = opMetrics.find(function (m) {
+                return String(m.key || "").toLowerCase() === candidates[c];
+              });
+              if (found) return found;
+            }
+            return null;
+          }
+          operations.push({
+            operation: opName,
+            operationKey: slugifyMetricLabel(opName) || opName,
+            min: parseLatencyMetricValueMicros(fm(["minimum_latency", "min_latency"])),
+            max: parseLatencyMetricValueMicros(fm(["maximum_latency", "max_latency"])),
+            avg: parseLatencyMetricValueMicros(fm(["average_latency", "avg_latency"])),
+            p50: parseLatencyMetricValueMicros(fm(["50th_percentile_latency", "median_latency", "percentile_50_latency"])),
+            p95: parseLatencyMetricValueMicros(fm(["95th_percentile_latency", "percentile_95_latency"])),
+            p99: parseLatencyMetricValueMicros(fm(["99th_percentile_latency", "percentile_99_latency"])),
+          });
+        });
+        // Phase-level aggregates come from the "[Overall] …" lines within the
+        // block — matched by the "Overall " label prefix so they aren't confused
+        // with a per-operation metric that shares the same key.
+        function phaseOverall(candidates) {
+          for (var c = 0; c < candidates.length; c++) {
+            var found = metrics.find(function (m) {
+              return (
+                String(m.label || "").toLowerCase().indexOf("overall ") === 0 &&
+                String(m.key || "").toLowerCase() === candidates[c]
+              );
+            });
+            if (found) return found;
+          }
+          return null;
+        }
+        return {
+          phase: formatStatsBucketTitle(phase.name),
+          phaseKey: slugifyMetricLabel(phase.name) || String(phase.name || ""),
+          operations: operations,
+          throughput: parseThroughputMetricValue(
+            phaseOverall([
+              "throughput_using_start_and_end_time_ops_ms",
+              "throughput_using_start_and_end_time",
+            ]),
+          ),
+          avgLatencyMicros: parseLatencyMetricValueMicros(
+            phaseOverall(["average_latency", "avg_latency"]),
+          ),
+        };
+      })
+      .filter(function (p) {
+        return p.operations.length > 0;
+      });
   }
 
   function paperBarChart(points, yAxisLabel, chartTitle, opts) {
@@ -1742,6 +1849,16 @@
         }
       });
     } else {
+      // Two toggleable views inside this result section:
+      //   • Full Comparison    — overall throughput/latency + per-operation box plots
+      //   • Phase-wise Breakdown — the same, split per phase
+      // Full Comparison is shown by default.
+      var fullView = document.createElement("div");
+      fullView.className = "results-view results-view-full";
+      var phaseView = document.createElement("div");
+      phaseView.className = "results-view results-view-phase";
+      phaseView.hidden = true;
+
       // ── Row 1: Overall — Throughput + Avg Latency ──
       var row1 = document.createElement("div");
       row1.className = "results-plots-row";
@@ -1789,7 +1906,7 @@
         latCell.appendChild(paperBarChart(latConverted, latUnit.unit, latTitle, { tickDivisor: latOff.divisor, cornerExp: latOff.exp }));
         row1.appendChild(latCell);
       }
-      if (row1.children.length > 0) body.appendChild(row1);
+      // (row1 is appended to fullView after the per-operation box plots below)
 
       // ── Row 2+: Per-operation latency box plots ──
       var opMap = new Map();
@@ -1828,7 +1945,145 @@
           if (bp) cell.appendChild(bp);
           row1.appendChild(cell);
         });
-        body.appendChild(row1);
+      }
+      if (row1.children.length > 0) fullView.appendChild(row1);
+
+      // ── Per-phase latency box plots (one labelled row per phase) ──
+      var phaseOrder = [];
+      var phaseAgg = new Map(); // phaseKey -> { name, ops: Map(opKey -> {name, databases:[]}) }
+      succeeded.forEach(function (r) {
+        extractPhaseLatencyData(r).forEach(function (ph) {
+          if (!phaseAgg.has(ph.phaseKey)) {
+            phaseAgg.set(ph.phaseKey, { name: ph.phase, ops: new Map(), throughput: [], avgLatency: [] });
+            phaseOrder.push(ph.phaseKey);
+          }
+          var pd = phaseAgg.get(ph.phaseKey);
+          if (Number.isFinite(ph.throughput) && ph.throughput > 0) {
+            pd.throughput.push({ label: dbDisplayName(r.database), value: ph.throughput });
+          }
+          if (Number.isFinite(ph.avgLatencyMicros) && ph.avgLatencyMicros > 0) {
+            pd.avgLatency.push({ label: dbDisplayName(r.database), value: ph.avgLatencyMicros });
+          }
+          ph.operations.forEach(function (od) {
+            if (!pd.ops.has(od.operationKey)) pd.ops.set(od.operationKey, { name: od.operation, databases: [] });
+            pd.ops.get(od.operationKey).databases.push({
+              label: dbDisplayName(r.database), min: od.min, max: od.max,
+              avg: od.avg, p50: od.p50, p95: od.p95, p99: od.p99,
+            });
+          });
+        });
+      });
+
+      // Drop phases whose operation/value profile duplicates an earlier phase
+      // (e.g. a section-level block that merely repeats its single group).
+      var uniquePhaseOrder = [];
+      var seenPhaseSig = new Set();
+      phaseOrder.forEach(function (pk) {
+        var pd = phaseAgg.get(pk);
+        if (!pd || pd.ops.size === 0) return;
+        var sigParts = [];
+        Array.from(pd.ops.keys()).sort().forEach(function (ok) {
+          var e = pd.ops.get(ok);
+          var avgs = e.databases.map(function (d) {
+            return d.label + ":" + (Number.isFinite(d.avg) ? Math.round(d.avg) : "?");
+          }).sort().join(",");
+          sigParts.push(ok + "{" + avgs + "}");
+        });
+        var sig = sigParts.join("|");
+        if (seenPhaseSig.has(sig)) return;
+        seenPhaseSig.add(sig);
+        uniquePhaseOrder.push(pk);
+      });
+
+      // Only surface the per-phase breakdown for genuinely multi-phase runs —
+      // for a single phase it would just duplicate the per-operation row above.
+      if (uniquePhaseOrder.length > 1) {
+        uniquePhaseOrder.forEach(function (pk) {
+          var pd = phaseAgg.get(pk);
+          var phaseLabel = document.createElement("div");
+          phaseLabel.className = "results-phase-title";
+          phaseLabel.textContent = pd.name;
+          phaseView.appendChild(phaseLabel);
+
+          var phaseRow = document.createElement("div");
+          phaseRow.className = "results-plots-row";
+
+          function addPlotCell(title, chart) {
+            if (!chart) return;
+            var cell = document.createElement("div");
+            cell.className = "results-plot-cell";
+            var lbl = document.createElement("div");
+            lbl.className = "results-plot-label";
+            lbl.textContent = title;
+            cell.appendChild(lbl);
+            cell.appendChild(chart);
+            phaseRow.appendChild(cell);
+          }
+
+          // Phase throughput (bar per DB)
+          if (pd.throughput.length > 0) {
+            var tpOff = axisOffset(Math.max(...pd.throughput.map(function (p) { return p.value; })));
+            var tpUnit = siPrefix(tpOff.exp) + "ops";
+            var tpTitle = "throughput (" + tpUnit + ")";
+            addPlotCell(tpTitle, paperBarChart(pd.throughput, tpUnit, tpTitle, { tickDivisor: tpOff.divisor }));
+          }
+
+          // Phase average latency (bar per DB)
+          if (pd.avgLatency.length > 0) {
+            var pLatUnit = chooseLatencyChartUnit(Math.max(1, ...pd.avgLatency.map(function (p) { return p.value; })));
+            var pLatConverted = pd.avgLatency.map(function (p) { return { label: p.label, value: p.value / pLatUnit.divisor }; });
+            var pLatOff = axisOffset(Math.max(...pLatConverted.map(function (p) { return p.value; })));
+            var pLatTitle = "avg. latency (" + pLatUnit.unit + ")";
+            addPlotCell(pLatTitle, paperBarChart(pLatConverted, pLatUnit.unit, pLatTitle, { tickDivisor: pLatOff.divisor, cornerExp: pLatOff.exp }));
+          }
+
+          // Per-operation latency box plots within this phase
+          pd.ops.forEach(function (entry) {
+            var allVals = entry.databases.flatMap(function (d) {
+              return [d.min, d.max, d.avg, d.p50, d.p95, d.p99].filter(function (v) { return Number.isFinite(v); });
+            });
+            var unit = chooseLatencyChartUnit(Math.max(1, ...allVals));
+            addPlotCell(
+              entry.name + " (" + unit.unit + ")",
+              paperBoxPlot(entry.databases, unit.unit, unit.divisor, (entry.name + " (" + unit.unit + ")").toLowerCase()),
+            );
+          });
+          if (phaseRow.children.length > 0) phaseView.appendChild(phaseRow);
+        });
+      }
+
+      // Assemble the two views. Only show the toggle when a phase breakdown
+      // actually exists; otherwise just render the Full Comparison view.
+      var hasFullView = fullView.children.length > 0;
+      var hasPhaseView = phaseView.children.length > 0;
+      if (hasFullView && hasPhaseView) {
+        var viewToggle = document.createElement("div");
+        viewToggle.className = "results-view-toggle";
+        var fullTab = document.createElement("button");
+        fullTab.type = "button";
+        fullTab.className = "results-view-tab active";
+        fullTab.textContent = "Full Comparison";
+        var phaseTab = document.createElement("button");
+        phaseTab.type = "button";
+        phaseTab.className = "results-view-tab";
+        phaseTab.textContent = "Phase-wise Breakdown";
+        var selectView = function (showPhase) {
+          phaseView.hidden = !showPhase;
+          fullView.hidden = showPhase;
+          phaseTab.classList.toggle("active", showPhase);
+          fullTab.classList.toggle("active", !showPhase);
+        };
+        fullTab.addEventListener("click", function () { selectView(false); });
+        phaseTab.addEventListener("click", function () { selectView(true); });
+        viewToggle.appendChild(fullTab);
+        viewToggle.appendChild(phaseTab);
+        body.appendChild(viewToggle);
+      }
+      if (hasFullView) body.appendChild(fullView);
+      if (hasPhaseView) {
+        // Default to the Full Comparison view when both exist.
+        phaseView.hidden = hasFullView;
+        body.appendChild(phaseView);
       }
 
       // Databases whose logs reported failed operations (run still "succeeded")
