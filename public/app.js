@@ -64,6 +64,14 @@ const allBenchmarkDatabaseInputs = [
   ...benchmarkDatabaseInputs,
   ...inlineBenchmarkDatabaseInputs,
 ];
+const benchmarkThreadInputs = Array.from(
+  document.querySelectorAll('input[name="benchmarkThreads"]'),
+);
+function getBenchmarkThreadCount() {
+  const input = benchmarkThreadInputs[0];
+  const parsed = Number(input && input.value);
+  return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : 1;
+}
 // Canonical database ordering used for run submission and results/plots.
 const BENCHMARK_DB_ORDER = ["rocksdb", "cassandra", "scylla", "redis", "printdb"];
 function benchmarkDbOrderIndex(value) {
@@ -822,6 +830,18 @@ async function initApp() {
   };
   allBenchmarkDatabaseInputs.forEach((input) => {
     input.addEventListener("change", onDatabaseToggle);
+  });
+  const onBenchmarkThreadsInput = (event) => {
+    const source = event && event.target ? event.target : null;
+    const value = source ? source.value : "1";
+    benchmarkThreadInputs.forEach((input) => {
+      if (input !== source) {
+        input.value = value;
+      }
+    });
+  };
+  benchmarkThreadInputs.forEach((input) => {
+    input.addEventListener("input", onBenchmarkThreadsInput);
   });
   syncRunButtonsDisabled();
   if (benchmarkDatabaseMenu) {
@@ -1792,6 +1812,9 @@ function getWorkloadRunsPanelController() {
       hasRunnableWorkload: hasRunnableWorkloadOperations,
       getSelectedDatabases() {
         return collectSelectedBenchmarkDatabases();
+      },
+      getThreadCount() {
+        return getBenchmarkThreadCount();
       },
       setValidationStatus,
     });

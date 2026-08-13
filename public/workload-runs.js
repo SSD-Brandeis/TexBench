@@ -3566,6 +3566,11 @@
               .filter(Boolean)
           : [];
       const database = databases.length > 0 ? databases[0] : "rocksdb";
+      const requestedThreads = Number(options && options.threads);
+      const threads =
+        Number.isSafeInteger(requestedThreads) && requestedThreads >= 1
+          ? requestedThreads
+          : 1;
       onBusyChange(true);
       try {
         const response = await fetch(START_ENDPOINT, {
@@ -3578,6 +3583,7 @@
             run_options: {
               database: database,
               databases: databases.length > 0 ? databases : [database],
+              threads: threads,
             },
           }),
         });

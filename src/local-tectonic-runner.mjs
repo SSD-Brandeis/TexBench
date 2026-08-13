@@ -375,6 +375,15 @@ async function handleStartRun(req, res) {
     body.value && body.value.run_options && typeof body.value.run_options === "object"
       ? body.value.run_options
       : {};
+  const threads = normalizeThreadCount(runOptions.threads);
+  if (threads === null) {
+    sendJson(res, 400, {
+      error: "threads must be a positive integer.",
+      code: "invalid_threads",
+      details: ["run_options.threads must be an integer greater than zero."],
+    });
+    return;
+  }
   const databases = normalizeDatabaseBatch(
     runOptions.databases,
     runOptions.database,
@@ -386,6 +395,7 @@ async function handleStartRun(req, res) {
       normalizedSpec,
       specText,
       timeoutSeconds,
+      threads,
       database: databases[index],
       benchmarkOptions: resolveDatabaseBenchmarkOptions(
         databases[index],
@@ -594,6 +604,7 @@ async function queueRun({
   normalizedSpec,
   specText,
   timeoutSeconds,
+  threads,
   database,
   benchmarkOptions,
   batchId,
@@ -634,6 +645,7 @@ async function queueRun({
     latest_spec_path: LATEST_SPEC_PATH,
     latest_output_path: LATEST_OUTPUT_PATH,
     timeout_seconds: timeoutSeconds,
+    threads,
     database,
     database_path: databasePath,
     config:
@@ -657,6 +669,7 @@ async function queueRun({
       batch_index: run.batch_index,
       batch_size: run.batch_size,
       database: run.database,
+      threads: run.threads,
       created_at: run.created_at,
     }),
     "utf8",
@@ -916,6 +929,14 @@ function normalizeTimeoutSeconds(rawValue) {
   return clamp(parsed, MIN_TIMEOUT_SECONDS, cappedMax);
 }
 
+function normalizeThreadCount(rawValue) {
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return 1;
+  }
+  const parsed = Number(rawValue);
+  return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : null;
+}
+
 function normalizeDatabaseBatch(rawValues, fallbackValue) {
   const rawList = Array.isArray(rawValues) ? rawValues : [];
   const normalizedList = rawList
@@ -961,7 +982,17 @@ function buildMissingTectonicCliMessage(binaryName) {
 }
 
 function buildTectonicBenchmarkArgs(run) {
-  const args = ["benchmark", "-w", run.spec_path, "--database", run.database];
+  const args = [
+    "benchmark",
+    "-w",
+    run.spec_path,
+    "--database",
+    run.database,
+  ];
+  const threads = normalizeThreadCount(run.threads) || 1;
+  if (threads !== 1) {
+    args.push("--threads", String(threads));
+  }
   if (typeof run.database_path === "string" && run.database_path.trim()) {
     args.push("-p", run.database_path.trim());
   }

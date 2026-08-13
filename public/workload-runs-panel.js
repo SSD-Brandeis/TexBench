@@ -30,6 +30,12 @@
         : function getSelectedDatabasesFallback() {
             return ["rocksdb"];
           };
+    const getThreadCount =
+      typeof config.getThreadCount === "function"
+        ? config.getThreadCount
+        : function getThreadCountFallback() {
+            return 1;
+          };
     const setValidationStatus =
       typeof config.setValidationStatus === "function"
         ? config.setValidationStatus
@@ -102,6 +108,7 @@
 
       await runsController.startRun(specJson, {
         databases,
+        threads: getThreadCount(),
       });
     }
 

@@ -1743,6 +1743,33 @@ body.form-focused.form-pick-right .form-switch-tab.to-standard {
     justify-content: center;
 }
 
+.run-threads-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0 0 16px;
+    color: #5f594f;
+    font-size: 15px;
+    font-weight: 700;
+    text-align: left;
+}
+
+.run-threads-field input {
+    width: 96px;
+    min-height: 42px;
+    padding: 8px 10px;
+    border: 1px solid #d7d0c7;
+    border-radius: 9px;
+    background: #fff;
+    color: #2d2d2d;
+    font: inherit;
+}
+
+.run-control-actions .run-threads-field {
+    margin-bottom: 0;
+}
+
 /* ── LLM Chat Panel (fixed right edge, within section bounds) ── */
 
 .spec-chat-panel {
