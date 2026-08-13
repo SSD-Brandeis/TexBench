@@ -31,18 +31,18 @@
               }
             },
             "selection": {
-              "beta": {
-                "alpha": 0.1,
-                "beta": 5
+              "zipf": {
+                "s": 1.0,
+                "n": 1000000
               }
             }
           },
           "point_queries": {
             "op_count": 250000,
             "selection": {
-              "beta": {
-                "alpha": 0.1,
-                "beta": 5
+              "uniform": {
+                "min": 0,
+                "max": 1000000
               }
             }
           },

@@ -24,7 +24,13 @@
           "name": "Execution Phase",
           "enable_granular_stats": true,
           "point_queries": {
-            "op_count": 200000
+            "op_count": 200000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            }
           },
           "empty_point_queries": {
             "op_count": 800000,

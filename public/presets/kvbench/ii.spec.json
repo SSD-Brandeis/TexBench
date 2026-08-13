@@ -53,6 +53,12 @@
               "uniform": {
                 "len": 512
               }
+            },
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 500000
+              }
             }
           }
         }
