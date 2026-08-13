@@ -5,6 +5,7 @@ const DISTRIBUTION_REQUIRED_KEYS = {
   normal: ["mean", "std_dev"],
   beta: ["alpha", "beta"],
   zipf: ["n", "s"],
+  latest: ["n", "s"],
   exponential: ["lambda"],
   log_normal: ["mean", "std_dev"],
   poisson: ["lambda"],

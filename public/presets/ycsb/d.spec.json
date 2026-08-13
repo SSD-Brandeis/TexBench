@@ -35,9 +35,9 @@
           "point_queries": {
             "op_count": 950000,
             "selection": {
-              "beta": {
-                "alpha": 5,
-                "beta": 0.1
+              "latest": {
+                "s": 0.99,
+                "n": 1050000
               }
             }
           },

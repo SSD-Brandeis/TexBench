@@ -35,9 +35,9 @@
           "point_queries": {
             "op_count": 500000,
             "selection": {
-              "beta": {
-                "alpha": 0.1,
-                "beta": 5
+              "zipf": {
+                "s": 0.99,
+                "n": 1000000
               }
             }
           },
@@ -49,9 +49,9 @@
               }
             },
             "selection": {
-              "beta": {
-                "alpha": 0.1,
-                "beta": 5
+              "zipf": {
+                "s": 0.99,
+                "n": 1000000
               }
             }
           }
