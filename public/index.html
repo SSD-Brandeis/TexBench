@@ -94,27 +94,21 @@
       <div class="branch-root">
         <span class="branch-root-node">Benchmark Databases</span>
       </div>
-      <span class="branch-trunk"></span>
       <div class="branch-bubbles">
-        <span class="branch-choose">Choose one</span>
         <div class="branch-slot">
           <button type="button" class="branch-bubble standard" id="branchStandard">
-            <span class="branch-name" style="top:45%; left:24%;"><span>YCSB</span></span>
-            <span class="branch-name" style="top:57%; right:14%;"><span>db_bench</span></span>
-            <span class="branch-name" style="top:68%; left:20%;"><span>KVBench</span></span>
-            <span class="branch-name" style="top:80%; right:20%;"><span>Tectonic</span></span>
             <span class="branch-bubble-core">
-              <span class="branch-bubble-title">Standard<br>Benchmarks</span>
-              <span class="branch-bubble-hint">Benchmark using preset-workloads</span>
+              <span class="branch-bubble-title">Standard Benchmarks</span>
+              <span class="branch-bubble-hint">Benchmark using preset workloads</span>
             </span>
           </button>
         </div>
+        <span class="branch-or">OR</span>
         <div class="branch-slot">
           <button type="button" class="branch-bubble custom" id="branchCustom">
-            <span class="branch-name center" style="top:57%; left:50%;"><span>Custom Workload</span></span>
             <span class="branch-bubble-core">
-              <span class="branch-bubble-title">Describe<br>Workload</span>
-              <span class="branch-bubble-hint">Start by describing in natural-language</span>
+              <span class="branch-bubble-title">Describe Workload</span>
+              <span class="branch-bubble-hint">Start by describing in natural language</span>
             </span>
           </button>
         </div>
@@ -126,6 +120,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
       Back
     </button>
+
+    <!-- Switch between the two forms (shown in focus mode) -->
+    <button type="button" class="form-switch-tab right to-describe" id="formSwitchDescribe">Describe Workload</button>
+    <button type="button" class="form-switch-tab left to-standard" id="formSwitchStandard">Standard Benchmark</button>
 
     <div class="forms-row" id="formsRow">
       <!-- Left: Standard Benchmarks -->
@@ -203,14 +201,17 @@
 
     <!-- Collapsed vertical tabs (shown after spec loads) -->
     <div class="forms-collapsed-tabs" id="formsCollapsedTabs">
-      <button class="forms-collapsed-tab left" id="collapsedTabLeft">
-        <span class="ct-plates" aria-hidden="true">
-          <span class="ct-disc ct-disc-top"></span>
-          <span class="ct-disc ct-disc-mid"></span>
-          <span class="ct-disc ct-disc-bot"></span>
-        </span>
-        <span class="ct-label">Home</span>
-      </button>
+      <div class="spec-left-stack">
+        <button class="forms-collapsed-tab left back" id="specBackTab">Back</button>
+        <button class="forms-collapsed-tab left" id="collapsedTabLeft">
+          <span class="ct-plates" aria-hidden="true">
+            <span class="ct-disc ct-disc-top"></span>
+            <span class="ct-disc ct-disc-mid"></span>
+            <span class="ct-disc ct-disc-bot"></span>
+          </span>
+          <span class="ct-label">Home</span>
+        </button>
+      </div>
       <button class="forms-collapsed-tab right" id="collapsedTabRight">Edit Workload</button>
     </div>
 

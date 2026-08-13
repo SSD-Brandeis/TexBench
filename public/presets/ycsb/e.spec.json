@@ -4,6 +4,8 @@
     {
       "groups": [
         {
+          "name": "Load Phase",
+          "enable_granular_stats": true,
           "inserts": {
             "op_count": 1000000,
             "key": {
@@ -28,18 +30,15 @@
           }
         },
         {
+          "name": "Execution Phase",
+          "enable_granular_stats": true,
           "range_queries": {
             "op_count": 950000,
-            "selectivity": {
-              "beta": {
-                "min": 0,
-                "max": 0.001
-              }
-            },
+            "scan_length": 100,
             "selection": {
-              "beta": {
-                "alpha": 0.1,
-                "beta": 5
+              "zipf": {
+                "s": 0.99,
+                "n": 1050000
               }
             }
           },

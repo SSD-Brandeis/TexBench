@@ -184,7 +184,10 @@ function validateRangeQuery(value, path, errors) {
   validateNullableCharacterSetField(value, path, errors);
   validateNumberExprField(value, path, errors, "op_count", true);
   validateDistributionField(value, path, errors, "selection", false);
-  validateNumberExprField(value, path, errors, "selectivity", true);
+  // Per the tectonic schema, selectivity and scan_length are both optional
+  // (mutually exclusive); a range op may specify either.
+  validateNumberExprField(value, path, errors, "selectivity", false);
+  validateNumberExprField(value, path, errors, "scan_length", false);
   if (
     value.range_format !== undefined &&
     !RANGE_FORMATS.has(value.range_format)

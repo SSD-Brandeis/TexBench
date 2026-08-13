@@ -778,103 +778,33 @@ body.app-active .navbar-link.overview {
     }
 }
 
-/* Vertical trunk from root down to the horizontal branch bar.
-   A thin accent band travels down it (root → bubbles). */
-.branch-trunk {
-    width: 3px;
-    height: 44px;
-    background-color: #b8b2ae;
-    background-image: linear-gradient(to bottom, transparent, var(--accent), transparent);
-    background-repeat: no-repeat;
-    background-size: 100% 28px;
-    background-position: 0 -28px;
-    animation: flow-line 2.3s linear infinite;
-}
-
-@keyframes flow-line {
-    0% {
-        background-position: 0 -28px;
-    }
-    100% {
-        background-position: 0 66px;
-    }
-}
-
 .branch-bubbles {
-    position: relative;
     display: flex;
     justify-content: center;
-    align-items: flex-start;
-    gap: 0;
+    align-items: center;
+    gap: clamp(48px, 7vw, 110px);
+    margin-top: 40px;
 }
 
-/* "Choose one" label sitting on the center of the horizontal branch */
-.branch-choose {
-    position: absolute;
-    top: 0;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 2;
-    background: #ffffff;
-    padding: 3px 14px;
-    font-family: var(--font-serif);
-    font-size: 17px;
-    font-weight: 700;
-    letter-spacing: 0.4px;
-    color: var(--text-dim);
-    white-space: nowrap;
-}
-
-/* Each slot draws its connector up to the shared horizontal bar.
-   Symmetric horizontal padding spaces the bubbles while keeping the
-   slot edges adjacent, so the connector bars meet with no break. */
 .branch-slot {
     position: relative;
-    padding: 46px clamp(70px, 11vw, 150px) 0;
 }
 
-.branch-slot::before {
-    /* vertical drop from bar into the bubble — accent band continues down */
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 3px;
-    height: 46px;
-    background-color: #b8b2ae;
-    background-image: linear-gradient(to bottom, transparent, var(--accent), transparent);
-    background-repeat: no-repeat;
-    background-size: 100% 28px;
-    background-position: 0 -28px;
-    animation: flow-line 2.3s linear infinite;
-    animation-delay: 0.45s;
-}
-
-.branch-slot::after {
-    /* horizontal bar half — trimmed on the outer edges */
-    content: "";
-    position: absolute;
-    top: 0;
-    height: 3px;
-    background: #b8b2ae;
-    left: 0;
-    right: 0;
-}
-
-.branch-slot:first-of-type::after {
-    left: 50%;
-}
-
-.branch-slot:last-of-type::after {
-    right: 50%;
+/* OR between the two cards */
+.branch-or {
+    flex-shrink: 0;
+    font-family: var(--font-serif);
+    font-size: clamp(20px, 2.4vw, 28px);
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
 }
 
 .branch-bubble {
     position: relative;
-    width: clamp(250px, 28vw, 300px);
-    height: clamp(250px, 28vw, 300px);
-    border-radius: 45% 55% 52% 48% / 55% 47% 53% 45%;
+    width: clamp(340px, 34vw, 420px);
+    min-height: 172px;
+    border-radius: 16px;
     border: 4px solid #d4cfcc;
     cursor: pointer;
     display: flex;
@@ -894,22 +824,6 @@ body.app-active .navbar-link.overview {
 .branch-bubble.custom {
     border-color: rgba(45, 45, 45, 0.5);
     background: #e9e6e4;
-    border-radius: 55% 45% 48% 52% / 45% 55% 47% 53%;
-}
-
-/* Arrowhead at the end of each drop connector, pointing at the bubble */
-.branch-bubble::before {
-    content: "";
-    position: absolute;
-    top: -13px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 0;
-    height: 0;
-    border-left: 8px solid transparent;
-    border-right: 8px solid transparent;
-    border-top: 12px solid #b8b2ae;
-    pointer-events: none;
 }
 
 /* Expanding "ping" ring — draws attention, palette-only */
@@ -961,30 +875,27 @@ body.app-active .navbar-link.overview {
 }
 
 .branch-bubble-core {
-    position: absolute;
-    top: 9%;
-    left: 0;
-    right: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 5px;
-    padding: 0 22px;
+    gap: 10px;
+    padding: 24px 22px;
     text-align: center;
     pointer-events: none;
 }
 
 .branch-bubble-title {
     font-family: var(--font-serif);
-    font-size: clamp(19px, 2.1vw, 23px);
+    font-size: clamp(23px, 2.5vw, 28px);
     font-weight: 700;
     color: #2d2d2d;
+    white-space: nowrap;
 }
 
 .branch-bubble-hint {
-    font-size: 13px;
+    font-size: 16px;
     color: var(--text-dim);
-    line-height: 1.4;
+    line-height: 1.45;
 }
 
 /* Names swimming around the bubbles */
@@ -1039,11 +950,8 @@ body.app-active .navbar-link.overview {
 /* Respect reduced-motion: keep the visuals, drop the perpetual motion */
 @media (prefers-reduced-motion: reduce) {
     .branch-root-node,
-    .branch-trunk,
-    .branch-slot::before,
     .branch-bubble,
-    .branch-bubble::after,
-    .branch-name > span {
+    .branch-bubble::after {
         animation: none;
     }
 }
@@ -1051,11 +959,15 @@ body.app-active .navbar-link.overview {
 /* Back link (visible once a form is picked, hidden after spec loads) */
 .forms-back {
     display: none;
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
     align-items: center;
     gap: 6px;
-    align-self: center;
     width: auto;
-    margin-bottom: 20px;
+    margin: 0;
     padding: 12px 24px;
     background: #2d2d2d;
     border: 2px solid #2d2d2d;
@@ -1248,6 +1160,53 @@ body.app-active .navbar-link.overview {
     display: inline-flex;
 }
 
+/* Switch tabs between the two forms (Standard ⇄ Describe), on the screen edge */
+.form-switch-tab {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    writing-mode: vertical-lr;
+    padding: 28px 15px;
+    font-family: var(--font-serif);
+    font-size: 20px;
+    font-weight: 500;
+    letter-spacing: 1.5px;
+    color: #ffffff;
+    background: #b33a3a;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+    z-index: 60;
+    display: none;
+    transition: background 0.2s;
+}
+
+.form-switch-tab:hover {
+    background: #922e2e;
+}
+
+.form-switch-tab.right {
+    right: 0;
+    border-radius: 10px 0 0 10px;
+    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.18);
+}
+
+.form-switch-tab.left {
+    left: 0;
+    border-radius: 10px 0 0 10px;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.18);
+    transform: translateY(-50%) rotate(180deg);
+}
+
+/* Show the relevant switcher only in focus mode, based on the current form */
+body.form-focused.form-pick-left .form-switch-tab.to-describe {
+    display: inline-flex;
+}
+
+body.form-focused.form-pick-right .form-switch-tab.to-standard {
+    display: inline-flex;
+}
+
 /* Single-form reveal: show only the chosen side, centered horizontally */
 .forms-row.pick-left,
 .forms-row.pick-right {
@@ -1324,6 +1283,32 @@ body.app-active .navbar-link.overview {
     align-items: center;
     gap: 13px;
     padding: 20px 11px;
+}
+
+/* Back + Home stacked on the left edge with a small gap, centered as a pair */
+.spec-left-stack {
+    position: fixed;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.spec-left-stack .forms-collapsed-tab.left {
+    position: static;
+    top: auto;
+    transform: rotate(180deg);
+}
+
+/* State-preserving "Back" tab — sits just above the Home tab */
+.forms-collapsed-tab.left.back {
+    writing-mode: vertical-lr;
+    padding: 24px 13px;
+    display: inline-block;
 }
 
 .forms-collapsed-tab.left .ct-label {
@@ -2448,13 +2433,13 @@ body.app-active .navbar-link.overview {
 
 .system-capacity {
     margin: 10px 0 18px;
-    padding: 10px 12px;
+    padding: 12px 14px;
     border: 1px solid #ded8ce;
     border-radius: 9px;
     background: #faf8f4;
     color: #5f594f;
-    font-size: 13px;
-    line-height: 1.45;
+    font-size: 16px;
+    line-height: 1.5;
 }
 
 .system-capacity.unavailable {
@@ -3718,7 +3703,7 @@ textarea::placeholder {
     max-width: 90ch;
     text-align: center;
     font-family: var(--font-serif);
-    font-size: 15px;
+    font-size: 17px;
     font-style: italic;
     line-height: 1.45;
     color: var(--text-dim);
@@ -5819,9 +5804,9 @@ textarea::placeholder {
     margin: 0 18px;
     text-align: center;
     font-family: var(--font-serif);
-    font-size: 13px;
+    font-size: 16px;
     font-style: italic;
-    line-height: 1.4;
+    line-height: 1.45;
     color: var(--text-dim);
 }
 

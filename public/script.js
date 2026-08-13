@@ -922,6 +922,9 @@ window.__toggleWorkloadForm = function (clickedOpenPhase) {
     }
 
     // ── Branch selector → reveal only the chosen form, centered on screen ──
+    // Picking a bubble OR switching between forms starts the chosen form fresh.
+    // (The state-preserving path back from the spec view is backToFormFromSpec,
+    // which deliberately does NOT go through here.)
     function pickBranch(which) {
         var formsRow = document.getElementById("formsRow");
         landingForms.classList.remove("branch-select");
@@ -930,6 +933,12 @@ window.__toggleWorkloadForm = function (clickedOpenPhase) {
         formsRow.classList.add(which === "right" ? "pick-right" : "pick-left");
         // Focus mode: hide everything except navbar, form and back button
         document.body.classList.add("form-focused");
+        document.body.classList.remove("form-pick-left", "form-pick-right");
+        document.body.classList.add(which === "right" ? "form-pick-right" : "form-pick-left");
+        // Fresh start for the chosen form: clear inputs and any loaded workload
+        clearLandingForms();
+        if (window.__resetWorkloadBuilder) window.__resetWorkloadBuilder();
+        if (window.__setWorkloadDescription) window.__setWorkloadDescription("", "custom");
         navbar.classList.add("visible");
         window.scrollTo(0, 0);
     }
@@ -940,7 +949,7 @@ window.__toggleWorkloadForm = function (clickedOpenPhase) {
         formsRow.classList.remove("pick-left", "pick-right");
         landingForms.classList.add("branch-select");
         // Leave focus mode and return to the bubbles screen
-        document.body.classList.remove("form-focused");
+        document.body.classList.remove("form-focused", "form-pick-left", "form-pick-right");
         // Refresh the form details so re-entering a bubble starts clean
         clearLandingForms();
         if (window.__setWorkloadDescription) window.__setWorkloadDescription("", "custom");
@@ -953,6 +962,12 @@ window.__toggleWorkloadForm = function (clickedOpenPhase) {
     if (branchCustom) branchCustom.addEventListener("click", function () { pickBranch("right"); });
     var formsBack = document.getElementById("formsBack");
     if (formsBack) formsBack.addEventListener("click", backToBranch);
+
+    // Edge switch tabs between the two forms
+    var formSwitchDescribe = document.getElementById("formSwitchDescribe");
+    var formSwitchStandard = document.getElementById("formSwitchStandard");
+    if (formSwitchDescribe) formSwitchDescribe.addEventListener("click", function () { pickBranch("right"); });
+    if (formSwitchStandard) formSwitchStandard.addEventListener("click", function () { pickBranch("left"); });
 
     // ── TexBench brand icon → full reset back to the home page ──
     function clearLandingForms() {
@@ -983,7 +998,7 @@ window.__toggleWorkloadForm = function (clickedOpenPhase) {
             window.__resettingHome = false;
         }
         // Leave focus mode and reset the branch selector to its initial state
-        document.body.classList.remove("form-focused");
+        document.body.classList.remove("form-focused", "form-pick-left", "form-pick-right");
         var formsRow = document.getElementById("formsRow");
         if (formsRow) formsRow.classList.remove("pick-left", "pick-right", "collapsed");
         landingForms.classList.remove("branch-picked", "spec-loaded", "chat-open");
@@ -1007,6 +1022,28 @@ window.__toggleWorkloadForm = function (clickedOpenPhase) {
 
     // Collapsed side tab — Left ("Home") → full reset back to the home page
     document.getElementById("collapsedTabLeft").addEventListener("click", resetToHome);
+
+    // Collapsed side tab — "Back" → return to the form (inputs preserved)
+    function backToFormFromSpec() {
+        var which = document.body.classList.contains("form-pick-right") ? "right" : "left";
+        // Leave the spec view WITHOUT flushing the form inputs
+        window.__resettingHome = true;
+        exitApp();
+        window.__resettingHome = false;
+        // Re-open the same form in focus mode; landing inputs stay as they were
+        var formsRow = document.getElementById("formsRow");
+        landingForms.classList.remove("branch-select", "spec-loaded", "chat-open");
+        landingForms.classList.add("branch-picked");
+        formsRow.classList.remove("pick-left", "pick-right", "collapsed");
+        formsRow.classList.add(which === "right" ? "pick-right" : "pick-left");
+        document.body.classList.add("form-focused");
+        document.body.classList.remove("form-pick-left", "form-pick-right");
+        document.body.classList.add(which === "right" ? "form-pick-right" : "form-pick-left");
+        navbar.classList.add("visible");
+        window.scrollTo(0, 0);
+    }
+    var specBackTab = document.getElementById("specBackTab");
+    if (specBackTab) specBackTab.addEventListener("click", backToFormFromSpec);
 
     // Collapsed side tab — Right ("Describe Workload") → open chat panel & hide tab
     var collapsedTabRight = document.getElementById("collapsedTabRight");

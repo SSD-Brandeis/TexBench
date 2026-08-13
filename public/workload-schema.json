@@ -3,11 +3,15 @@
   "title": "WorkloadSpec",
   "type": "object",
   "properties": {
-    "character_set": {
-      "description": "The domain from which the keys will be created from.",
+    "default_distributions": {
+      "description": "Default distributions for the workload",
+      "$ref": "#/$defs/DefaultDistributions"
+    },
+    "defaults": {
+      "description": "Defaults for the workload",
       "anyOf": [
         {
-          "$ref": "#/$defs/CharacterSet"
+          "$ref": "#/$defs/Defaults"
         },
         {
           "type": "null"
@@ -26,6 +30,95 @@
     "sections"
   ],
   "$defs": {
+    "BlindPointQueries": {
+      "description": "Blind Point Query Specification",
+      "type": "object",
+      "properties": {
+        "character_set": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CharacterSet"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "description": "Key",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op_count": {
+          "description": "Number of blind point queries",
+          "$ref": "#/$defs/NumberExpr"
+        }
+      },
+      "required": [
+        "op_count"
+      ]
+    },
+    "BlindRangeQueries": {
+      "type": "object",
+      "properties": {
+        "character_set": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CharacterSet"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "description": "Key",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op_count": {
+          "description": "Number of blind range queries",
+          "$ref": "#/$defs/NumberExpr"
+        },
+        "scan_length": {
+          "description": "Specifies an exact scan length for range queries. Mutally exclusive with selectivity.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NumberExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selectivity": {
+          "description": "Selectivity of range queries. Based off of the range of valid keys, not the full key-space.\nMutally exclusive with scan_length",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NumberExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "op_count"
+      ]
+    },
     "CharacterSet": {
       "type": "string",
       "enum": [
@@ -33,6 +126,144 @@
         "alphabetic",
         "numeric"
       ]
+    },
+    "DefaultDistributions": {
+      "type": "object",
+      "properties": {
+        "merges_selection": {
+          "description": "Default distribution for merges",
+          "$ref": "#/$defs/Distribution"
+        },
+        "point_deletes_selection": {
+          "description": "Default distribution for point deletes",
+          "$ref": "#/$defs/Distribution"
+        },
+        "point_queries_selection": {
+          "description": "Default distribution for point queries",
+          "$ref": "#/$defs/Distribution"
+        },
+        "range_deletes_selection": {
+          "description": "Default distribution for range deletes",
+          "$ref": "#/$defs/Distribution"
+        },
+        "range_queries_selection": {
+          "description": "Default distribution for range queries",
+          "$ref": "#/$defs/Distribution"
+        },
+        "updates_selection": {
+          "description": "Default distribution for updates",
+          "$ref": "#/$defs/Distribution"
+        }
+      }
+    },
+    "DefaultDistributionsOptional": {
+      "type": "object",
+      "properties": {
+        "merges_selection": {
+          "description": "Default distribution for merges",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "point_deletes_selection": {
+          "description": "Default distribution for point deletes",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "point_queries_selection": {
+          "description": "Default distribution for point queries",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "range_deletes_selection": {
+          "description": "Default distribution for range deletes",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "range_queries_selection": {
+          "description": "Default distribution for range queries",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updates_selection": {
+          "description": "Default distribution for updates",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Defaults": {
+      "type": "object",
+      "properties": {
+        "character_set": {
+          "description": "The domain from which the keys will be created from.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CharacterSet"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "description": "Default Key",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "val": {
+          "description": "Default Value",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     },
     "Distribution": {
       "oneOf": [
@@ -121,9 +352,8 @@
               "type": "object",
               "properties": {
                 "n": {
-                  "type": "integer",
-                  "format": "uint",
-                  "minimum": 0
+                  "type": "number",
+                  "format": "double"
                 },
                 "s": {
                   "type": "number",
@@ -139,6 +369,32 @@
           "additionalProperties": false,
           "required": [
             "zipf"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "latest": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "s": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "n",
+                "s"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "latest"
           ]
         },
         {
@@ -279,7 +535,14 @@
         },
         "key": {
           "description": "Key",
-          "$ref": "#/$defs/StringExpr"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "op_count": {
           "description": "Number of empty point deletes",
@@ -287,8 +550,7 @@
         }
       },
       "required": [
-        "op_count",
-        "key"
+        "op_count"
       ]
     },
     "EmptyPointQueries": {
@@ -307,7 +569,14 @@
         },
         "key": {
           "description": "Key",
-          "$ref": "#/$defs/StringExpr"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "op_count": {
           "description": "Number of point queries",
@@ -315,8 +584,7 @@
         }
       },
       "required": [
-        "op_count",
-        "key"
+        "op_count"
       ]
     },
     "Inserts": {
@@ -335,7 +603,14 @@
         },
         "key": {
           "description": "Key",
-          "$ref": "#/$defs/StringExpr"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "op_count": {
           "description": "Number of inserts",
@@ -343,13 +618,18 @@
         },
         "val": {
           "description": "Value",
-          "$ref": "#/$defs/StringExpr"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
-        "op_count",
-        "key",
-        "val"
+        "op_count"
       ]
     },
     "Merges": {
@@ -372,16 +652,29 @@
         },
         "selection": {
           "description": "Key selection strategy",
-          "$ref": "#/$defs/Distribution"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "val": {
           "description": "Value",
-          "$ref": "#/$defs/StringExpr"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
-        "op_count",
-        "val"
+        "op_count"
       ]
     },
     "NumberExpr": {
@@ -405,7 +698,14 @@
         },
         "selection": {
           "description": "Key selection strategy",
-          "$ref": "#/$defs/Distribution"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -422,7 +722,14 @@
         },
         "selection": {
           "description": "Key selection strategy of the start key",
-          "$ref": "#/$defs/Distribution"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -451,18 +758,42 @@
           "description": "The format for the range",
           "$ref": "#/$defs/RangeFormat"
         },
+        "scan_length": {
+          "description": "Specifies an exact scan length for range queries. Mutally exclusive with selectivity.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NumberExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "selection": {
           "description": "Key selection strategy of the start key",
-          "$ref": "#/$defs/Distribution"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "selectivity": {
-          "description": "Selectivity of range deletes. Based off of the range of valid keys, not the full key space.",
-          "$ref": "#/$defs/NumberExpr"
+          "description": "Selectivity of range queries. Based off of the range of valid keys, not the full key-space.\nMutally exclusive with scan_length",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NumberExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
-        "op_count",
-        "selectivity"
+        "op_count"
       ]
     },
     "RangeFormat": {
@@ -501,18 +832,42 @@
           "description": "The format for the range",
           "$ref": "#/$defs/RangeFormat"
         },
+        "scan_length": {
+          "description": "Specifies an exact scan length for range queries. Mutally exclusive with selectivity.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NumberExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "selection": {
           "description": "Key selection strategy of the start key",
-          "$ref": "#/$defs/Distribution"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "selectivity": {
-          "description": "Selectivity of range queries. Based off of the range of valid keys, not the full key-space.",
-          "$ref": "#/$defs/NumberExpr"
+          "description": "Selectivity of range queries. Based off of the range of valid keys, not the full key-space.\nMutally exclusive with scan_length",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NumberExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
-        "op_count",
-        "selectivity"
+        "op_count"
       ]
     },
     "Sorted": {
@@ -551,6 +906,7 @@
               "type": "object",
               "properties": {
                 "character_set": {
+                  "description": "The character set to use for sampling the string.",
                   "anyOf": [
                     {
                       "$ref": "#/$defs/CharacterSet"
@@ -673,16 +1029,29 @@
         },
         "selection": {
           "description": "Key selection strategy",
-          "$ref": "#/$defs/Distribution"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "val": {
           "description": "Value",
-          "$ref": "#/$defs/StringExpr"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
-        "op_count",
-        "val"
+        "op_count"
       ]
     },
     "Weight": {
@@ -706,10 +1075,41 @@
     "WorkloadSpecGroup": {
       "type": "object",
       "properties": {
-        "character_set": {
+        "blind_point_deletes": {
           "anyOf": [
             {
-              "$ref": "#/$defs/CharacterSet"
+              "$ref": "#/$defs/BlindPointQueries"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blind_point_queries": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlindPointQueries"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blind_range_queries": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlindRangeQueries"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "defaults": {
+          "description": "Defaults for the group",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Defaults"
             },
             {
               "type": "null"
@@ -736,6 +1136,11 @@
             }
           ]
         },
+        "enable_granular_stats": {
+          "description": "Whether or not to save stats for a group",
+          "type": "boolean",
+          "default": false
+        },
         "inserts": {
           "anyOf": [
             {
@@ -754,6 +1159,13 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "name": {
+          "description": "Used for displaying stats and gui",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "point_deletes": {
@@ -806,6 +1218,16 @@
             }
           ]
         },
+        "unique_inserts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Inserts"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updates": {
           "anyOf": [
             {
@@ -821,26 +1243,42 @@
     "WorkloadSpecSection": {
       "type": "object",
       "properties": {
-        "character_set": {
-          "description": "The domain from which the keys will be created from.",
+        "default_distributions": {
+          "description": "Default distributions for the section",
+          "$ref": "#/$defs/DefaultDistributionsOptional"
+        },
+        "defaults": {
+          "description": "Defaults for the section",
           "anyOf": [
             {
-              "$ref": "#/$defs/CharacterSet"
+              "$ref": "#/$defs/Defaults"
             },
             {
               "type": "null"
             }
           ]
         },
+        "enable_granular_stats": {
+          "description": "Whether or not to save stats for a section",
+          "type": "boolean",
+          "default": false
+        },
         "groups": {
-          "description": "A list of groups. Groups share valid keys between operations.\\n\\nE.g., non-empty point queries will use a key from an insert in this group.",
+          "description": "A list of groups. Groups share valid keys between operations.\n\nE.g., non-empty point queries will use a key from an insert in this group.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/WorkloadSpecGroup"
           }
         },
+        "name": {
+          "description": "Used for displaying stats and gui",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "skip_key_contains_check": {
-          "description": "Whether to skip the check that a generated key is in the valid key set for inserts and empty point queries/deletes.",
+          "description": "Whether to skip the check that a generated key is in the valid key set for inserts and empty point queries/deletes.\n\nThis is useful when the keyspace is much larger than the number of keys being generated, as it can greatly decrease generation time.",
           "type": "boolean",
           "default": false
         }
