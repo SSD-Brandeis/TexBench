@@ -4,10 +4,28 @@
     {
       "groups": [
         {
+          "name": "Load",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 100000,
+            "key": {
+              "uniform": {
+                "len": 64,
+                "character_set": "alphanumeric"
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 100
+              }
+            }
+          }
+        },
+        {
           "name": "Write Heavy",
           "enable_granular_stats": true,
           "inserts": {
-            "op_count": 950000,
+            "op_count": 850000,
             "key": {
               "uniform": {
                 "len": 64,
