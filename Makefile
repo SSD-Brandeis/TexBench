@@ -14,13 +14,16 @@ BOOTSTRAP_TECTONIC_URL ?= $(shell $(BOOTSTRAP_INFO) tectonic-url)
 BOOTSTRAP_CASSANDRA_VERSION ?= $(shell $(BOOTSTRAP_INFO) cassandra-version)
 FORMAT_PATHS := package.json public/*.js public/*.html src/*.js src/*.mjs test/*.mjs
 
-.PHONY: format dev up bootstrap-info package-tectonic test test-demo test-demo-ollama test-ollama-regressions test-formal test-formal-js test-formal-tla check-ai-env check-demo-ai-env
+.PHONY: format dev up llama3-only bootstrap-info package-tectonic test test-demo test-demo-ollama test-ollama-regressions test-formal test-formal-js test-formal-tla check-ai-env check-demo-ai-env
 
 format:
 	$(PRETTIER) -- --write $(FORMAT_PATHS)
 
 up:
 	bash scripts/run-local-dev.sh
+
+llama3-only:
+	bash scripts/run-local-dev.sh --llama3-only
 
 bootstrap-info:
 	@echo "Platform: $(BOOTSTRAP_PLATFORM)"

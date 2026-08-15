@@ -50,6 +50,23 @@ test("local setup reads every Ollama download from the shared model config", () 
   ]);
 });
 
+test("local setup can select only llama3 for download", () => {
+  const script = [
+    "set -euo pipefail",
+    "export RUN_LOCAL_DEV_SOURCE_ONLY=1",
+    "source scripts/run-local-dev.sh",
+    `BOOTSTRAP_NODE_BIN=${JSON.stringify(process.execPath)}`,
+    "bootstrap_parse_local_dev_args --llama3-only",
+    "bootstrap_configured_ollama_models",
+  ].join("\n");
+  const result = spawnSync("bash", ["-c", script], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "llama3:8b");
+});
+
 test("npm dev uses the model-installing bootstrap script", () => {
   const packageJson = JSON.parse(
     readFileSync(path.join(repoRoot, "package.json"), "utf8"),
@@ -98,6 +115,41 @@ test("local setup rejects an Ollama inventory missing a configured model", () =>
     });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Missing: mixtral:8x7b qwen2\.5:72b qwen2\.5:14b/);
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+});
+
+test("llama3-only setup accepts an inventory without the optional models", () => {
+  const fixtureDir = mkdtempSync(
+    path.join(os.tmpdir(), "texbench-ollama-tags-"),
+  );
+  const fakeCurl = path.join(fixtureDir, "curl");
+  writeFileSync(
+    fakeCurl,
+    "#!/usr/bin/env bash\nprintf '%s\\n' '{\"models\":[{\"name\":\"llama3:8b\"}]}'\n",
+  );
+  chmodSync(fakeCurl, 0o755);
+
+  try {
+    const script = [
+      "set -euo pipefail",
+      "export RUN_LOCAL_DEV_SOURCE_ONLY=1",
+      "source scripts/run-local-dev.sh",
+      `BOOTSTRAP_NODE_BIN=${JSON.stringify(process.execPath)}`,
+      `PATH=${JSON.stringify(fixtureDir)}:$PATH`,
+      "bootstrap_parse_local_dev_args --llama3-only",
+      "bootstrap_verify_configured_ollama_models",
+    ].join("\n");
+    const result = spawnSync("bash", ["-c", script], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /Verified every selected Ollama model is installed/,
+    );
   } finally {
     rmSync(fixtureDir, { recursive: true, force: true });
   }

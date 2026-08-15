@@ -43,6 +43,25 @@ BOOTSTRAP_REDIS_PID=""
 BOOTSTRAP_REDIS_STARTED=0
 BOOTSTRAP_CLEANUP_DONE=0
 
+bootstrap_parse_local_dev_args() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --llama3-only)
+        BOOTSTRAP_OLLAMA_MODELS="llama3:8b"
+        ;;
+      -h|--help)
+        printf '%s\n' "Usage: $0 [--llama3-only]"
+        printf '%s\n' "  --llama3-only  Download and verify only the llama3:8b Ollama model."
+        exit 0
+        ;;
+      *)
+        bootstrap_fail "Unknown option: $1"
+        ;;
+    esac
+    shift
+  done
+}
+
 bootstrap_ensure_core_download_tooling() {
   bootstrap_install_curl_if_missing
 }
@@ -263,12 +282,23 @@ bootstrap_configured_ollama_models() {
   "$BOOTSTRAP_NODE_BIN" --input-type=module -e '
     import { readFileSync } from "node:fs";
     const config = JSON.parse(readFileSync(process.argv[1], "utf8"));
-    for (const entry of config.models || []) {
-      if (entry && typeof entry.id === "string" && entry.id.trim()) {
-        process.stdout.write(entry.id.trim() + "\n");
-      }
+    const configured = (config.models || [])
+      .map((entry) => entry && typeof entry.id === "string" ? entry.id.trim() : "")
+      .filter(Boolean);
+    const requested = String(process.argv[2] || "")
+      .split(",")
+      .map((model) => model.trim())
+      .filter(Boolean);
+    const selected = requested.length > 0 ? [...new Set(requested)] : configured;
+    const unsupported = selected.filter((model) => !configured.includes(model));
+    if (unsupported.length > 0) {
+      console.error("Requested Ollama model is not configured: " + unsupported.join(", "));
+      process.exit(1);
     }
-  ' "$BOOTSTRAP_LLM_MODEL_CONFIG"
+    for (const model of selected) {
+      process.stdout.write(model + "\n");
+    }
+  ' "$BOOTSTRAP_LLM_MODEL_CONFIG" "$BOOTSTRAP_OLLAMA_MODELS"
 }
 
 bootstrap_verify_configured_ollama_models() {
@@ -294,16 +324,27 @@ bootstrap_verify_configured_ollama_models() {
             }
           }
         }
-        const missing = (config.models || [])
+        const configured = (config.models || [])
           .map((entry) => entry && typeof entry.id === "string" ? entry.id.trim() : "")
-          .filter((model) => model && !installed.has(model));
+          .filter(Boolean);
+        const requested = String(process.argv[2] || "")
+          .split(",")
+          .map((model) => model.trim())
+          .filter(Boolean);
+        const selected = requested.length > 0 ? [...new Set(requested)] : configured;
+        const unsupported = selected.filter((model) => !configured.includes(model));
+        if (unsupported.length > 0) {
+          console.error("Requested Ollama model is not configured: " + unsupported.join(", "));
+          process.exit(1);
+        }
+        const missing = selected.filter((model) => !installed.has(model));
         process.stdout.write(missing.join("\n"));
-      ' "$BOOTSTRAP_LLM_MODEL_CONFIG"
+      ' "$BOOTSTRAP_LLM_MODEL_CONFIG" "$BOOTSTRAP_OLLAMA_MODELS"
   )"
   if [ -n "$missing" ]; then
-    bootstrap_fail "Ollama did not install every configured model. Missing: $(printf '%s' "$missing" | tr '\n' ' ')"
+    bootstrap_fail "Ollama did not install every selected model. Missing: $(printf '%s' "$missing" | tr '\n' ' ')"
   fi
-  bootstrap_log "Verified every configured Ollama model is installed"
+  bootstrap_log "Verified every selected Ollama model is installed"
 }
 
 bootstrap_ensure_ollama_models() {
@@ -711,6 +752,7 @@ trap 'bootstrap_exit_for_signal TERM' TERM
 trap 'bootstrap_exit_for_signal HUP' HUP
 
 main() {
+  bootstrap_parse_local_dev_args "$@"
   bootstrap_require_commands tar
   bootstrap_ensure_core_download_tooling
   bootstrap_select_node_runtime

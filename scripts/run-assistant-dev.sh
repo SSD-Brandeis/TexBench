@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_LOCAL_DEV_SOURCE_ONLY=1 source "$SCRIPT_DIR/run-local-dev.sh"
 
 main() {
+  bootstrap_parse_local_dev_args "$@"
   bootstrap_require_commands tar
   bootstrap_ensure_core_download_tooling
   bootstrap_select_node_runtime

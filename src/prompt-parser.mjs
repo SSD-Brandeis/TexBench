@@ -154,6 +154,29 @@ export function createPromptParser(deps = {}) {
     return /\b(?:write|read)[- ](?:heavy|only)\b/.test(text);
   }
 
+  function extractDeclaredPhaseCount(lowerPrompt) {
+    const text = String(lowerPrompt || "").toLowerCase();
+    const match = text.match(
+      /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)[- ]phases?\b/,
+    );
+    if (!match) {
+      return null;
+    }
+    const namedCounts = {
+      one: 1,
+      two: 2,
+      three: 3,
+      four: 4,
+      five: 5,
+      six: 6,
+      seven: 7,
+      eight: 8,
+      nine: 9,
+      ten: 10,
+    };
+    return positiveIntegerOrNull(namedCounts[match[1]] || match[1]);
+  }
+
   function extractPromptOperationCountScaleFactor(lowerPrompt) {
     const text = String(lowerPrompt || "");
     if (!text) {
@@ -719,18 +742,15 @@ export function createPromptParser(deps = {}) {
 
     const lowerPrompt = text.toLowerCase();
     const sectionClauses = splitPromptIntoSectionClauses(text);
-    const declaredPhaseCount = /\bthree[- ]phases?\b/.test(lowerPrompt)
-      ? 3
-      : /\btwo[- ]phases?\b/.test(lowerPrompt)
-        ? 2
-        : /\bsingle[- ]shot\b|\bone[- ]phases?\b/.test(lowerPrompt)
-          ? 1
-          : null;
+    const declaredPhaseCount = /\bsingle[- ]shot\b/.test(lowerPrompt)
+      ? 1
+      : extractDeclaredPhaseCount(lowerPrompt);
     const distributedTotalCount = extractPromptCountHint(text);
     const defaultTotalPerClause =
       distributedTotalCount !== null
         ? distributedTotalCount
-        : promptUsesDefaultStructuredMix(lowerPrompt)
+        : declaredPhaseCount !== null ||
+            promptUsesDefaultStructuredMix(lowerPrompt)
           ? positiveIntegerOrNull(defaultPercentMixTotalOperations)
           : null;
     // Sections are the outer structure. Phase labels may occur inside a
@@ -1175,16 +1195,15 @@ export function createPromptParser(deps = {}) {
       options.defaultPercentTotalCount,
     );
     const effectiveTotalCount =
-      totalCount !== null
-        ? totalCount
-        : Object.values(amountHints).some((entry) => entry && entry.type === "percent")
-          ? defaultPercentTotalCount
-          : defaultPercents && operations.length > 0
-            ? defaultPercentTotalCount
-            : null;
+      totalCount !== null ? totalCount : defaultPercentTotalCount;
+    const hasAmountHints = Object.values(amountHints).some(Boolean);
+    const equalOperationCounts =
+      effectiveTotalCount !== null && !defaultPercents && !hasAmountHints
+        ? splitIntegerTotalAcrossClauses(effectiveTotalCount, operations.length)
+        : [];
     const group = {};
 
-    operations.forEach((operationName) => {
+    operations.forEach((operationName, operationIndex) => {
       const amountHint = amountHints[operationName] || null;
       const capabilities = getOperationCapabilities(schemaHints, operationName);
       let opCount = null;
@@ -1204,6 +1223,8 @@ export function createPromptParser(deps = {}) {
         opCount = Math.round(
           (effectiveTotalCount * defaultPercents[operationName]) / 100,
         );
+      } else if (equalOperationCounts[operationIndex] !== undefined) {
+        opCount = equalOperationCounts[operationIndex];
       } else if (operations.length === 1 && effectiveTotalCount !== null) {
         opCount = effectiveTotalCount;
       }
@@ -1261,10 +1282,22 @@ export function createPromptParser(deps = {}) {
         /(\d[\d,]*(?:\.\d+)?(?:\s*(?:k|m|b|thousand|million|billion))?)(?!\s*%)(?=\s+(?:operations?|ops?|entries?|inserts?|updates?|merges?|deletes?|queries?|reads?|scans?))/gi,
       ),
     ];
-    if (contextualMatches.length > 0) {
-      return parseHumanCountToken(
-        contextualMatches[contextualMatches.length - 1][1],
-      );
+    for (let index = contextualMatches.length - 1; index >= 0; index -= 1) {
+      const match = contextualMatches[index];
+      const token = match && match[1] ? match[1] : null;
+      const matchIndex = Number.isInteger(match && match.index) ? match.index : -1;
+      if (!token || matchIndex < 0) {
+        continue;
+      }
+      const prefix = text
+        .slice(Math.max(0, matchIndex - 24), matchIndex)
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trimEnd();
+      if (/\b(?:group|section|phase)\s*$/.test(prefix)) {
+        continue;
+      }
+      return parseHumanCountToken(token);
     }
     const genericMatches = [
       ...text.matchAll(
@@ -1284,7 +1317,7 @@ export function createPromptParser(deps = {}) {
       if (
         /^\s*-\s*(?:byte|bytes?|kb|kilobytes?|mb|megabytes?)\b/.test(suffix) ||
         /^\s*(?:byte|bytes?|kb|kilobytes?|mb|megabytes?)\b/.test(suffix) ||
-        /^\s*-\s*phase\b/.test(suffix)
+        /^\s*-?\s*phases?\b/.test(suffix)
       ) {
         continue;
       }

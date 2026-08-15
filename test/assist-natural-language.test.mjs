@@ -1546,6 +1546,78 @@ test("worker assist endpoint preserves multi-phase fresh workloads instead of co
   assert.equal(phase3.range_queries.selectivity, 0.01);
 });
 
+test("worker assist endpoint restores operations for qualitative numeric phases", async () => {
+  const prompt =
+    "Generate a 3 phase workload: phase 1 all inserts, phase 2 inserts + point queries, and phase 3 : all point queries";
+  const request = new Request("https://example.com/api/assist", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      form_state: createFormState({}),
+      schema_hints: SCHEMA_HINTS,
+      current_json: null,
+      conversation: [],
+      answers: {},
+    }),
+  });
+
+  const response = await workerEntrypoint.fetch(request, {
+    AI: {
+      run: async () => ({
+        response: JSON.stringify({
+          summary: "Created three phases.",
+          patch: {
+            character_set: "alphanumeric",
+            sections: [
+              {
+                groups: [
+                  { name: "Group 1", enable_granular_stats: true },
+                  { name: "Phase 2", enable_granular_stats: true },
+                  { name: "Group 1", enable_granular_stats: true },
+                ],
+                name: "Section 1",
+              },
+            ],
+          },
+          clarifications: [],
+          assumptions: [],
+        }),
+      }),
+    },
+    ASSETS: {
+      fetch: async () => new Response("not found", { status: 404 }),
+    },
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  const [phase1, phase2, phase3] = body.patch.sections[0].groups;
+  assert.equal(phase1.inserts.op_count, 333334);
+  assert.equal(phase1.point_queries, undefined);
+  assert.equal(phase2.inserts.op_count, 166667);
+  assert.equal(phase2.point_queries.op_count, 166666);
+  assert.equal(phase3.inserts, undefined);
+  assert.equal(phase3.point_queries.op_count, 333333);
+});
+
+test("generic qualitative phase parsing supports arbitrary operations and phase counts", () => {
+  const sections = __test.deriveStructuredSectionsFromPrompt(
+    "Create a 4 phase workload: phase 1 all inserts; phase 2 updates + merges; phase 3 range queries + point deletes; phase 4 all range deletes",
+    SCHEMA_HINTS,
+  );
+
+  assert.equal(sections.length, 1);
+  assert.equal(sections[0].groups.length, 4);
+  const [phase1, phase2, phase3, phase4] = sections[0].groups;
+  assert.equal(phase1.inserts.op_count, 250000);
+  assert.equal(phase2.updates.op_count, 125000);
+  assert.equal(phase2.merges.op_count, 125000);
+  assert.equal(phase3.range_queries.op_count, 125000);
+  assert.equal(phase3.point_deletes.op_count, 125000);
+  assert.equal(phase4.range_deletes.op_count, 250000);
+});
+
 test("worker assist endpoint reconciles vague write/read heavy phase shell output", async () => {
   const prompt = "Generate a workload with two phases: write heavy and read heavy.";
   const request = new Request("https://example.com/api/assist", {

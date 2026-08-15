@@ -37,6 +37,13 @@ From the repo root, run:
 make
 ```
 
+To download only the default `llama3:8b` model instead of every configured
+assistant model, run:
+
+```bash
+make llama3-only
+```
+
 The first run may take a while. It bootstraps the local runtime, downloads the
 configured models and matching `tectonic-cli` binary, installs or starts the local
 services TexBench needs, then starts the app.
@@ -174,6 +181,12 @@ Cassandra, Redis, and other benchmark services alone. Use `make dev` (or
 functional Cassandra instance even when its version differs from the managed
 `5.0.7` fallback. Use `npm run dev:server` to launch only the server with an
 environment you manage yourself.
+
+For the lighter development bootstrap with only `llama3:8b`, run:
+
+```bash
+npm run dev -- --llama3-only
+```
 
 The repo-local bootstrap scripts live in
 [scripts/bootstrap-lib.sh](scripts/bootstrap-lib.sh) and
