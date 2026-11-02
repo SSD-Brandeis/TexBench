@@ -30,8 +30,8 @@
     "sections"
   ],
   "$defs": {
-    "BlindPointQueries": {
-      "description": "Blind Point Query Specification",
+    "UntrackedPointQueries": {
+      "description": "Untracked Point Query Specification",
       "type": "object",
       "properties": {
         "character_set": {
@@ -56,7 +56,7 @@
           ]
         },
         "op_count": {
-          "description": "Number of blind point queries",
+          "description": "Number of untracked point queries",
           "$ref": "#/$defs/NumberExpr"
         }
       },
@@ -64,7 +64,7 @@
         "op_count"
       ]
     },
-    "BlindRangeQueries": {
+    "UntrackedRangeQueries": {
       "type": "object",
       "properties": {
         "character_set": {
@@ -89,7 +89,7 @@
           ]
         },
         "op_count": {
-          "description": "Number of blind range queries",
+          "description": "Number of untracked range queries",
           "$ref": "#/$defs/NumberExpr"
         },
         "scan_length": {
@@ -1075,30 +1075,30 @@
     "WorkloadSpecGroup": {
       "type": "object",
       "properties": {
-        "blind_point_deletes": {
+        "untracked_point_deletes": {
           "anyOf": [
             {
-              "$ref": "#/$defs/BlindPointQueries"
+              "$ref": "#/$defs/UntrackedPointQueries"
             },
             {
               "type": "null"
             }
           ]
         },
-        "blind_point_queries": {
+        "untracked_point_queries": {
           "anyOf": [
             {
-              "$ref": "#/$defs/BlindPointQueries"
+              "$ref": "#/$defs/UntrackedPointQueries"
             },
             {
               "type": "null"
             }
           ]
         },
-        "blind_range_queries": {
+        "untracked_range_queries": {
           "anyOf": [
             {
-              "$ref": "#/$defs/BlindRangeQueries"
+              "$ref": "#/$defs/UntrackedRangeQueries"
             },
             {
               "type": "null"
