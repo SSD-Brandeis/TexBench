@@ -782,17 +782,18 @@ async function handleAssistRequest(request, env) {
     return jsonResponse({ error: "Prompt is required." }, 400);
   }
   const interpretedPrompt = canonicalizeAssistRequest(prompt);
+  // ASSIST_PROMPT_HEURISTICS=off evaluates the LLM -> DSL -> parser path alone:
+  // no regex-only answers and no prompt-regex rewriting of the parsed answer.
+  const promptHeuristics = readPromptHeuristicsFlag(env);
 
   const schemaHints = normalizeSchemaHints(body.schema_hints);
   const formState = normalizeFormState(body.form_state, schemaHints);
   const currentJson = normalizeCurrentJson(body.current_json);
   const conversation = normalizeConversation(body.conversation);
   const answers = normalizeAssistantAnswers(body.answers);
-  const prefersAiInsertReadMix = isAiPreferredInsertReadMixPrompt(
-    prompt,
-    formState,
-    schemaHints,
-  );
+  const prefersAiInsertReadMix =
+    promptHeuristics &&
+    isAiPreferredInsertReadMixPrompt(prompt, formState, schemaHints);
   const insertReadFallbackPayload = prefersAiInsertReadMix
     ? buildDeterministicInsertReadMixPayload(
         interpretedPrompt,
@@ -814,11 +815,9 @@ async function handleAssistRequest(request, env) {
     normalized.source = source;
     return normalized;
   };
-  const deterministicPayload = buildDeterministicAssistPayload(
-    prompt,
-    formState,
-    schemaHints,
-  );
+  const deterministicPayload = promptHeuristics
+    ? buildDeterministicAssistPayload(prompt, formState, schemaHints)
+    : null;
   const recoverableDeterministicPayload =
     insertReadFallbackPayload || deterministicPayload;
   const shouldPreferAiForStructuredPrompt =
@@ -936,9 +935,13 @@ async function handleAssistRequest(request, env) {
     {
       allowDeterministicStructureFallback: false,
       answers,
+      promptHeuristics,
     },
   );
   normalized.source = "ai";
+  if (!promptHeuristics) {
+    normalized.prompt_heuristics = false;
+  }
   const aiOutput = normalizeAiOutput(outcome.ai_output);
   if (aiOutput) {
     normalized.ai_output = aiOutput;
@@ -1317,6 +1320,120 @@ async function runAssistantOnce(
   throw error;
 }
 
+// Worked examples and reference lines for the DSL, sent with every request.
+// The examples are dev-set workloads (not evaluation prompts); each program is
+// checked to reproduce its spec through the parser and builder.
+const promptField = (field, value) =>
+  typeof value === "string"
+    ? { field, string_value: value }
+    : { field, number_value: value };
+const promptOperation = (name, fields) => ({
+  name,
+  fields: Object.entries(fields).map(([field, value]) =>
+    promptField(field, value),
+  ),
+});
+const promptResponse = (summary, program) =>
+  JSON.stringify({
+    summary,
+    program,
+    clarifications: [],
+    assumptions: [],
+    questions: [],
+    assumption_texts: [],
+  });
+const ASSIST_PROMPT_GUIDE_LINES = [
+  "Selection parameters by distribution (set selection_distribution plus exactly these fields): " +
+    Object.entries(SELECTION_DISTRIBUTION_PARAM_KEYS)
+      .map(([name, fields]) => name + ": " + fields.join(", "))
+      .join("; ") +
+    ".",
+  "Sequential phases (first ..., then ..., finally ...) are separate groups of one section, in order: use replace_sections with one group per phase. Operations that run at the same time go in the same group.",
+  "Key and value sizes are key_len and val_len in bytes.",
+  "Use one section; phases are its groups. Use several sections only for independent key spaces that never share keys.",
+  "replace_sections defines the whole layout: put every operation, including the initial load, in its groups, and do not combine it with set_operation_fields.",
+  "Nearly sorted inserts: add the operation sorted, with fields k (number of displaced keys) and l (displacement distance), in the same group as the inserts.",
+  'Structured keys (a fixed prefix, separators, or digit-only parts): set the field key with json_value holding the string expression, e.g. {"segmented":{"separator":"","segments":["usr:",{"uniform":{"len":12,"character_set":"numeric"}}]}}.',
+  "Edit command fields (section_index and group_index are 1-based): set_group_operation_fields {section_index, group_index, operation, fields}; rename_group_operation {section_index, group_index, from_operation, to_operation}; set_range_scan_length {section_index, group_index, operation, scan_length}; scale_all_op_counts {factor}; append_group {section_index, after_group_index, group}.",
+  "When current_form_state already has several groups, change or remove an existing operation with set_group_operation_fields aimed at the group that holds it (set the field enabled to false to remove it); set_operation_fields only edits the first group. Do not rewrite the layout with replace_sections for a small change.",
+  'Example request: "500K inserts, 16-byte keys, 100-byte values." Response: ' +
+    promptResponse("One phase: 500K inserts; key length 16, value length 100.", [
+      {
+        kind: "set_operation_fields",
+        operation: "inserts",
+        fields: [
+          promptField("op_count", 500000),
+          promptField("key_len", 16),
+          promptField("val_len", 100),
+        ],
+      },
+    ]),
+  'Example request: "Load 1M keys (24 B keys, 512 B values). Then 2M point queries, zipfian s=0.8, 20% of them on non-existent keys." Response: ' +
+    promptResponse(
+      "Phase 1 loads 1M keys; phase 2 runs 1.6M Zipfian point queries and 400K empty point queries.",
+      [
+        {
+          kind: "replace_sections",
+          sections: [
+            {
+              groups: [
+                {
+                  operations: [
+                    promptOperation("inserts", { op_count: 1000000, key_len: 24, val_len: 512 }),
+                  ],
+                },
+                {
+                  operations: [
+                    promptOperation("point_queries", {
+                      op_count: 1600000,
+                      selection_distribution: "zipf",
+                      selection_n: 1000000,
+                      selection_s: 0.8,
+                    }),
+                    promptOperation("empty_point_queries", { op_count: 400000, key_len: 24 }),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    ),
+  'Example edit, when current_form_state has one phase with 200K inserts and 50K point queries: request "Raise the inserts to 300K and add a final phase of 40K range queries that each cover 0.5% of the keys." Response: ' +
+    promptResponse("Raised the inserts to 300K and appended a phase of 40K range queries.", [
+      {
+        kind: "set_operation_fields",
+        operation: "inserts",
+        fields: [promptField("op_count", 300000)],
+      },
+      {
+        kind: "append_group",
+        group: {
+          operations: [
+            promptOperation("range_queries", { op_count: 40000, selectivity: 0.005 }),
+          ],
+        },
+      },
+    ]),
+  'Example edit, when current_form_state has phase 1 with 600K inserts and phase 2 with 300K point queries and 60K merges: request "Double the merges in the second phase and remove its point queries." Response: ' +
+    promptResponse("Doubled the phase-2 merges to 120K and removed its point queries.", [
+      {
+        kind: "set_group_operation_fields",
+        section_index: 1,
+        group_index: 2,
+        operation: "merges",
+        fields: [promptField("op_count", 120000)],
+      },
+      {
+        kind: "set_group_operation_fields",
+        section_index: 1,
+        group_index: 2,
+        operation: "point_queries",
+        fields: [{ field: "enabled", boolean_value: false }],
+      },
+    ]),
+];
+
 function buildAssistantMessages(
   prompt,
   schemaHints,
@@ -1347,7 +1464,7 @@ function buildAssistantMessages(
     "Use append_group when the user asks for another/new/next/second/third group or a later phase group.",
     "If the user names the phase immediately after the current last phase, create it with append_group and put every requested operation in that new group.",
     "Use replace_sections only when defining or rewriting the full layout.",
-    "Tectonic semantics: same section shares valid keys; same group is interleaved; different groups in one section are phased.",
+    "X-Bench semantics: same section shares valid keys; same group is interleaved; different groups in one section are phased.",
     "For phased prompts, prefer one section with multiple groups.",
     "Do not ask for sections_count/groups_per_section when the phase layout is clear.",
     "Group indexes and section indexes are 1-based.",
@@ -1372,6 +1489,7 @@ function buildAssistantMessages(
     "Allowed key/val patterns: uniform, weighted, segmented, hot_range.",
     "Use safe defaults when missing and list them in assumptions.",
     "Convert 1KB=1024, 100K=100000, 1M=1000000.",
+    ...ASSIST_PROMPT_GUIDE_LINES,
   ];
   if (isOllamaAssistProvider(aiConfig && aiConfig.provider)) {
     systemLines.push(
@@ -1430,6 +1548,14 @@ function buildCompactAssistContext(
     payload.current_generated_json = compactJson;
   }
   return payload;
+}
+
+function readPromptHeuristicsFlag(env) {
+  const raw =
+    env && typeof env.ASSIST_PROMPT_HEURISTICS === "string"
+      ? env.ASSIST_PROMPT_HEURISTICS.trim().toLowerCase()
+      : "";
+  return !["off", "0", "false", "no"].includes(raw);
 }
 
 function canonicalizeAssistRequest(prompt) {
@@ -2452,9 +2578,55 @@ function patchFromAssistProgram(rawProgram, schemaHints, formState = null) {
     }
   });
   if (touchedStructure) {
+    mergeFlatOperationsIntoActiveGroup(rawPatch, formState);
     finalizeProgramStructuralPatch(rawPatch, schemaHints);
   }
   return rawPatch;
+}
+
+// In a program that also edits the layout, set_operation_fields edits the
+// builder's active group (as the single-phase form does). Without this, the
+// UI builds only from the sections and the flat edits are silently lost.
+function mergeFlatOperationsIntoActiveGroup(rawPatch, formState) {
+  const operations =
+    rawPatch.operations && typeof rawPatch.operations === "object"
+      ? rawPatch.operations
+      : {};
+  const sections = Array.isArray(rawPatch.sections) ? rawPatch.sections : [];
+  if (Object.keys(operations).length === 0 || sections.length === 0) {
+    return;
+  }
+  const sectionIndex = Math.min(
+    Number.isInteger(formState && formState.active_section_index)
+      ? formState.active_section_index
+      : 0,
+    sections.length - 1,
+  );
+  const section = sections[sectionIndex];
+  if (!section || !Array.isArray(section.groups) || section.groups.length === 0) {
+    return;
+  }
+  const groupIndex = Math.min(
+    Number.isInteger(formState && formState.active_group_index)
+      ? formState.active_group_index
+      : 0,
+    section.groups.length - 1,
+  );
+  const group = section.groups[groupIndex];
+  Object.entries(operations).forEach(([operationName, fields]) => {
+    if (!fields || typeof fields !== "object") {
+      return;
+    }
+    if (fields.enabled === false) {
+      delete group[operationName];
+      return;
+    }
+    group[operationName] = stripEnabledFromOperationPatch({
+      ...(group[operationName] || {}),
+      ...fields,
+    });
+  });
+  rawPatch.operations = {};
 }
 
 function normalizedFinitePositiveNumber(value) {
@@ -2842,6 +3014,34 @@ function normalizeAssistPayload(
       payload.patch,
     schemaHints,
   );
+  if (options.promptHeuristics === false) {
+    // The parsed program is the answer; only the LLM's own clarifications apply.
+    const ownClarifications = normalizeClarifications(
+      payload.clarifications,
+      payload.questions,
+      schemaHints,
+      { patch, formState, prompt },
+    );
+    suppressOperationPatchWhenSelectionIsAmbiguous(patch, ownClarifications);
+    const ownAssumptions = mergeAssumptionsAiFirst(
+      normalizeAssumptionEntries(payload.assumptions),
+      deriveDeterministicAssumptions(patch, formState, prompt, schemaHints),
+    );
+    return {
+      summary: normalizeAssistSummary(payload.summary, {
+        patch,
+        formState,
+        prompt,
+        schemaHints,
+        clarifications: ownClarifications,
+      }),
+      patch,
+      clarifications: ownClarifications,
+      assumptions: ownAssumptions,
+      questions: ownClarifications.map((entry) => entry.text),
+      assumption_texts: ownAssumptions.map((entry) => entry.text),
+    };
+  }
   const structuredPrompt = isStructuredWorkloadPrompt(prompt);
   const explicitGroupTarget = extractExplicitGroupTarget(
     prompt,
@@ -2860,7 +3060,13 @@ function normalizeAssistPayload(
     promptDefinesFreshStructuredWorkload(prompt, formState, schemaHints);
   const patchAlreadyHasStructuredLayout =
     Array.isArray(patch.sections) && patch.sections.length > 0;
+  // When the LLM's program contains structural commands and produced a layout,
+  // that layout is authoritative: the prompt-keyword heuristics below must not
+  // flatten, replace, or re-merge it.
+  const layoutFromProgram =
+    programHasStructuralCommands && patchAlreadyHasStructuredLayout;
   if (
+    !layoutFromProgram &&
     !structuredPrompt &&
     !structuredLayoutEditRequested &&
     !explicitGroupAppendRequested &&
@@ -2872,7 +3078,8 @@ function normalizeAssistPayload(
     }
   }
   const structuredPatchApplied =
-    structuredPromptOwnsLayout && patchAlreadyHasStructuredLayout
+    layoutFromProgram ||
+    (structuredPromptOwnsLayout && patchAlreadyHasStructuredLayout)
       ? true
       : structuredPromptOwnsLayout &&
           options.allowDeterministicStructureFallback === false
@@ -2881,6 +3088,7 @@ function normalizeAssistPayload(
           ? applyPromptStructuredWorkloadFallback(patch, prompt, schemaHints)
           : false;
   const structuredLayoutEditApplied =
+    !layoutFromProgram &&
     structuredLayoutEditRequested &&
     !aiSatisfiedStructuredLayoutEditIntent(
       patch,
@@ -2915,10 +3123,12 @@ function normalizeAssistPayload(
           options.answers,
         )
       : false;
-  const structuredPromptReconciled = structuredPromptOwnsLayout
-    ? reconcileStructuredPromptPatch(patch, prompt, schemaHints)
-    : false;
+  const structuredPromptReconciled =
+    structuredPromptOwnsLayout && !layoutFromProgram
+      ? reconcileStructuredPromptPatch(patch, prompt, schemaHints)
+      : false;
   if (
+    !layoutFromProgram &&
     !structuredPromptOwnsLayout &&
     !structuredLayoutEditApplied &&
     !explicitGroupAppendApplied &&
@@ -2982,6 +3192,7 @@ function normalizeAssistPayload(
     );
   }
   if (
+    !layoutFromProgram &&
     structuredLayoutEditRequested &&
     !aiExpandedSectionsLayout(patch, formState, schemaHints)
   ) {
@@ -2994,6 +3205,7 @@ function normalizeAssistPayload(
     );
   }
   if (
+    !layoutFromProgram &&
     explicitGroupAppendRequested &&
     !aiExpandedSectionsLayout(patch, formState, schemaHints)
   ) {
@@ -3005,7 +3217,9 @@ function normalizeAssistPayload(
       options.answers,
     );
   }
-  canonicalizePhasedSectionsLayout(patch, prompt, schemaHints);
+  if (!layoutFromProgram) {
+    canonicalizePhasedSectionsLayout(patch, prompt, schemaHints);
+  }
   applyAiPreferredInsertReadMixPromptFallback(
     patch,
     formState,
@@ -7834,6 +8048,12 @@ function normalizeOperationPatch(rawPatch, op, schemaHints) {
       selectionDistributions,
       "non_negative",
     ),
+    // An exact scan length from the loaded spec; a selectivity set later wins.
+    scan_length: normalizeNumberExprValue(
+      patch.scan_length,
+      selectionDistributions,
+      "positive",
+    ),
     range_format:
       typeof patch.range_format === "string" &&
       rangeFormats.includes(patch.range_format)
@@ -7841,6 +8061,9 @@ function normalizeOperationPatch(rawPatch, op, schemaHints) {
         : null,
   };
 
+  if (normalized.selectivity !== null && normalized.scan_length !== null) {
+    normalized.scan_length = null;
+  }
   if (
     !normalized.selection_distribution &&
     typeof patch.selection_distribution === "string"
@@ -7940,9 +8163,10 @@ function normalizeOperationPatch(rawPatch, op, schemaHints) {
   }
   if (!caps.has_range) {
     normalized.selectivity = null;
+    normalized.scan_length = null;
     normalized.range_format = null;
   } else if (hasExplicitFields && normalized.enabled !== false) {
-    if (normalized.selectivity === null) {
+    if (normalized.selectivity === null && normalized.scan_length === null) {
       normalized.selectivity = 0.01;
     }
     if (
@@ -8018,7 +8242,14 @@ function normalizeOperationFieldEntries(rawFields) {
       mapped[field] = entry.boolean_value;
       return;
     }
-    if (Number.isFinite(Number(entry.number_value))) {
+    // number_value is null for non-numeric fields in strict structured output;
+    // Number(null) is 0, which would overwrite string values such as
+    // selection_distribution.
+    if (
+      entry.number_value !== null &&
+      entry.number_value !== undefined &&
+      Number.isFinite(Number(entry.number_value))
+    ) {
       mapped[field] = Number(entry.number_value);
       return;
     }
@@ -8029,6 +8260,12 @@ function normalizeOperationFieldEntries(rawFields) {
     if (typeof entry.json_value === "string" && entry.json_value.trim()) {
       const parsedJson = safeJsonParse(entry.json_value);
       mapped[field] = parsedJson === null ? entry.json_value : parsedJson;
+      return;
+    }
+    // A JSON object (e.g. a key string expression), as readTypedAssistFieldValue
+    // accepts in the single-phase path.
+    if (entry.json_value !== null && typeof entry.json_value === "object") {
+      mapped[field] = entry.json_value;
     }
   });
   return mapped;

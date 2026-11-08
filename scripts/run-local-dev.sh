@@ -283,6 +283,7 @@ bootstrap_configured_ollama_models() {
     import { readFileSync } from "node:fs";
     const config = JSON.parse(readFileSync(process.argv[1], "utf8"));
     const configured = (config.models || [])
+      .filter((entry) => !entry || !entry.provider || String(entry.provider).toLowerCase() === "ollama")
       .map((entry) => entry && typeof entry.id === "string" ? entry.id.trim() : "")
       .filter(Boolean);
     const requested = String(process.argv[2] || "")

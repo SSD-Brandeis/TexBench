@@ -13,6 +13,7 @@ import test from "node:test";
 
 import {
   isSupportedLlmModel,
+  llmModelConfigForProvider,
   loadLlmModelConfig,
 } from "../src/llm-model-config.mjs";
 
@@ -23,10 +24,36 @@ test("LLM model config exposes only the configured supported models", () => {
   assert.equal(config.defaultModel, "llama3:8b");
   assert.deepEqual(
     config.models.map((model) => model.id),
-    ["llama3:8b", "mixtral:8x7b", "qwen2.5:72b", "qwen2.5:14b"],
+    [
+      "llama3:8b",
+      "mixtral:8x7b",
+      "qwen2.5:72b",
+      "qwen2.5:14b",
+      "llama3.3:70b",
+      "gpt-5.5-2026-04-23",
+    ],
   );
   assert.equal(isSupportedLlmModel(config, "qwen2.5:14b"), true);
   assert.equal(isSupportedLlmModel(config, "unconfigured:model"), false);
+});
+
+test("LLM model config serves only the models of the active provider", () => {
+  const config = loadLlmModelConfig();
+  const openai = llmModelConfigForProvider(config, "openai");
+  assert.deepEqual(
+    openai.models.map((model) => model.id),
+    ["gpt-5.5-2026-04-23"],
+  );
+  assert.equal(openai.defaultModel, "gpt-5.5-2026-04-23");
+  assert.equal(isSupportedLlmModel(openai, "llama3:8b"), false);
+
+  const ollama = llmModelConfigForProvider(config, "ollama");
+  assert.equal(ollama.defaultModel, "llama3:8b");
+  assert.equal(isSupportedLlmModel(ollama, "gpt-5.5-2026-04-23"), false);
+  assert.equal(isSupportedLlmModel(ollama, "llama3.3:70b"), true);
+
+  // A provider with no configured models keeps the full list.
+  assert.equal(llmModelConfigForProvider(config, "cloudflare"), config);
 });
 
 test("local setup reads every Ollama download from the shared model config", () => {
@@ -47,6 +74,7 @@ test("local setup reads every Ollama download from the shared model config", () 
     "mixtral:8x7b",
     "qwen2.5:72b",
     "qwen2.5:14b",
+    "llama3.3:70b",
   ]);
 });
 

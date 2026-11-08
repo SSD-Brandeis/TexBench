@@ -1981,10 +1981,18 @@ function loadPresetIntoBuilder(presetJson) {
   clearFieldLocks();
   clearOperationFormState();
 
+  const presetDefaults =
+    normalizedJson &&
+    normalizedJson.defaults &&
+    typeof normalizedJson.defaults === "object"
+      ? normalizedJson.defaults
+      : {};
   const presetCharacterSet =
-    normalizedJson && typeof normalizedJson.character_set === "string"
-      ? normalizedJson.character_set.trim()
-      : "";
+    typeof presetDefaults.character_set === "string"
+      ? presetDefaults.character_set.trim()
+      : normalizedJson && typeof normalizedJson.character_set === "string"
+        ? normalizedJson.character_set.trim()
+        : "";
   if (formCharacterSet) {
     const options = Array.from(formCharacterSet.options || []).map(
       (option) => option.value,
@@ -4319,6 +4327,10 @@ function sanitizeStoredOperationSpecForJson(op, spec) {
 
   if (formOpsWithRangeFields.has(op)) {
     const selectivity = sanitizeTypedExpression(spec.selectivity, "number_expr");
+    const scanLength = sanitizeTypedExpression(spec.scan_length, "number_expr");
+    if (selectivity === null && scanLength !== null) {
+      sanitized.scan_length = scanLength;
+    }
     if (selectivity !== null) {
       sanitized.selectivity = selectivity;
     }
@@ -4346,7 +4358,9 @@ function sanitizeStoredGroupSpecForJson(group, fallbackName) {
   }
   sanitized.enable_granular_stats = true;
   if (typeof group.character_set === "string" && group.character_set.trim()) {
-    sanitized.character_set = group.character_set.trim();
+    // tectonic reads a group-wide character set from defaults; a bare
+    // group-level character_set is ignored.
+    sanitized.defaults = { character_set: group.character_set.trim() };
   }
 
   operationOrder.forEach((op) => {
@@ -4366,7 +4380,9 @@ function buildJsonFromForm() {
   const json = {};
   const characterSet = formCharacterSet.value.trim();
   if (characterSet) {
-    json.character_set = characterSet;
+    // tectonic reads the workload-wide character set from defaults; a
+    // top-level character_set is ignored.
+    json.defaults = { character_set: characterSet };
   }
 
   if (getCustomWorkloadModeState()) {
@@ -4405,7 +4421,7 @@ function buildJsonFromForm() {
       typeof sectionState.character_set === "string" &&
       sectionState.character_set.trim()
     ) {
-      section.character_set = sectionState.character_set.trim();
+      section.defaults = { character_set: sectionState.character_set.trim() };
     }
     if (sectionState.skip_key_contains_check === true) {
       section.skip_key_contains_check = true;
@@ -4590,22 +4606,21 @@ function getEffectiveCharacterSet(rootJson, section, group, spec) {
   if (spec && typeof spec.character_set === "string" && spec.character_set) {
     return spec.character_set;
   }
-  if (group && typeof group.character_set === "string" && group.character_set) {
-    return group.character_set;
-  }
-  if (
-    section &&
-    typeof section.character_set === "string" &&
-    section.character_set
-  ) {
-    return section.character_set;
-  }
-  if (
-    rootJson &&
-    typeof rootJson.character_set === "string" &&
-    rootJson.character_set
-  ) {
-    return rootJson.character_set;
+  // Group, section and workload character sets live in defaults.character_set;
+  // a bare character_set is still read for older specs.
+  for (const scope of [group, section, rootJson]) {
+    if (!scope || typeof scope !== "object") {
+      continue;
+    }
+    const defaults =
+      scope.defaults && typeof scope.defaults === "object" ? scope.defaults : {};
+    const value =
+      typeof defaults.character_set === "string" && defaults.character_set
+        ? defaults.character_set
+        : scope.character_set;
+    if (typeof value === "string" && value) {
+      return value;
+    }
   }
   return "";
 }
@@ -5846,10 +5861,15 @@ function applyAssistantPatch(patch) {
     setSelectedBuilderRouteState("scratch");
   }
 
-  const scopeOp = deriveAssistantScopeOperation(context);
-  const allowOperationSetChanges = assistantPromptHasOperationIntent(
-    context && typeof context.promptText === "string" ? context.promptText : "",
-  );
+  // With prompt heuristics off (server flag), the parsed answer is applied as
+  // is: no prompt-based scoping of which operations may change.
+  const promptHeuristics = !(context && context.promptHeuristics === false);
+  const scopeOp = promptHeuristics ? deriveAssistantScopeOperation(context) : null;
+  const allowOperationSetChanges =
+    !promptHeuristics ||
+    assistantPromptHasOperationIntent(
+      context && typeof context.promptText === "string" ? context.promptText : "",
+    );
 
   if (
     typeof patch.character_set === "string" &&

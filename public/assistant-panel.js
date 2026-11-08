@@ -1829,6 +1829,7 @@
         applyAssistantPatch(result.patch, {
           promptText: promptText,
           selectedOpsBeforeApply: selectedOpsBeforeApply,
+          promptHeuristics: result.prompt_heuristics !== false,
         });
         updateJsonFromForm();
 

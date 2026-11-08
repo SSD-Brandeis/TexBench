@@ -527,6 +527,7 @@ function supportsReasoningNone(modelName) {
   return (
     modelName.startsWith("gpt-5.1") ||
     modelName.startsWith("gpt-5.2") ||
-    modelName.startsWith("gpt-5.4")
+    modelName.startsWith("gpt-5.4") ||
+    modelName.startsWith("gpt-5.5")
   );
 }

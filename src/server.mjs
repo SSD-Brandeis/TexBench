@@ -12,6 +12,7 @@ import { createCloudflareAiBindingFromEnv } from "./cloudflare-ai-binding.mjs";
 import { createOllamaAiBindingFromEnv } from "./ollama-ai-binding.mjs";
 import {
   isSupportedLlmModel,
+  llmModelConfigForProvider,
   loadLlmModelConfig,
 } from "./llm-model-config.mjs";
 import {
@@ -35,10 +36,12 @@ const SHUTDOWN_FORCE_EXIT_MS = readInteger(
   process.env.SHUTDOWN_FORCE_EXIT_MS,
   5000,
 );
-const llmModelConfig = loadLlmModelConfig();
-
 const aiProviderPreference =
   readString(process.env.AI_PROVIDER).toLowerCase() || "openai";
+const llmModelConfig = llmModelConfigForProvider(
+  loadLlmModelConfig(),
+  aiProviderPreference,
+);
 const cloudflareAiBinding = createCloudflareAiBindingFromEnv(process.env);
 const openAiBinding = createOpenAiCompatibleBindingFromEnv(process.env);
 const ollamaAiBinding = createOllamaAiBindingFromEnv(process.env);
@@ -454,6 +457,10 @@ function buildWorkerEnv(envLike, aiBinding, aiConfigError, resolvedAiProvider) {
   const timeoutMs = readString(env.AI_TIMEOUT_MS);
   if (timeoutMs) {
     out.AI_TIMEOUT_MS = timeoutMs;
+  }
+  const promptHeuristics = readString(env.ASSIST_PROMPT_HEURISTICS);
+  if (promptHeuristics) {
+    out.ASSIST_PROMPT_HEURISTICS = promptHeuristics;
   }
   if (aiBinding) {
     out.AI = aiBinding;

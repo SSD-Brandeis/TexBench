@@ -9,6 +9,8 @@ export function loadLlmModelConfig(configUrl = CONFIG_URL) {
         .map((entry) => ({
           id: readString(entry && entry.id),
           label: readString(entry && entry.label) || readString(entry && entry.id),
+          // Entries without a provider are Ollama models (pulled by the bootstrap).
+          provider: readString(entry && entry.provider).toLowerCase() || "ollama",
         }))
         .filter((entry) => entry.id)
     : [];
@@ -27,6 +29,20 @@ export function loadLlmModelConfig(configUrl = CONFIG_URL) {
     defaultModel,
     models: Object.freeze(uniqueModels.map((entry) => Object.freeze(entry))),
   });
+}
+
+// The models served by one AI provider. If none are configured for it, the full
+// list is kept, as before providers were recorded.
+export function llmModelConfigForProvider(config, provider) {
+  const wanted = readString(provider).toLowerCase();
+  const models = config.models.filter((entry) => entry.provider === wanted);
+  if (models.length === 0) {
+    return config;
+  }
+  const defaultModel = models.some((entry) => entry.id === config.defaultModel)
+    ? config.defaultModel
+    : models[0].id;
+  return Object.freeze({ defaultModel, models: Object.freeze(models) });
 }
 
 export function isSupportedLlmModel(config, modelName) {

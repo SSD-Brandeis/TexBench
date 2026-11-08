@@ -242,7 +242,56 @@
     Object.entries(spec).forEach(function applyField(entry) {
       normalized[entry[0]] = cloneJsonValue(entry[1]);
     });
+    // A range given by exact scan length keeps it instead of the default
+    // selectivity; an explicit selectivity replaces it.
+    if (spec.scan_length !== undefined && spec.scan_length !== null) {
+      if (spec.selectivity === undefined || spec.selectivity === null) {
+        delete normalized.selectivity;
+      } else {
+        delete normalized.scan_length;
+      }
+    }
+    // Shorthand fields (key_len, val_pattern, selection_distribution,
+    // selection_s, ...) describe the key, value and selection expressions.
+    // Rebuild those expressions from them, as the single-phase form does,
+    // unless the patch gives the expression itself.
+    const shorthand = Object.assign(
+      {},
+      (config.operationDefaults && config.operationDefaults[op]) || {},
+      spec,
+    );
+    const mentions = (prefix) =>
+      Object.keys(spec).some((name) => name.startsWith(prefix));
+    const withKey = new Set(config.opsWithKey || []);
+    const withValue = new Set(config.opsWithValue || []);
     const withSelection = new Set((config && config.opsWithSelection) || []);
+    if (withKey.has(op) && spec.key === undefined && mentions("key_")) {
+      normalized.key = buildDefaultStringExprFromDefaults(
+        "key",
+        characterSet,
+        shorthand,
+        config.stringPatternDefaults,
+      );
+    }
+    if (withValue.has(op) && spec.val === undefined && mentions("val_")) {
+      normalized.val = buildDefaultStringExprFromDefaults(
+        "val",
+        characterSet,
+        shorthand,
+        config.stringPatternDefaults,
+      );
+    }
+    if (
+      withSelection.has(op) &&
+      spec.selection === undefined &&
+      mentions("selection_")
+    ) {
+      normalized.selection = buildDefaultSelectionSpecFromDefaults(
+        shorthand,
+        config.selectionParamDefaults,
+        config.selectionDistributionParams,
+      );
+    }
     if (withSelection.has(op)) {
       applySelectionUiMetadata(normalized, config);
     }
@@ -309,6 +358,21 @@
     return null;
   }
 
+  // A section or group character set, written either the tectonic way
+  // (defaults.character_set) or as a bare character_set.
+  function readScopeCharacterSet(scope) {
+    if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
+      return "";
+    }
+    const defaults =
+      scope.defaults && typeof scope.defaults === "object" ? scope.defaults : {};
+    const value =
+      typeof defaults.character_set === "string"
+        ? defaults.character_set
+        : scope.character_set;
+    return typeof value === "string" ? value.trim() : "";
+  }
+
   function flattenPatchedGroup(group, knownOperationNames) {
     const flattenedGroup = {};
     if (!group || typeof group !== "object" || Array.isArray(group)) {
@@ -363,13 +427,7 @@
         ? config.defaultCharacterSet
         : "";
     return rawSections.map((section, sectionIndex) => {
-      const explicitSectionCharacterSet =
-        section &&
-        typeof section === "object" &&
-        typeof section.character_set === "string" &&
-        section.character_set.trim()
-          ? section.character_set.trim()
-          : "";
+      const explicitSectionCharacterSet = readScopeCharacterSet(section);
       const sectionName =
         section &&
         typeof section === "object" &&
@@ -392,11 +450,7 @@
                     ? group.name.trim()
                     : buildDefaultGroupName(groupIndex);
                 normalizedGroup.enable_granular_stats = true;
-                const explicitGroupCharacterSet =
-                  typeof group.character_set === "string" &&
-                  group.character_set.trim()
-                    ? group.character_set.trim()
-                    : "";
+                const explicitGroupCharacterSet = readScopeCharacterSet(group);
                 const groupCharacterSet =
                   explicitGroupCharacterSet || sectionCharacterSet;
                 Object.entries(
